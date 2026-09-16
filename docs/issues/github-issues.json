@@ -1,0 +1,47 @@
+[
+  {
+    "title": "[설계] 전달된 셸의 사용자 회수·소유권 전환과 개입 요청",
+    "bodyFile": "docs/issues/01-ownership-transfer.md",
+    "url": "https://github.com/bnbnac/baton/issues/1"
+  },
+  {
+    "title": "[설계] 전달 전 사용자 화면 기록과 MCP 공개 커서 0 분리",
+    "bodyFile": "docs/issues/02-private-history.md",
+    "url": "https://github.com/bnbnac/baton/issues/2"
+  },
+  {
+    "title": "[기술 검토] Windows·macOS·Linux 지원과 Rust 채택 여부",
+    "bodyFile": "docs/issues/03-cross-platform-rust.md",
+    "url": "https://github.com/bnbnac/baton/issues/3"
+  },
+  {
+    "title": "[요구사항] 여러 셸·여러 MCP 연결의 사용 범위와 독립성 정의",
+    "bodyFile": "docs/issues/04-multi-session.md",
+    "url": "https://github.com/bnbnac/baton/issues/4"
+  },
+  {
+    "title": "[설계] 창 크기에 맞춘 원격 PTY 크기 변경",
+    "bodyFile": "docs/issues/05-dynamic-pty.md",
+    "url": "https://github.com/bnbnac/baton/issues/5"
+  },
+  {
+    "title": "[버그] sudo 승인 요청에서 -n이 누락되는 지침 수정",
+    "bodyFile": "docs/issues/06-sudo-n.md",
+    "url": "https://github.com/bnbnac/baton/issues/6"
+  },
+  {
+    "title": "[설계] sudo가 필요할 때 사용자가 확인·개입하는 흐름",
+    "bodyFile": "docs/issues/07-sudo-ux.md",
+    "url": "https://github.com/bnbnac/baton/issues/7"
+  },
+  {
+    "title": "[검토] Baton 종료 시 서버 세션 동작을 일반 SSH 클라이언트와 비교",
+    "bodyFile": "docs/issues/08-ssh-termination.md",
+    "url": "https://github.com/bnbnac/baton/issues/8"
+  },
+  {
+    "title": "[설계] Baton 종료·재시작을 MCP 연결 상태로 안내하는 수명 구조",
+    "bodyFile": "docs/issues/09-graceful-offline.md",
+    "url": "https://github.com/bnbnac/baton/issues/9"
+  }
+]
