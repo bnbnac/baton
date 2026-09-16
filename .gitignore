@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+.packages/
+.buildhome/
+.research/
+artifacts/
+node_modules/
+TestResults/
+.vs/
+*.user
