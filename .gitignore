@@ -8,3 +8,5 @@ node_modules/
 TestResults/
 .vs/
 *.user
+.worktrees/
+**/target/
