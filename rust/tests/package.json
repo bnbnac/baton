@@ -1,0 +1,7 @@
+{
+  "name": "baton-phase-zero-tests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test *.test.mjs" },
+  "dependencies": { "ssh2": "1.17.0" }
+}
