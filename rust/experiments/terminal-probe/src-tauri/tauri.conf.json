@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Baton Terminal Probe",
+  "version": "0.1.0",
+  "identifier": "dev.baton.terminal-probe",
+  "build": { "beforeBuildCommand": "npm run build", "frontendDist": "../dist" },
+  "app": {
+    "windows": [{ "label": "main", "title": "Baton · Terminal boundary probe", "width": 1100, "height": 800 }],
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; frame-src 'none'" }
+  },
+  "bundle": { "active": false }
+}
