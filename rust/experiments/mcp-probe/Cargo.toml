@@ -1,0 +1,10 @@
+[package]
+name = "baton-mcp-probe"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rmcp = { version = "=3.4.0", features = ["transport-io"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "time", "sync"] }
+serde_json = "1"

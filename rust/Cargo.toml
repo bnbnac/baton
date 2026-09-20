@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["experiments/ssh-probe"]
+members = ["experiments/ssh-probe", "experiments/mcp-probe"]
 
 [workspace.package]
 edition = "2024"
