@@ -45,13 +45,18 @@ export async function runSshCase(name, options = {}) {
     for (const secret of ['fixture-only', 'fixture-key-pass', '123456', '654321', 'PRIVATE KEY']) {
       if (stdout.includes(secret) || stderr.includes(secret)) throw new Error('credential_leaked');
     }
-    const result = stdout.trim().split('\n').map(x => JSON.parse(x)).find(x => x.outcome);
+    const control = stdout.trim().split('\n').map(x => JSON.parse(x));
+    const result = control.find(x => x.outcome);
     // Stop the fixture after the client disconnects; child close drains IPC messages.
     await stop(fixture);
     return {
       outcome: result.outcome,
       stages: stderr.trim().split('\n'),
       authRequests: events.filter(x => x.type === 'authentication').length,
+      authReleaseAttempts: events.filter(x => x.type === 'auth-release-attempted').length,
+      authReleasedWhileOpen: events.find(x => x.type === 'auth-release-attempted')?.connectionOpen ?? false,
+      successObservedAfterCancel: control.findIndex(x => x.stage === 'cancelled') >= 0 && control.findIndex(x => x.stage === 'late-auth-success-observed') > control.findIndex(x => x.stage === 'cancelled'),
+      authReleasedBeforeClose: events.findIndex(x => x.type === 'auth-released') >= 0 && events.findIndex(x => x.type === 'closed') > events.findIndex(x => x.type === 'auth-released'),
       shellRequests: events.filter(x => x.type === 'shell').length,
       ptyRequests: events.filter(x => x.type === 'pty').length,
       receivedHex: events.some(x => x.type === 'received') ? [events.filter(x => x.type === 'received').map(x => x.hex).join('')] : [],

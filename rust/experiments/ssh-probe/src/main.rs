@@ -2,6 +2,10 @@ mod auth;
 mod pty;
 
 use serde::Deserialize;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 #[derive(Deserialize)]
@@ -45,6 +49,10 @@ async fn main() {
         {
             return Err("invalid_input");
         }
+        let late_success = input.case == "cancel-late-success";
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let operation = pty::run(input, cancelled.clone());
+        tokio::pin!(operation);
         tokio::select! {
             biased;
             _ = async {
@@ -58,8 +66,14 @@ async fn main() {
                         }
                     }
                 }
-            } => { println!("{{\"stage\":\"cancelled\"}}"); Err("cancelled") },
-            result = pty::run(input) => result,
+            } => {
+                cancelled.store(true, Ordering::Release);
+                println!("{{\"stage\":\"cancelled\"}}");
+                // This one probe intentionally keeps transport alive until the held
+                // success arrives, then verifies the latched decision before shell.
+                if late_success { operation.await } else { Err("cancelled") }
+            },
+            result = &mut operation => result,
         }
     })
     .await;

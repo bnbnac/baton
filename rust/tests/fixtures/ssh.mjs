@@ -11,14 +11,18 @@ const fingerprint = 'SHA256:' + createHash('sha256').update(parsed.getPublicSSH(
 const clients = new Set();
 const emit = (type, data = {}) => process.send?.({ type, ...data });
 const server = new Server({ hostKeys: [hostKey.private] }, client => {
+  let connectionClosed = false;
   clients.add(client);
   client.on('error', () => {});
-  client.on('close', () => { clients.delete(client); emit('closed'); });
+  client.on('close', () => { connectionClosed = true; clients.delete(client); emit('closed'); });
   client.on('authentication', ctx => {
     emit('authentication', { method: ctx.method });
     if (ctx.method === 'password' && ctx.username === 'fixture' && ctx.password === 'fixture-only') {
       if (caseName === 'password-then-interactive') ctx.reject(['keyboard-interactive'], true);
-      else if (caseName === 'cancel-late-success') { releaseAuth = () => ctx.accept(); emit('auth-held'); }
+      else if (caseName === 'cancel-late-success') {
+        releaseAuth = () => { emit('auth-release-attempted', { connectionOpen: !connectionClosed }); ctx.accept(); };
+        emit('auth-held');
+      }
       else ctx.accept();
     } else if (ctx.method === 'publickey' && publicKey && ctx.key.data.equals(publicKey.getPublicSSH())) {
       if (!ctx.signature || publicKey.verify(ctx.blob, ctx.signature, ctx.hashAlgo)) ctx.accept();

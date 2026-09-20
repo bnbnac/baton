@@ -1,7 +1,10 @@
 use crate::ProbeInput;
 use russh::keys::{HashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect, client};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 pub(crate) struct HostVerifier {
     expected: String,
@@ -17,7 +20,7 @@ impl client::Handler for HostVerifier {
     }
 }
 
-pub(crate) async fn run(input: ProbeInput) -> Result<(), &'static str> {
+pub(crate) async fn run(input: ProbeInput, cancelled: Arc<AtomicBool>) -> Result<(), &'static str> {
     if input.case == "host-cancel" {
         return Err("cancelled");
     }
@@ -41,6 +44,17 @@ pub(crate) async fn run(input: ProbeInput) -> Result<(), &'static str> {
         crate::auth::cancel_barrier().await;
     }
     crate::auth::authenticate(&mut ssh, &input).await?;
+    if cancelled.load(Ordering::Acquire) {
+        println!("{{\"stage\":\"late-auth-success-observed\"}}");
+        ssh.disconnect(Disconnect::ByApplication, "", "")
+            .await
+            .map_err(|_| "transport_failed")?;
+        match ssh.await {
+            Ok(()) | Err(russh::Error::Disconnect) => {}
+            Err(_) => return Err("transport_failed"),
+        }
+        return Err("cancelled");
+    }
     if input.case == "cancel-before-shell" {
         crate::auth::cancel_barrier().await;
     }

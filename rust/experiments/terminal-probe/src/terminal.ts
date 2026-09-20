@@ -39,8 +39,11 @@ export class ProbeTerminal {
     this.frame = frame;
     let start = 0;
     for (const query of frame.queries) {
+      // Parse the prefix without authority: an untracked query must never borrow
+      // the token for a later query in this frame.
+      if (query.endOffset > start) await new Promise<void>(resolve => this.term.write(new Uint8Array(frame.bytes.slice(start, query.endOffset)), resolve));
       this.query = query;
-      await new Promise<void>(resolve => this.term.write(new Uint8Array(frame.bytes.slice(start, query.endOffset + 1)), resolve));
+      await new Promise<void>(resolve => this.term.write(new Uint8Array([frame.bytes[query.endOffset]]), resolve));
       this.query = undefined;
       start = query.endOffset + 1;
     }

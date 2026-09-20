@@ -1,4 +1,4 @@
-param([string]$ReportPath, [switch]$ExpectFailure, [switch]$InjectFailure)
+param([string]$ReportPath, [switch]$ExpectFailure, [switch]$InjectFailure, [switch]$StallAfterReady)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $exe = Join-Path $root 'rust/target/debug/baton-terminal-probe.exe'
@@ -10,7 +10,7 @@ $runReport = Join-Path ([IO.Path]::GetDirectoryName($ReportPath)) (([guid]::NewG
 $probeProcess = $null
 try {
     $env:BATON_TERMINAL_REPORT = $runReport
-    $env:BATON_TERMINAL_INJECT = if ($InjectFailure) { 'output-wait' } else { $null }
+    $env:BATON_TERMINAL_INJECT = if ($InjectFailure -or $StallAfterReady) { 'output-wait' } else { $null }
     $probeProcess = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru
     $started = $probeProcess.StartTime.ToUniversalTime().Ticks
     @{ pid = $probeProcess.Id; startedTicks = $started; path = [IO.Path]::GetFullPath($exe) } | ConvertTo-Json | Set-Content -LiteralPath ($ReportPath + '.owned.json')
@@ -25,6 +25,11 @@ try {
     Move-Item -LiteralPath $runReport -Destination $ReportPath -Force
     $failed = @($result | Where-Object { !$_.passed })
     $result | ConvertTo-Json -Depth 8
+    if ($StallAfterReady) {
+        Set-Content -LiteralPath ($ReportPath + '.barrier') 'output-wait'
+        Start-Sleep -Seconds 60
+        throw 'stall_not_interrupted'
+    }
     if ($InjectFailure) {
         if ($result[0].name -ne 'output_wait_ready' -or !$result[0].passed) { throw 'wrong_injection_barrier' }
         throw 'injected_terminal-wait'

@@ -93,7 +93,7 @@ async function scenario(name: string): Promise<void> {
     }
     const r = await invoke<Result>('case_result', { caseId });
     const suppressed = ['expired', 'epoch', 'tokenless', 'untrusted_sequences', 'queue_overload', 'query_overload'];
-    equal(r.protocolHex, suppressed.includes(name) ? [] : oracleHex);
+    equal(r.protocolHex, name === 'untracked_prefix' ? [hex('\x1b[2;3R')] : suppressed.includes(name) ? [] : oracleHex);
     if (name !== 'input_paths') equal(r.ordinaryBytes, 0);
     if (!['input_paths', 'token_attacks', 'untrusted_sequences'].includes(name)) equal(r.rejectedInputs, 0);
     if (name === 'queue_overload') { equal(r.closedReason, 'output_overload'); equal(frameCount, 0); }
@@ -122,7 +122,7 @@ async function run(): Promise<void> {
       caseId = await invoke<string>('start_case', { name: 'output_pressure', onFrame: channel });
       await invoke('begin_case', { caseId }); return;
     }
-    for (const name of ['cpr_agent_owned', 'mixed_queries', 'split_1', 'split_2', 'split_3', 'two_cpr', 'alternate', 'origin', 'scroll_region', 'wrap_pending', 'wrap_max', 'untrusted_sequences', 'output_pressure', 'queue_overload', 'query_overload', 'token_attacks', 'expired', 'epoch', 'tokenless', 'input_paths']) {
+    for (const name of ['cpr_agent_owned', 'mixed_queries', 'split_1', 'split_2', 'split_3', 'two_cpr', 'alternate', 'origin', 'scroll_region', 'wrap_pending', 'wrap_max', 'untrusted_sequences', 'output_pressure', 'queue_overload', 'query_overload', 'token_attacks', 'expired', 'epoch', 'tokenless', 'leading_zero', 'osc_escape', 'dcs_escape', 'untracked_prefix', ...Array.from({ length: 14 }, (_, i) => `mixed_split_${i + 1}`), 'input_paths']) {
       try { await withDeadline(scenario(name)); outcomes.push({ name, passed: true }); }
       catch (error) { outcomes.push({ name, passed: false, error: String(error) }); }
     }

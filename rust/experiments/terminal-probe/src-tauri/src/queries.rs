@@ -31,7 +31,6 @@ enum Parser {
     Escape,
     Csi(Vec<u8>),
     String(bool),
-    StringEscape(bool),
 }
 pub struct Queries {
     session: String,
@@ -86,10 +85,14 @@ impl Queries {
                 Parser::Csi(mut params) => {
                     if (0x40..=0x7e).contains(&byte) {
                         params.push(byte);
-                        kind = match params.as_slice() {
+                        let first = params
+                            .iter()
+                            .position(|b| *b != b'0')
+                            .unwrap_or(params.len());
+                        kind = match &params[first..] {
                             b"5n" => Some(Kind::Dsr),
                             b"6n" => Some(Kind::Cpr),
-                            b"c" | b"0c" => Some(Kind::Da),
+                            b"c" => Some(Kind::Da),
                             _ => None,
                         };
                         Parser::Ground
@@ -104,18 +107,11 @@ impl Queries {
                 }
                 Parser::String(osc) => {
                     if byte == 0x1b {
-                        Parser::StringEscape(osc)
+                        // xterm terminates the string on ESC; the next byte is
+                        // parsed as an escape command, including a new CSI.
+                        Parser::Escape
                     } else if byte == 0x18 || byte == 0x1a || (osc && byte == 7) {
                         Parser::Ground
-                    } else {
-                        Parser::String(osc)
-                    }
-                }
-                Parser::StringEscape(osc) => {
-                    if byte == b'\\' || byte == 0x18 || byte == 0x1a || (osc && byte == 7) {
-                        Parser::Ground
-                    } else if byte == 0x1b {
-                        Parser::StringEscape(osc)
                     } else {
                         Parser::String(osc)
                     }
@@ -248,13 +244,33 @@ mod tests {
         assert!(tracker.transition(9_007_199_254_740_992).is_err());
     }
     #[test]
-    fn osc_and_dcs_do_not_mint_query_tokens() {
+    fn escape_interrupts_osc_and_dcs_like_xterm() {
         let mut tracker = Queries::new("s", 1);
         let qs = tracker
             .receive(1, b"\x1b]52;c;\x1b[6n\x07\x1bP\x1b[6n\x1b\\\x1b[5n", 0)
             .unwrap();
-        assert_eq!(qs.len(), 1);
-        assert_eq!(qs[0].kind, Kind::Dsr);
+        assert_eq!(qs.len(), 3);
+        assert_eq!(
+            qs.iter().map(|q| q.kind).collect::<Vec<_>>(),
+            [Kind::Cpr, Kind::Cpr, Kind::Dsr]
+        );
+        assert!(
+            tracker
+                .receive(2, b"\x1b]0;literal[6n\x07\x1bPqliteral[6n\x1b\\", 0)
+                .unwrap()
+                .is_empty()
+        );
+    }
+    #[test]
+    fn leading_zero_queries_follow_xterm_numeric_parameters() {
+        let mut tracker = Queries::new("s", 1);
+        let qs = tracker
+            .receive(1, b"\x1b[06n\x1b[005n\x1b[000c", 0)
+            .unwrap();
+        assert_eq!(
+            qs.iter().map(|q| q.kind).collect::<Vec<_>>(),
+            [Kind::Cpr, Kind::Dsr, Kind::Da]
+        );
     }
     #[test]
     fn thirty_third_query_is_rejected_without_growing_pending() {

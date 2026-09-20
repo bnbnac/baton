@@ -118,6 +118,10 @@ fn start_case(
         }
         "mixed_queries" => b"\x1b[2;3H\x1b[5n\x1b[6n\x1b[c\x1b[0c".to_vec(),
         "two_cpr" => b"\x1b[2;3H\x1b[6n\x1b[4;5H\x1b[6n".to_vec(),
+        "leading_zero" => b"\x1b[06n\x1b[2;3H\x1b[6n".to_vec(),
+        "osc_escape" => b"\x1b]0;\x1b[6n\x07\x1b[2;3H\x1b[6n".to_vec(),
+        "dcs_escape" => b"\x1bPq\x1b[6n\x1b\\\x1b[2;3H\x1b[6n".to_vec(),
+        "untracked_prefix" => [b"\x1b[".as_slice(), &[b'0'; 70], b"6n\x1b[2;3H\x1b[6n"].concat(),
         "alternate" => b"\x1b[?1049h\x1b[4;5H\x1b[6n\x1b[?1049l\x1b[6n".to_vec(),
         "origin" => b"\x1b[3;20r\x1b[?6h\x1b[2;3H\x1b[6n".to_vec(),
         "scroll_region" => b"\x1b[3;20r\x1b[20;4H\n\x1b[6n".to_vec(),
@@ -141,6 +145,15 @@ fn start_case(
             let split = name.as_bytes()[6] as usize - b'0' as usize;
             case.enqueue([b"\x1b[2;3H".as_slice(), &b"\x1b[6n"[..split]].concat());
             b"\x1b[6n"[split..].to_vec()
+        }
+        other if other.starts_with("mixed_split_") => {
+            let split: usize = other[12..].parse().map_err(|_| "invalid_split")?;
+            let bytes = b"\x1b[06n\x1b[2;3H\x1b[6n";
+            if split == 0 || split >= bytes.len() {
+                return Err("invalid_split".into());
+            }
+            case.enqueue(bytes[..split].to_vec());
+            bytes[split..].to_vec()
         }
         _ => return Err("unknown_case".into()),
     };
