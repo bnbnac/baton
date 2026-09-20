@@ -3,7 +3,7 @@ use russh::keys::{HashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect, client};
 use std::sync::Arc;
 
-struct HostVerifier {
+pub(crate) struct HostVerifier {
     expected: String,
 }
 
@@ -18,22 +18,31 @@ impl client::Handler for HostVerifier {
 }
 
 pub(crate) async fn run(input: ProbeInput) -> Result<(), &'static str> {
+    if input.case == "host-cancel" {
+        return Err("cancelled");
+    }
     let config = Arc::new(client::Config::default());
     let mut ssh = client::connect(
         config,
         (input.host, input.port),
         HostVerifier {
-            expected: input.host_fingerprint,
+            expected: input.host_fingerprint.clone(),
         },
     )
     .await
-    .map_err(|_| "transport_failed")?;
-    let auth = ssh
-        .authenticate_password(input.credential.username, input.credential.password)
-        .await
-        .map_err(|_| "auth_failed")?;
-    if !auth.success() {
-        return Err("auth_failed");
+    .map_err(|e| {
+        if matches!(e, russh::Error::UnknownKey) {
+            "host_rejected"
+        } else {
+            "transport_failed"
+        }
+    })?;
+    if input.case == "cancel-before-auth" {
+        crate::auth::cancel_barrier().await;
+    }
+    crate::auth::authenticate(&mut ssh, &input).await?;
+    if input.case == "cancel-before-shell" {
+        crate::auth::cancel_barrier().await;
     }
     let mut channel = ssh
         .channel_open_session()
