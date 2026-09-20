@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([switch]$InjectFailure, [string]$CleanupReport)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $suffix = [Guid]::NewGuid().ToString('N')
@@ -31,19 +31,26 @@ try {
         if (-not $ready) { Start-Sleep -Milliseconds 100 }
     }
     if (-not $ready) { throw 'fixture_not_ready' }
+    if ($InjectFailure) { throw 'injected_container-ready' }
     & node (Join-Path $repo 'rust/tests/openssh.test.mjs')
     if ($LASTEXITCODE -ne 0) { throw 'openssh_probe_failed' }
 } finally {
     $env:BATON_PROBE_SSH_PORT = $oldPort
     $env:BATON_PROBE_HOST_KEY = $oldKey
     if ($created) {
-        $identity = & docker inspect --format '{{.Id}} {{index .Config.Labels "baton.rust-probe"}}' $id
-        if ($LASTEXITCODE -ne 0 -or $identity.Trim() -ne "$id $suffix") { throw 'unsafe_fixture_cleanup' }
+        $identity = & docker inspect --format '{{.Id}} {{.Name}} {{index .Config.Labels "baton.rust-probe"}}' $id
+        if ($LASTEXITCODE -ne 0 -or $identity.Trim() -ne "$id /$name $suffix") { throw 'unsafe_fixture_cleanup' }
         & docker rm --force --volumes $id | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'fixture_cleanup_failed' }
     }
     if ($built) {
         & docker image rm $tag | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'image_cleanup_failed' }
+    }
+    if ($CleanupReport) {
+        $remaining = @(& docker ps --all --quiet --filter "label=baton.rust-probe=$suffix")
+        if ($LASTEXITCODE -ne 0) { throw 'cleanup_inspection_failed' }
+        @{ id = $id; name = $name; label = $suffix; remaining = $remaining.Count } | ConvertTo-Json | Set-Content -LiteralPath $CleanupReport
+        if ($remaining.Count -ne 0) { throw 'container_leaked' }
     }
 }

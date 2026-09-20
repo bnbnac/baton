@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { deadline, observe, stop } from './process.mjs';
 
-export async function runSshCase(name) {
+export async function runSshCase(name, options = {}) {
   const fixture = observe(fork(fileURLToPath(new URL('../fixtures/ssh.mjs', import.meta.url)), [name], { silent: true, windowsHide: true, execArgv: [] }));
+  options.onSpawn?.(fixture, 'fixture');
   const events = [];
   let probe;
   let stdout = '', stderr = '';
@@ -14,7 +15,9 @@ export async function runSshCase(name) {
       fixture.child.once('error', reject);
       fixture.closed.then(() => reject(new Error('fixture_exited_before_ready')));
     }), 5000, 'fixture_not_ready');
+    if (options.injectFailure === 'after-fixture-ready') throw new Error('injected_after-fixture-ready');
     probe = observe(spawn(fileURLToPath(new URL('../../target/debug/baton-ssh-probe.exe', import.meta.url)), [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }));
+    options.onSpawn?.(probe, 'ssh-probe');
     probe.child.stdout.on('data', b => { stdout += b; if (stdout.length > 65536) probe.child.kill(); });
     probe.child.stderr.on('data', b => { stderr += b; if (stderr.length > 65536) probe.child.kill(); });
     probe.child.stdin.on('error', () => {});
@@ -25,13 +28,19 @@ export async function runSshCase(name) {
       if (message.stage === 'cancel-barrier') probe.child.stdin.write('{"cancel":true}\n');
       if (message.stage === 'cancelled' && name === 'cancel-late-success') fixture.child.send({ type: 'release-auth' });
     });
-    fixture.child.on('message', m => { if (m.type === 'auth-held') probe.child.stdin.write('{"cancel":true}\n'); });
+    let rejectInjected;
+    const injected = new Promise((_, reject) => { rejectInjected = reject; });
+    fixture.child.on('message', m => {
+      if (m.type !== 'auth-held') return;
+      if (options.injectFailure === 'auth-held') rejectInjected(new Error('injected_auth-held'));
+      else probe.child.stdin.write('{"cancel":true}\n');
+    });
     probe.child.stdin.write(JSON.stringify({ case: name, host: '127.0.0.1', port: ready.port,
       hostFingerprint: name === 'host-reject' ? 'SHA256:WRONG' : ready.fingerprint,
       credential: { username: 'fixture', password: name === 'wrong-password' ? 'wrong' : 'fixture-only',
         privateKey: ready.privateKey ?? null, passphrase: name === 'wrong-key-passphrase' ? 'wrong' : 'fixture-key-pass',
         responses: ['123456', '654321'] } }) + '\n');
-    const exited = await deadline(probe.closed, 12000, 'probe_timeout');
+    const exited = await deadline(Promise.race([probe.closed, injected]), 12000, 'probe_timeout');
     if (exited.code !== 0) throw new Error('probe_process_failed');
     for (const secret of ['fixture-only', 'fixture-key-pass', '123456', '654321', 'PRIVATE KEY']) {
       if (stdout.includes(secret) || stderr.includes(secret)) throw new Error('credential_leaked');
@@ -50,7 +59,8 @@ export async function runSshCase(name) {
       authRounds: events.filter(x => x.type === 'auth-round').length, fixtureStopped: true, probeStopped: true,
     };
   } finally {
-    if (probe) await stop(probe);
-    await stop(fixture);
+    const cleanups = await Promise.allSettled([...(probe ? [stop(probe)] : []), stop(fixture)]);
+    const failed = cleanups.find(r => r.status === 'rejected');
+    if (failed) throw failed.reason;
   }
 }

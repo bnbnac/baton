@@ -7,14 +7,15 @@ export type Frame = { sessionId: string; epoch: number; seq: number; bytes: numb
 export class ProbeTerminal {
   readonly term = new Terminal({ cols: 120, rows: 32, scrollback: 1000, allowProposedApi: false });
   readonly fit = new FitAddon();
-  readonly replies: Promise<unknown>[] = [];
+  private readonly replies = new Set<Promise<void>>();
+  private failure: unknown;
   frame?: Frame;
   query?: Query;
   private lastSeq = 0;
   constructor(host: HTMLElement) {
     this.term.loadAddon(this.fit); this.term.open(host);
     this.term.onData(text => {
-      if (this.frame) this.replies.push(invoke('ordinary_input', { sessionId: this.frame.sessionId, epoch: this.frame.epoch, text }));
+      if (this.frame) this.track(invoke('ordinary_input', { sessionId: this.frame.sessionId, epoch: this.frame.epoch, text }));
     });
     this.term.parser.registerCsiHandler({ final: 'n' }, params => {
       if (params.length !== 1 || (params[0] !== 5 && params[0] !== 6)) return false;
@@ -27,7 +28,7 @@ export class ProbeTerminal {
   }
   private reply(kind: Query['kind']): void {
     if (!this.frame || this.query?.kind !== kind) return;
-    this.replies.push(invoke('protocol_reply', { reply: {
+    this.track(invoke('protocol_reply', { reply: {
       sessionId: this.frame.sessionId, epoch: this.frame.epoch, queryId: this.query.id, kind,
       ...(kind === 'cpr' ? { row: this.term.buffer.active.cursorY + 1, column: this.term.buffer.active.cursorX + 1 } : {})
     } }));
@@ -46,6 +47,13 @@ export class ProbeTerminal {
     if (start < frame.bytes.length) await new Promise<void>(resolve => this.term.write(new Uint8Array(frame.bytes.slice(start)), resolve));
     await this.flush();
   }
-  async flush(): Promise<void> { await Promise.all(this.replies.splice(0)); }
+  private track(request: Promise<unknown>): void {
+    const settled = request.then(() => { this.replies.delete(settled); }, error => { this.failure ??= error; this.replies.delete(settled); });
+    this.replies.add(settled);
+  }
+  async flush(): Promise<void> {
+    await Promise.all(this.replies);
+    if (this.failure) throw this.failure;
+  }
   dispose(): void { this.term.dispose(); }
 }

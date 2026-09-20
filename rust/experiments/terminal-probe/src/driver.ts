@@ -111,6 +111,17 @@ async function run(): Promise<void> {
   status.textContent = '자동 시험 실행 중';
   const outcomes: { name: string; passed: boolean; error?: string }[] = [];
   try {
+    if (await invoke<boolean>('probe_mode')) {
+      const channel = new Channel<Frame>();
+      channel.onmessage = () => void (async () => {
+        const r = await invoke<Result>('case_result', { caseId });
+        equal([r.queuedBytes, r.inFlightBytes], [1, 65536]);
+        await invoke('report', { outcomes: [{ name: 'output_wait_ready', passed: true }] });
+        // Deliberately withhold ack. Parent failure must close this live WebView.
+      })();
+      caseId = await invoke<string>('start_case', { name: 'output_pressure', onFrame: channel });
+      await invoke('begin_case', { caseId }); return;
+    }
     for (const name of ['cpr_agent_owned', 'mixed_queries', 'split_1', 'split_2', 'split_3', 'two_cpr', 'alternate', 'origin', 'scroll_region', 'wrap_pending', 'wrap_max', 'untrusted_sequences', 'output_pressure', 'queue_overload', 'query_overload', 'token_attacks', 'expired', 'epoch', 'tokenless', 'input_paths']) {
       try { await withDeadline(scenario(name)); outcomes.push({ name, passed: true }); }
       catch (error) { outcomes.push({ name, passed: false, error: String(error) }); }
@@ -130,3 +141,16 @@ for (const [selector, userOwned] of [['#user', true], ['#agent', false]] as cons
   });
 }
 void run();
+let reading = false;
+setInterval(() => {
+  if (running || reading || !caseId) return;
+  reading = true;
+  void (async () => {
+    try {
+      await terminal.flush();
+      const r = await invoke<Result>('case_result', { caseId });
+      document.querySelector('#metrics')!.textContent = `Rust 수신 ${r.ordinaryBytes} bytes · 거부 ${r.rejectedInputs}건 · 수신 hex ${r.ordinaryHex}`;
+    } catch { status.textContent = '수동 입력 검사 오류 · 자동 시험을 다시 실행하세요'; }
+    finally { reading = false; }
+  })();
+}, 250);

@@ -224,12 +224,22 @@ fn set_owner(
 #[tauri::command]
 fn report(outcomes: serde_json::Value) -> Result<(), String> {
     if let Ok(path) = std::env::var("BATON_TERMINAL_REPORT") {
+        let runtime = serde_json::json!({ "webviewVersion": tauri::webview_version().map_err(|_| "runtime_version_failed")? });
+        std::fs::write(
+            format!("{path}.runtime.json"),
+            serde_json::to_vec(&runtime).map_err(|_| "report_failed")?,
+        )
+        .map_err(|_| "report_failed")?;
         let bytes = serde_json::to_vec_pretty(&outcomes).map_err(|_| "report_failed")?;
         let temporary = format!("{path}.partial");
         std::fs::write(&temporary, bytes).map_err(|_| "report_failed")?;
         std::fs::rename(temporary, path).map_err(|_| "report_failed")?;
     }
     Ok(())
+}
+#[tauri::command]
+fn probe_mode() -> bool {
+    std::env::var("BATON_TERMINAL_INJECT").as_deref() == Ok("output-wait")
 }
 fn main() {
     tauri::Builder::default()
@@ -242,7 +252,8 @@ fn main() {
             ack,
             case_result,
             set_owner,
-            report
+            report,
+            probe_mode
         ])
         .run(tauri::generate_context!())
         .expect("terminal_probe_runtime_failed");
