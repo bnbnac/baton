@@ -14,7 +14,7 @@ pub(crate) struct Inputs {
     entries: BTreeMap<RequestId, Entry>,
     queued: VecDeque<RequestId>,
     active: Option<Active>,
-    sequence: SafeInt,
+    pub(crate) sequence: SafeInt,
 }
 impl Inputs {
     pub fn new() -> Self {

@@ -11,8 +11,51 @@ pub struct Session {
     inputs: crate::input::Inputs,
     pending_stream: Option<StreamId>,
     deadline: Option<Duration>,
+    public: Option<PublicOutput>,
+    ui: crate::ui_output::UiOutput,
 }
 impl Session {
+    pub fn receive(&mut self, bytes: &[u8]) -> Result<(), CoreError> {
+        if self.state == State::Closed {
+            return Err(CoreError::SessionClosed);
+        }
+        if let Err(error) = self.ui.push(bytes) {
+            self.close(if error == CoreError::CounterExhausted {
+                CloseReason::CounterExhausted
+            } else {
+                CloseReason::OutputOverload
+            });
+            return Err(error);
+        }
+        if self.state == State::AgentOwned {
+            if let Err(error) = self
+                .public
+                .as_mut()
+                .expect("AgentOwned has a public stream")
+                .receive(bytes)
+            {
+                self.close(CloseReason::CounterExhausted);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+    pub fn read(&self, call: &ReadCall) -> Result<ReadPage, CoreError> {
+        self.authorize(Principal::Agent(call.connection), call.epoch)?;
+        if self.stream != Some(call.stream) {
+            return Err(CoreError::StaleStream);
+        }
+        self.public
+            .as_ref()
+            .expect("AgentOwned has a public stream")
+            .read(call.cursor, call.limit)
+    }
+    pub fn next_ui_chunk(&mut self) -> Option<UiChunk> {
+        self.ui.next()
+    }
+    pub fn ack_ui(&mut self, seq: SafeInt) -> Result<(), CoreError> {
+        self.ui.ack(seq)
+    }
     pub fn submit(&mut self, call: InputCall) -> Result<InputResult, CoreError> {
         self.authorize(call.principal, call.epoch)?;
         self.inputs.submit(call.request_id, call.payload)
@@ -74,7 +117,10 @@ impl Session {
         Ok(())
     }
     pub fn usage(&self) -> Usage {
-        self.inputs.usage()
+        let mut usage = self.inputs.usage();
+        usage.public_units = self.public.as_ref().map_or(0, PublicOutput::units);
+        usage.ui_bytes = self.ui.bytes();
+        usage
     }
     pub fn new(id: SessionId) -> Self {
         Self {
@@ -87,6 +133,8 @@ impl Session {
             inputs: crate::input::Inputs::new(),
             pending_stream: None,
             deadline: None,
+            public: None,
+            ui: crate::ui_output::UiOutput::new(),
         }
     }
     pub fn id(&self) -> SessionId {
@@ -137,6 +185,7 @@ impl Session {
         Ok(())
     }
     fn begin_transition(&mut self, now: Duration) -> Result<(), CoreError> {
+        self.public = None;
         self.inputs.begin_epoch();
         self.deadline = now.checked_add(limits::TRANSITION_TIMEOUT);
         if self.deadline.is_none() {
@@ -154,6 +203,7 @@ impl Session {
             State::Transferring => {
                 self.state = State::AgentOwned;
                 self.stream = self.pending_stream.take();
+                self.public = Some(PublicOutput::new(limits::PUBLIC_UNITS).unwrap());
             }
             State::Reclaiming => self.state = State::UserOwned,
             _ => return,
@@ -196,6 +246,8 @@ impl Session {
         self.inputs.clear();
         self.deadline = None;
         self.pending_stream = None;
+        self.public = None;
+        self.ui.clear();
     }
     pub fn status_for(&self, connection: ConnectionId) -> Result<Snapshot, CoreError> {
         if self.assigned != Some(connection) {
@@ -218,6 +270,42 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_io_counter_overflow_closes_session_without_wrapping() {
+        for counter in ["input", "public", "ui"] {
+            let mut s = Session::new(SessionId::from_u128(1));
+            s.connected().unwrap();
+            let a = ConnectionId::from_u128(2);
+            s.handoff(a, StreamId::from_u128(3), Duration::ZERO)
+                .unwrap();
+            let max = SafeInt::new(SafeInt::MAX).unwrap();
+            match counter {
+                "input" => {
+                    s.inputs.sequence = max;
+                    s.submit(InputCall {
+                        principal: Principal::Agent(a),
+                        epoch: s.epoch,
+                        request_id: RequestId::from_u128(1),
+                        payload: b"x".to_vec(),
+                    })
+                    .unwrap();
+                    assert!(s.start_write().is_none());
+                }
+                "public" => {
+                    s.public.as_mut().unwrap().end = max;
+                    assert_eq!(s.receive(b"x"), Err(CoreError::CounterExhausted));
+                }
+                _ => {
+                    s.ui.sequence = max;
+                    assert_eq!(s.receive(b"x"), Err(CoreError::CounterExhausted));
+                }
+            }
+            assert_eq!(s.state, State::Closed, "{counter}");
+            assert_eq!(s.close_reason(), Some(CloseReason::CounterExhausted));
+            assert!(s.next_ui_chunk().is_none());
+            assert!(s.start_write().is_none());
+        }
+    }
     #[test]
     fn epoch_exhaustion_closes_instead_of_wrapping() {
         let mut s = Session::new(SessionId::from_u128(1));
