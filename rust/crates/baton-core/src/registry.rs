@@ -8,6 +8,9 @@ pub struct Registry {
     pub(crate) sessions: BTreeMap<SessionId, Session>,
 }
 impl Registry {
+    pub(crate) fn connection_ids(&self) -> Vec<ConnectionId> {
+        self.connections.iter().copied().collect()
+    }
     pub fn new(app: AppId) -> Self {
         Self {
             app,

@@ -17,6 +17,9 @@ pub(crate) struct Inputs {
     pub(crate) sequence: SafeInt,
 }
 impl Inputs {
+    pub(crate) fn next_request(&self) -> Option<RequestId> {
+        self.queued.front().copied()
+    }
     pub fn new() -> Self {
         Self {
             entries: BTreeMap::new(),

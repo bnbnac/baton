@@ -15,6 +15,12 @@ pub struct Session {
     ui: crate::ui_output::UiOutput,
 }
 impl Session {
+    pub(crate) fn transition_deadline(&self) -> Option<Duration> {
+        self.deadline
+    }
+    pub(crate) fn next_input(&self) -> Option<RequestId> {
+        self.inputs.next_request()
+    }
     pub fn receive(&mut self, bytes: &[u8]) -> Result<(), CoreError> {
         if self.state == State::Closed {
             return Err(CoreError::SessionClosed);
