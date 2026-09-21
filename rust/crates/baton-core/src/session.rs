@@ -8,8 +8,74 @@ pub struct Session {
     pub(crate) assigned: Option<ConnectionId>,
     pub(crate) stream: Option<StreamId>,
     pub(crate) close_reason: Option<CloseReason>,
+    inputs: crate::input::Inputs,
+    pending_stream: Option<StreamId>,
+    deadline: Option<Duration>,
 }
 impl Session {
+    pub fn submit(&mut self, call: InputCall) -> Result<InputResult, CoreError> {
+        self.authorize(call.principal, call.epoch)?;
+        self.inputs.submit(call.request_id, call.payload)
+    }
+    pub fn input_result(
+        &self,
+        principal: Principal,
+        epoch: SafeInt,
+        id: RequestId,
+    ) -> Result<InputResult, CoreError> {
+        self.authorize(principal, epoch)?;
+        self.inputs.result(id)
+    }
+    pub fn cancel_input(
+        &mut self,
+        principal: Principal,
+        epoch: SafeInt,
+        id: RequestId,
+    ) -> Result<InputResult, CoreError> {
+        self.authorize(principal, epoch)?;
+        self.inputs.cancel(id)
+    }
+    pub(crate) fn authorize(&self, principal: Principal, epoch: SafeInt) -> Result<(), CoreError> {
+        if let Principal::Agent(c) = principal {
+            if self.assigned != Some(c) {
+                return Err(CoreError::NotOwner);
+            }
+        }
+        if self.state == State::Closed {
+            return Err(CoreError::SessionClosed);
+        }
+        let allowed = matches!(
+            (principal, self.state),
+            (Principal::User, State::UserOwned) | (Principal::Agent(_), State::AgentOwned)
+        );
+        if !allowed {
+            return Err(CoreError::ControlUnavailable);
+        }
+        if self.epoch != epoch {
+            return Err(CoreError::StaleControlEpoch);
+        }
+        Ok(())
+    }
+    pub fn start_write(&mut self) -> Option<WriteOp> {
+        if !matches!(self.state, State::UserOwned | State::AgentOwned) {
+            return None;
+        }
+        match self.inputs.start() {
+            Ok(op) => op,
+            Err(_) => {
+                self.close(CloseReason::CounterExhausted);
+                None
+            }
+        }
+    }
+    pub fn finish_write(&mut self, id: SafeInt, result: WriteResult) -> Result<(), CoreError> {
+        self.inputs.finish(id, result)?;
+        self.finish_transition();
+        Ok(())
+    }
+    pub fn usage(&self) -> Usage {
+        self.inputs.usage()
+    }
     pub fn new(id: SessionId) -> Self {
         Self {
             id,
@@ -18,6 +84,9 @@ impl Session {
             assigned: None,
             stream: None,
             close_reason: None,
+            inputs: crate::input::Inputs::new(),
+            pending_stream: None,
+            deadline: None,
         }
     }
     pub fn id(&self) -> SessionId {
@@ -48,23 +117,49 @@ impl Session {
         &mut self,
         to: ConnectionId,
         stream: StreamId,
-        _now: Duration,
+        now: Duration,
     ) -> Result<(), CoreError> {
         self.require_transition(State::UserOwned)?;
         self.advance_epoch()?;
         self.state = State::Transferring;
         self.assigned = Some(to);
-        self.stream = Some(stream);
-        self.state = State::AgentOwned;
+        self.pending_stream = Some(stream);
+        self.stream = None;
+        self.begin_transition(now)?;
         Ok(())
     }
-    pub fn reclaim(&mut self, _now: Duration) -> Result<(), CoreError> {
+    pub fn reclaim(&mut self, now: Duration) -> Result<(), CoreError> {
         self.require_transition(State::AgentOwned)?;
         self.advance_epoch()?;
         self.state = State::Reclaiming;
         self.stream = None;
-        self.state = State::UserOwned;
+        self.begin_transition(now)?;
         Ok(())
+    }
+    fn begin_transition(&mut self, now: Duration) -> Result<(), CoreError> {
+        self.inputs.begin_epoch();
+        self.deadline = now.checked_add(limits::TRANSITION_TIMEOUT);
+        if self.deadline.is_none() {
+            self.close(CloseReason::CounterExhausted);
+            return Err(CoreError::CounterExhausted);
+        }
+        self.finish_transition();
+        Ok(())
+    }
+    fn finish_transition(&mut self) {
+        if self.inputs.active() {
+            return;
+        }
+        match self.state {
+            State::Transferring => {
+                self.state = State::AgentOwned;
+                self.stream = self.pending_stream.take();
+            }
+            State::Reclaiming => self.state = State::UserOwned,
+            _ => return,
+        }
+        self.inputs.clear();
+        self.deadline = None;
     }
     fn require_transition(&self, from: State) -> Result<(), CoreError> {
         match self.state {
@@ -86,7 +181,11 @@ impl Session {
             }
         }
     }
-    pub fn tick(&mut self, _now: Duration) {}
+    pub fn tick(&mut self, now: Duration) {
+        if self.deadline.is_some_and(|end| now >= end) {
+            self.close(CloseReason::TransitionTimeout);
+        }
+    }
     pub fn close(&mut self, reason: CloseReason) {
         if self.state == State::Closed {
             return;
@@ -94,6 +193,9 @@ impl Session {
         self.state = State::Closed;
         self.stream = None;
         self.close_reason = Some(reason);
+        self.inputs.clear();
+        self.deadline = None;
+        self.pending_stream = None;
     }
     pub fn status_for(&self, connection: ConnectionId) -> Result<Snapshot, CoreError> {
         if self.assigned != Some(connection) {
