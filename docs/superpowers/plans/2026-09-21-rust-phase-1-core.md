@@ -1,6 +1,6 @@
 # Baton Rust Phase 1 Session Core Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 실제 SSH 서버 없이 소유권 전환, 입력의 중복 방지, 공개 출력의 경계 및 비동기 경쟁을 검증할 수 있는 `baton-core`를 만든다.
 
@@ -10,7 +10,7 @@
 
 **Spec:** [구조 설계](../specs/2026-09-20-rust-transition-design.md), [검증 기준](../specs/2026-09-20-rust-verification-design.md), [단계 0 관측 결과](../../testing/rust-phase-0-report.md).
 
-상태: 2026-09-21 작성, 사용자 검토 대기. 구현 체크박스는 미수행이다. 기존 실행 방식 **Native**를 유지한다. 이 문서는 제품 구현에 착수한 기록이 아니다.
+상태: 사용자 승인 후 Native로 Tasks 1–7 구현·자동 검증 완료 (2026-09-27). 전체 변경 리뷰 결과는 단계 1 보고서에 기록한다. 실제 UI/SSH/MCP 통합 인수는 후속 단계다.
 
 ## Global Constraints
 
@@ -130,7 +130,7 @@ ID 발급은 코어의 권한 판단과 분리한다. 이번 시험의 `Ids`는 
 
 **Interfaces:** 위 공통 타입을 생성한다. `Registry::new(app: AppId) -> Registry`, `register_connection(id: ConnectionId) -> Result<(), CoreError>`, `remove_connection(id: ConnectionId) -> Result<(), CoreError>`. Task 2에서 세션 보관을 추가한다. `tests/support/fixture.rs`의 `Ids::new() -> Ids`, `app/connection/session/stream/request(&mut self) -> 해당 ID 타입`은 하나의 checked counter를 공유한다.
 
-- [ ] **Step 1: 정수 경계와 32/33번째 연결의 실패 시험을 작성한다.**
+- [x] **Step 1: 정수 경계와 32/33번째 연결의 실패 시험을 작성한다.**
 
 ```rust
 #[test]
@@ -146,8 +146,8 @@ fn safe_numbers_reject_before_rounding() {
 
 같은 파일에서 0 허용, u64::MAX 거부, 중복 등록의 슬롯 소비 0, 32개 등록 후 33번째 `Capacity`, 한 연결 제거 후 새 ID 등록 성공을 검사한다.
 
-- [ ] **Step 2: RED를 확인한다.** crate를 workspace에 등록하고 선언만 둔 뒤 `cargo +stable test --manifest-path rust/Cargo.toml -p baton-core --test numbers` 실행. 첫 실패가 새 타입/메서드 부재인지 확인한다. 네트워크·환경 오류는 RED 증거로 세지 않는다.
-- [ ] **Step 3: 정수와 용량 검사를 구현한다.** 기존 lockfile 버전의 `serde` derive, `serde_json`, Tokio `sync,time,rt,macros`를 사용한다. Tokio `test-util,rt-multi-thread`는 dev-dependency features로 추가한다. ID 생성에 네트워크·플랫폼·SDK 의존성을 추가하지 않는다.
+- [x] **Step 2: RED를 확인한다.** crate를 workspace에 등록하고 선언만 둔 뒤 `cargo +stable test --manifest-path rust/Cargo.toml -p baton-core --test numbers` 실행. 첫 실패가 새 타입/메서드 부재인지 확인한다. 네트워크·환경 오류는 RED 증거로 세지 않는다.
+- [x] **Step 3: 정수와 용량 검사를 구현한다.** 기존 lockfile 버전의 `serde` derive, `serde_json`, Tokio `sync,time,rt,macros`를 사용한다. Tokio `test-util,rt-multi-thread`는 dev-dependency features로 추가한다. ID 생성에 네트워크·플랫폼·SDK 의존성을 추가하지 않는다.
 
 ```rust
 pub fn checked_next(self) -> Result<Self, CoreError> {
@@ -158,8 +158,8 @@ pub fn checked_next(self) -> Result<Self, CoreError> {
 
 상한 검사는 삽입 전에 수행한다. 예상된 capacity 오류가 기존 연결을 제거하지 않아야 한다. 의존성 갱신 diff가 기존 probe 버전을 올리면 원인을 해결하고 해당 갱신을 제외한다.
 
-- [ ] **Step 4: GREEN을 확인한다.** 위 시험을 `--locked`로 실행하고 `cargo +stable tree --manifest-path rust/Cargo.toml -p baton-core`에서 SDK 의존성 부재를 확인한다.
-- [ ] **Step 5: 커밋한다.** `git add rust/Cargo.toml rust/Cargo.lock rust/crates/baton-core` 후 `git commit -m "feat: add bounded Rust core identities and numbers"`.
+- [x] **Step 4: GREEN을 확인한다.** 위 시험을 `--locked`로 실행하고 `cargo +stable tree --manifest-path rust/Cargo.toml -p baton-core`에서 SDK 의존성 부재를 확인한다.
+- [x] **Step 5: 커밋한다.** `git add rust/Cargo.toml rust/Cargo.lock rust/crates/baton-core` 후 `git commit -m "feat: add bounded Rust core identities and numbers"`.
 
 ## Task 2: 세션 상태·배정·전환의 직렬 경계
 
@@ -194,7 +194,7 @@ impl Registry {
 
 Registry가 연결 존재 검사를 담당한다. 직접 Session 사용은 신뢰된 앱 내부/시험용이며 IPC에 노출하지 않는다. `forget_closed`는 사용자에 의한 닫힌 카드 제거에 대응하며 Closed 이외에는 `Busy`; 등록 세션 16개 한도는 아직 제거되지 않은 닫힌 카드도 포함한다. 이 정책을 제품 UI에서 명시한다.
 
-- [ ] **Step 1: 전달→회수→다른 연결 재전달의 시험을 작성한다.**
+- [x] **Step 1: 전달→회수→다른 연결 재전달의 시험을 작성한다.**
 
 ```rust
 #[test]
@@ -217,8 +217,8 @@ fn reassignment_revokes_old_owner_and_changes_stream() {
 
 추가 시험: A의 3셸/B의 1셸 목록 격리, 16/17 경계, Connecting 실패 후 close, Closed 재연결/전달 거부, 중복 close 멱등성, epoch 최대에서 전환 시 Closed. 최대 epoch 주입은 `session.rs` 내부 `#[cfg(test)]` 시험으로만 한다.
 
-- [ ] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test ownership`.
-- [ ] **Step 3: 전환을 한 메서드 경계에서 직렬 처리한다.**
+- [x] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test ownership`.
+- [x] **Step 3: 전환을 한 메서드 경계에서 직렬 처리한다.**
 
 ```text
 handoff accepted: epoch++ → Transferring → 이전 I/O 무효화 → 배정 교체
@@ -232,8 +232,8 @@ active write exists: deadline=now+5초, 완료 또는 timeout까지 전환 상�
 
 `disconnect(A)` 사건: AgentOwned(A)는 close, UserOwned(assigned A)는 배정만 해제, Reclaiming(from A)는 사용자 회수 장벽을 계속 진행하고 이전 배정만 해제, Transferring(to A)는 close. 전환 전에 A 단절을 처리해 이미 Closed라면 회수가 살리지 못한다. 다른 연결 세션에는 영향이 없다. 앱 close는 모든 상태에서 종료 요청을 받는다.
 
-- [ ] **Step 4: GREEN 및 사건 순서 검증.** 동일 시험 명령을 실행한다. `reclaim→disconnect`와 `disconnect→reclaim` 양쪽을 별도 assertion으로 고정하고 종료된 셸·보존된 셸 목록을 직접 비교한다.
-- [ ] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: model session ownership and control transitions"`.
+- [x] **Step 4: GREEN 및 사건 순서 검증.** 동일 시험 명령을 실행한다. `reclaim→disconnect`와 `disconnect→reclaim` 양쪽을 별도 assertion으로 고정하고 종료된 셸·보존된 셸 목록을 직접 비교한다.
+- [x] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: model session ownership and control transitions"`.
 
 ## Task 3: 입력 큐·중복 방지·전송 결과
 
@@ -241,7 +241,7 @@ active write exists: deadline=now+5초, 완료 또는 timeout까지 전환 상�
 
 **Interfaces:** `Session::submit(&mut self, call: InputCall) -> Result<InputResult, CoreError>`, `input_result(&self, principal: Principal, epoch: SafeInt, id: RequestId) -> Result<InputResult, CoreError>`, `start_write(&mut self) -> Option<WriteOp>`, `finish_write(&mut self, id: SafeInt, result: WriteResult) -> Result<(), CoreError>`, `cancel_input(&mut self, principal: Principal, epoch: SafeInt, id: RequestId) -> Result<InputResult, CoreError>`, `usage(&self) -> Usage`. `WriteOp.id`는 세션 수명 전체에서 증가하며 epoch 변경으로 재사용하지 않는다. Usage의 출력 카운터는 Task 4에서 연결한다.
 
-- [ ] **Step 1: 대기 입력은 무효화되고 이미 시작한 입력만 결과를 기다리는 시험을 작성한다.** `tests/support/fixture.rs`에 `agent_session() -> (Session, ConnectionId, SafeInt, StreamId)`와 `agent_call(connection, epoch, id, bytes: &[u8]) -> InputCall`을 정의한다. 전자는 새 연결 ID·세션·stream으로 연결/전달을 완료한다. 후자는 전달받은 값만 복사한다.
+- [x] **Step 1: 대기 입력은 무효화되고 이미 시작한 입력만 결과를 기다리는 시험을 작성한다.** `tests/support/fixture.rs`에 `agent_session() -> (Session, ConnectionId, SafeInt, StreamId)`와 `agent_call(connection, epoch, id, bytes: &[u8]) -> InputCall`을 정의한다. 전자는 새 연결 ID·세션·stream으로 연결/전달을 완료한다. 후자는 전달받은 값만 복사한다.
 
 ```rust
 #[test]
@@ -266,8 +266,8 @@ fn reclaim_invalidates_unstarted_input() {
 
 input 내부 단위 시험에서는 two의 저장 결과가 InputInvalidated인지도 확인한다. 공개 API에서는 이전 권한으로 저장 결과를 조회할 수 없다.
 
-- [ ] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test input`.
-- [ ] **Step 3: 검증·예약·큐 추가·쓰기 시작·완료를 분리해 구현한다.**
+- [x] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test input`.
+- [x] **Step 3: 검증·예약·큐 추가·쓰기 시작·완료를 분리해 구현한다.**
 
 ```text
 submit: 권한/epoch → payload 길이 → 기존 request_id 비교 → queue/history 용량 → 등록
@@ -281,7 +281,7 @@ finish_write: 현재 active.id 일치 → 결과 저장 → active 제거 → �
 
 중복 호출당 waiter Vec를 추가하지 않는다. 상태 슬롯 하나를 조회하게 하고 대기는 Task 5의 연결별 요청 상한 안에서 처리한다. 취소된 대기 항목은 `InputInvalidated`; 시작한 항목은 `Pending`을 유지하고 실제 종료 결과만 저장한다. 5초 전환 timeout에서는 active를 `Uncertain`으로 끝내고 close; 늦은 completion은 `InvalidCompletion`, 쓰기 재시작 0이다. 중복 completion도 거부한다.
 
-- [ ] **Step 4: GREEN과 경계 표를 검사한다.**
+- [x] **Step 4: GREEN과 경계 표를 검사한다.**
 
 | 시험 | 반드시 관측할 값 |
 |---|---|
@@ -295,7 +295,7 @@ finish_write: 현재 active.id 일치 → 결과 저장 → active 제거 → �
 
 거부로 인해 새 payload 복사가 발생하지 않는지 내부 슬롯/보관 바이트 카운터로 확인한다. API 진입 전 IPC 파서 메모리는 단계 3에서 검사한다.
 
-- [ ] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: serialize input delivery and invalidate stale writes"`.
+- [x] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: serialize input delivery and invalidate stale writes"`.
 
 ## Task 4: 공개 decoder·UTF-16 ring·UI 바이트 예산
 
@@ -317,7 +317,7 @@ impl Session {
 }
 ```
 
-- [ ] **Step 1: 모든 분할 위치에서 같은 문자열과 cursor가 나오는 시험을 작성한다.**
+- [x] **Step 1: 모든 분할 위치에서 같은 문자열과 cursor가 나오는 시험을 작성한다.**
 
 ```rust
 #[test]
@@ -335,8 +335,8 @@ fn all_utf8_splits_keep_utf16_cursor() {
 }
 ```
 
-- [ ] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test output`.
-- [ ] **Step 3: decoder와 ring을 구현하고 상태 수신 경로에 연결한다.**
+- [x] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test output`.
+- [x] **Step 3: decoder와 ring을 구현하고 상태 수신 경로에 연결한다.**
 
 ```text
 증분 decoder: str::from_utf8에서 유효 prefix 처리
@@ -353,7 +353,7 @@ chunk 경계가 잘못된 UTF-8의 replacement 개수를 바꾸지 않도록 car
 
 UI bytes는 최대 64KiB chunk로 나누며 보관+in-flight 총 1MiB, 동시에 미확인 64KiB 이하만 넘긴다. ack는 전송된 연속 선두 seq만 수락하고 재생/미래 ack는 `InvalidAck`다. 분할에 필요한 총 seq와 예산을 수신 전에 확인한다. 초과 시 해당 세션을 `OutputOverload`/`CounterExhausted`로 닫고 정상 입력을 이어가지 않는다.
 
-- [ ] **Step 4: GREEN과 공개 경계 시험을 실행한다.**
+- [x] **Step 4: GREEN과 공개 경계 시험을 실행한다.**
 
 | 시험 | 관측 |
 |---|---|
@@ -367,7 +367,7 @@ UI bytes는 최대 64KiB chunk로 나누며 보관+in-flight 총 1MiB, 동시에
 
 JSON frame 전체 제한은 단계 3에서 최악의 escape expansion과 envelope를 함께 검사한다. 이번 단계의 문자열 상한을 wire 제한 통과라고 표시하지 않는다.
 
-- [ ] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: separate public output from bounded UI delivery"`.
+- [x] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: separate public output from bounded UI delivery"`.
 
 ## Task 5: 실제 async 실행기와 전환·읽기 경쟁
 
@@ -401,7 +401,7 @@ read future drop은 대기를 취소한다. 입력 수락 응답 전 future drop
 
 `RaceFixture::wait_state(&self, state: State)` (async)는 상태 watch 알림과 snapshot 재검사로 기다린다. 시간 전진이나 반복 sleep을 상태 완료 증거로 쓰지 않는다.
 
-- [ ] **Step 1: transport가 실제로 관측한 바이트를 확인하는 async 시험을 작성한다.**
+- [x] **Step 1: transport가 실제로 관측한 바이트를 확인하는 async 시험을 작성한다.**
 
 ```rust
 #[tokio::test(start_paused = true)]
@@ -419,8 +419,8 @@ async fn queued_write_never_reaches_transport_after_reclaim() {
 }
 ```
 
-- [ ] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test races`.
-- [ ] **Step 3: 유한 실행기와 우선 제어 경로를 구현한다.**
+- [x] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test races`.
+- [x] **Step 3: 유한 실행기와 우선 제어 경로를 구현한다.**
 
 ```text
 session actor: ordinary mailbox 32, receive mailbox 1 × 최대64KiB
@@ -441,7 +441,7 @@ read 순서: 권한 검사+snapshot → 변경 version 등록 → 재검사 → 
 
 close는 상태와 I/O를 즉시 차단하고 transport close를 요청한다. active 쓰기가 정해진 정리 시간 내 끝나지 않으면 future/transport를 drop하고 Uncertain으로 기록한다. close future까지 같은 5초 절대 deadline을 공유하여 합계 10초가 되지 않게 한다. drop이 실제 SSH socket 정리로 이어지는지는 단계 2의 transport 시험에서 입증한다.
 
-- [ ] **Step 4: GREEN과 다음 장벽들을 고정한다.** sleep으로 타이밍을 추정하지 않는다. 예약 전/예약 후 첫 poll 전/첫 poll 후/완료 직전은 시험용 Notify로 멈춘다. 가상 시간은 deadline에만 사용한다.
+- [x] **Step 4: GREEN과 다음 장벽들을 고정한다.** sleep으로 타이밍을 추정하지 않는다. 예약 전/예약 후 첫 poll 전/첫 poll 후/완료 직전은 시험용 Notify로 멈춘다. 가상 시간은 deadline에만 사용한다.
 
 | 고정 경쟁 | 결과 |
 |---|---|
@@ -457,7 +457,7 @@ close는 상태와 I/O를 즉시 차단하고 transport close를 요청한다. a
 
 가상 시계 시험 외에 다중 스레드 Tokio runtime에서 같은 gate 계약을 장벽으로 검사한다. wall-clock sleep을 assertion 전제에 넣지 않는다. fixture 내부 audit mutex를 await 동안 잡지 않는다.
 
-- [ ] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: drive bounded session actors with cancellable waits"`.
+- [x] **Step 5: 커밋한다.** `git add rust/crates/baton-core` 후 `git commit -m "feat: drive bounded session actors with cancellable waits"`.
 
 ## Task 6: 독립 참조 모델과 1,000개 시드
 
@@ -488,7 +488,7 @@ struct Observation {
 
 `Tick(Duration)`은 절대 경과 시각이며 생성기는 시간을 감소시키지 않는다. Open은 Connecting 생성, Connected는 연결 완료, CloseSession/CloseApp은 각각 User/AppExit 사유를 쓴다. 상태 없는 대상은 UnknownId로 정규화한다. UI 소비가 없는 모델에서는 보관 상한 도달 시 종료를 그대로 비교한다. UI ack 세부 순서는 Task 4 전용 시험이 담당한다.
 
-- [ ] **Step 1: 독립 오라클 비교 시험을 작성한다.**
+- [x] **Step 1: 독립 오라클 비교 시험을 작성한다.**
 
 ```rust
 #[test]
@@ -505,8 +505,8 @@ fn model_1000_seeds_200_events() {
 
 `Reference::new() -> Reference`, `System::new() -> System`은 빈 앱을 만든다. 실패 시 위 루프를 감싸 최초 불일치 prefix를 추출하고 `minimize`가 연속 구간 삭제로도 실패하는 가장 작은 재현열을 수렴할 때까지 줄인다. 실패 출력에는 합성 seed/event만 쓴다.
 
-- [ ] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test model`.
-- [ ] **Step 3: 오라클과 생성기를 구현한다.** 참조는 단순 map/list·완성 Unicode 표식으로 규칙을 표현하며 제품의 권한 함수·decoder·큐를 import하지 않는다. decoder 바이트 단위 검증은 Task 4가 담당한다. 생성기는 아래 PRNG를 사용하고 유효/무효 owner·epoch·stream, 반복 request_id, 닫힌 세션, 5초 전후를 선택한다.
+- [x] **Step 2: RED 확인.** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test model`.
+- [x] **Step 3: 오라클과 생성기를 구현한다.** 참조는 단순 map/list·완성 Unicode 표식으로 규칙을 표현하며 제품의 권한 함수·decoder·큐를 import하지 않는다. decoder 바이트 단위 검증은 Task 4가 담당한다. 생성기는 아래 PRNG를 사용하고 유효/무효 owner·epoch·stream, 반복 request_id, 닫힌 세션, 5초 전후를 선택한다.
 
 ```rust
 fn next(seed: &mut u64) -> u64 {
@@ -520,8 +520,8 @@ fn next(seed: &mut u64) -> u64 {
 
 이 wrapping은 시험 난수 전용이다. 제품 epoch/cursor에 적용하지 않는다. 이벤트가 존재하지 않는 ID를 지목하는 경우도 결정적으로 오류 비교한다. 생성 분포를 카운터로 기록하고 각 필수 사건·성공/거부·전환 중 사건이 최소 1회 등장하지 않으면 시험 실패다. 항상 single input owner, stale 효과 0, foreign 읽기 0, duplicate 효과 ≤1, Closed 이후 시작 0, 상한을 검사한다. resize 이벤트는 구현 범위인 단계 2에서 모델을 확장하며 이번 결과에 포함하지 않는다.
 
-- [ ] **Step 4: GREEN과 축소기 자체 시험.** 고의적으로 Event 목록 중 특정 두 사건의 순서만 실패하는 순수 predicate를 넣어 최소 재현에 그 두 사건이 남는지 검사한다. 모형 시험과 Task 5 실제 async 시험을 둘 다 실행한다. 모델만 통과하면 actor 통과로 표시하지 않는다.
-- [ ] **Step 5: 커밋한다.** `git add rust/crates/baton-core/tests` 후 `git commit -m "test: check core behavior against an independent model"`.
+- [x] **Step 4: GREEN과 축소기 자체 시험.** 고의적으로 Event 목록 중 특정 두 사건의 순서만 실패하는 순수 predicate를 넣어 최소 재현에 그 두 사건이 남는지 검사한다. 모형 시험과 Task 5 실제 async 시험을 둘 다 실행한다. 모델만 통과하면 actor 통과로 표시하지 않는다.
+- [x] **Step 5: 커밋한다.** `git add rust/crates/baton-core/tests` 후 `git commit -m "test: check core behavior against an independent model"`.
 
 ## Task 7: 변이 검출·실행 runner·단계 보고서
 
@@ -529,8 +529,8 @@ fn next(seed: &mut u64) -> u64 {
 
 **Interfaces:** `verify-phase-1.ps1 [-Mutation]`는 외부 명령 실패 즉시 종료 코드 1, 전체 필수 시험 통과 시 0. `test-core-mutants.ps1`은 제품 원본을 수정하지 않고 각 변이의 컴파일 성공과 관련 시험 실패를 확인한다. 실행 결과는 `artifacts/rust-phase-1/summary.json`에 commit/dirty/source hash, Rust/OS, 명령·기간·pass/fail/skip, seed 수, 변이 판정만 기록한다.
 
-- [ ] **Step 1: runner의 실패를 실제로 유발한다.** 필수 시험 바이너리 목록 `numbers,ownership,input,output,races,model` 중 하나를 runner 설정에서 제외한 격리 사본으로 실행하여 누락 실패를 확인한다. 비정상 종료하는 cargo 대역 실행기로 외부 실패가 이후 명령에 덮이지 않는지 검사한다. 대역 경로는 시험용 매개변수로만 주입하고 일반 runner에는 사용하지 않는다.
-- [ ] **Step 2: 상한·모형·async 검사 명령을 연결한다.** 첫 버전확인에서 Rust 1.88.0을 확인한다. 설치된 이름이 stable인 현 환경은 `+stable`을 쓴다.
+- [x] **Step 1: runner의 실패를 실제로 유발한다.** 필수 시험 바이너리 목록 `numbers,ownership,input,output,races,model` 중 하나를 runner 설정에서 제외한 격리 사본으로 실행하여 누락 실패를 확인한다. 비정상 종료하는 cargo 대역 실행기로 외부 실패가 이후 명령에 덮이지 않는지 검사한다. 대역 경로는 시험용 매개변수로만 주입하고 일반 runner에는 사용하지 않는다.
+- [x] **Step 2: 상한·모형·async 검사 명령을 연결한다.** 첫 버전확인에서 Rust 1.88.0을 확인한다. 설치된 이름이 stable인 현 환경은 `+stable`을 쓴다.
 
 ```powershell
 cargo +stable fmt --manifest-path rust/Cargo.toml -p baton-core -- --check
@@ -541,7 +541,7 @@ pwsh -File rust/scripts/test-core-mutants.ps1
 
 runner는 매 명령의 `$LASTEXITCODE`를 즉시 검사한다. `--list` 결과에서 필수 바이너리와 예상 핵심 test 이름·ignored 0을 확인한다. 실행 횟수를 소스에 하드코딩한 성공 수로 보고하지 않는다. core만 바뀐 이번 단계에서 WebView·SSH 73개 전체를 매번 재실행하지 않는다. 공유 lockfile의 probe 의존성이 달라졌다면 해당 경계 검증을 추가한다.
 
-- [ ] **Step 3: 네 변이를 격리 사본에 하나씩 적용한다.**
+- [x] **Step 3: 네 변이를 격리 사본에 하나씩 적용한다.**
 
 | 변이 | 바꾸는 의미 | 반드시 실패할 시험 |
 |---|---|---|
@@ -554,11 +554,11 @@ runner는 매 명령의 `$LASTEXITCODE`를 즉시 검사한다. `--list` 결과�
 
 사본은 저장소의 `artifacts/rust-phase-1/mutants/<고유 실행 ID>/`에만 만든다. 삭제 전 resolved absolute path가 이 실행 디렉터리 하위인지 검사하고 PowerShell `Remove-Item -LiteralPath`를 사용한다. 원본·사용자 작업 트리·다른 실행의 디렉터리를 수정/삭제하지 않는다. 제품에 변이 활성화 feature나 우회 플래그를 남기지 않는다.
 
-- [ ] **Step 4: 결과를 기록한다.**
+- [x] **Step 4: 결과를 기록한다.**
 
 보고서에 다음 표를 실제 실행 값으로 채운다: `ID / 담당 시험 / 관측 효과 / 명령 / commit·source hash / 통과·실패·skip / 제한`. 결과가 없으면 미실행으로 표시하고 단계 통과로 쓰지 않는다. 단계 0의 물리 UI와 renderer 정리 미확인을 단계 2 할 일로 다시 링크한다. 최대 메모리는 입력 이력 payload만 셸당 64MiB, 16셸 1GiB가 될 수 있음을 계산해 기록하고 metadata/UI/public overhead를 구분한다. 실제 부하 측정 전 사용 메모리로 단정하지 않는다. 더 작은 정책으로 바꾸려면 별도 근거와 설계 갱신을 제안한다.
 
-- [ ] **Step 5: 커밋 및 전체 변경 리뷰 준비.** `git add rust/scripts/verify-phase-1.ps1 rust/scripts/test-core-mutants.ps1 docs/testing/rust-phase-1-report.md` 및 이번 Task에서 실제 변경한 시험 파일만 추가한 뒤 `git commit -m "test: gate Rust core contracts with mutation checks"`. Native 절차에 따라 구현 완료 뒤 한 번의 별도 전체 리뷰를 수행한다. 리뷰 지적은 재현 시험을 먼저 만들고 수정한다. 릴리스 인수 완료로 보고하지 않는다.
+- [x] **Step 5: 커밋 및 전체 변경 리뷰 준비.** `git add rust/scripts/verify-phase-1.ps1 rust/scripts/test-core-mutants.ps1 docs/testing/rust-phase-1-report.md` 및 이번 Task에서 실제 변경한 시험 파일만 추가한 뒤 `git commit -m "test: gate Rust core contracts with mutation checks"`. Native 절차에 따라 구현 완료 뒤 한 번의 별도 전체 리뷰를 수행한다. 리뷰 지적은 재현 시험을 먼저 만들고 수정한다. 릴리스 인수 완료로 보고하지 않는다.
 
 ## 계획 자체 검토와 완료 판정
 
