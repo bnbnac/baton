@@ -74,7 +74,7 @@ rust-version = "1.88"
             'private' {
                 # Keep a private-created public buffer across handoff: a data leak,
                 # not an unrelated missing-buffer panic after deleting one guard.
-                Replace-Once $session 'if self.state == State::AgentOwned {' '{ self.public.get_or_insert_with(|| PublicOutput::new(limits::PUBLIC_UNITS).unwrap());'
+                Replace-Once $session 'if self.state == State::AgentOwned && public_epoch == Some(self.epoch) {' '{ self.public.get_or_insert_with(|| PublicOutput::new(limits::PUBLIC_UNITS).unwrap());'
                 Replace-Once $session "fn begin_transition(&mut self, now: Duration) -> Result<(), CoreError> {`n        self.public = None;" 'fn begin_transition(&mut self, now: Duration) -> Result<(), CoreError> {'
                 Replace-Once $session 'self.public = Some(PublicOutput::new(limits::PUBLIC_UNITS).unwrap());' 'self.public.get_or_insert_with(|| PublicOutput::new(limits::PUBLIC_UNITS).unwrap());'
             }

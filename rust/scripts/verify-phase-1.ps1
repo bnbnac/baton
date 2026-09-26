@@ -40,7 +40,7 @@ try {
     foreach ($suite in $required) {
         if ($listing -notmatch "Running tests[/\\]$suite\.rs") { throw "required_suite_missing:$suite" }
     }
-    $keyTests = @('safe_numbers_reject_before_rounding','connection_sees_only_assigned_sessions','foreign_and_stale_inputs_and_results_have_zero_effect','duplicate_input_has_one_effect_and_conflict_has_none','public_history_never_comes_from_ui_and_reemitted_private_text_is_public','accepted_control_before_first_poll_prevents_all_writes','read_rechecks_after_wakeup_before_return','model_1000_seeds_200_events')
+    $keyTests = @('safe_numbers_reject_before_rounding','connection_sees_only_assigned_sessions','foreign_and_stale_inputs_and_results_have_zero_effect','duplicate_input_has_one_effect_and_conflict_has_none','public_history_never_comes_from_ui_and_reemitted_private_text_is_public','accepted_control_before_first_poll_prevents_all_writes','read_rechecks_after_wakeup_before_return','queued_receive_never_crosses_into_a_later_public_epoch','runtime::tests::shutdown_joins_attach_admitted_before_close_gate','model_1000_seeds_200_events')
     foreach ($test in $keyTests) {
         if ($listing -notmatch "(?m)^${test}: test\s*$") { throw "required_test_missing:$test" }
     }

@@ -31,6 +31,21 @@ struct Shared {
     links: Mutex<BTreeMap<SessionId, Arc<Link>>>,
     origin: Instant,
     stopping: AtomicBool,
+    #[cfg(test)]
+    lifecycle_hooks: LifecycleHooks,
+}
+#[cfg(test)]
+#[derive(Default)]
+struct LifecycleHooks {
+    before_attach_insert: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    before_shutdown_close: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+#[cfg(test)]
+fn run_hook(hook: &Mutex<Option<Arc<dyn Fn() + Send + Sync>>>) {
+    let callback = lock(hook).clone();
+    if let Some(callback) = callback {
+        callback();
+    }
 }
 struct Link {
     id: SessionId,
@@ -54,6 +69,7 @@ struct Submit {
 }
 struct Receive {
     bytes: Vec<u8>,
+    public_epoch: Option<SafeInt>,
     reply: oneshot::Sender<Result<(), CoreError>>,
 }
 struct CancelOnDrop {
@@ -101,6 +117,8 @@ impl Runtime {
                 links: Mutex::new(BTreeMap::new()),
                 origin: Instant::now(),
                 stopping: AtomicBool::new(false),
+                #[cfg(test)]
+                lifecycle_hooks: LifecycleHooks::default(),
             }),
         }
     }
@@ -113,10 +131,15 @@ impl Runtime {
             return Err(CoreError::SessionClosed);
         }
         let registry = lock(&self.shared.registry);
+        if self.shared.stopping.load(Ordering::Acquire) {
+            return Err(CoreError::SessionClosed);
+        }
         let session = registry.session(id)?;
         if session.snapshot().state == State::Closed {
             return Err(CoreError::SessionClosed);
         }
+        #[cfg(test)]
+        run_hook(&self.shared.lifecycle_hooks.before_attach_insert);
         let mut links = lock(&self.shared.links);
         if links.contains_key(&id) {
             return Err(CoreError::Busy);
@@ -161,14 +184,22 @@ impl Runtime {
         }
     }
     pub async fn shutdown(&self) {
-        self.shared.stopping.store(true, Ordering::Release);
         let deadline = Instant::now() + limits::TRANSITION_TIMEOUT;
-        let links: Vec<_> = lock(&self.shared.links).values().cloned().collect();
-        for link in &links {
-            let mut end = lock(&link.close_deadline);
-            *end = Some(end.map_or(deadline, |old| old.min(deadline)));
-        }
-        lock(&self.shared.registry).close_all(CloseReason::AppExit);
+        #[cfg(test)]
+        run_hook(&self.shared.lifecycle_hooks.before_shutdown_close);
+        // Attachment and shutdown share admission and link-registration ordering.
+        // Every admitted transport receives this deadline and is joined below.
+        let links: Vec<_> = {
+            let mut registry = lock(&self.shared.registry);
+            self.shared.stopping.store(true, Ordering::Release);
+            let links: Vec<_> = lock(&self.shared.links).values().cloned().collect();
+            for link in &links {
+                let mut end = lock(&link.close_deadline);
+                *end = Some(end.map_or(deadline, |old| old.min(deadline)));
+            }
+            registry.close_all(CloseReason::AppExit);
+            links
+        };
         self.publish_all();
         let tasks: Vec<_> = links
             .iter()
@@ -182,6 +213,7 @@ impl Runtime {
         }
     }
 }
+
 impl Drop for Runtime {
     fn drop(&mut self) {
         self.shared.stopping.store(true, Ordering::Release);
@@ -314,11 +346,12 @@ impl SessionHandle {
         self.link.wake.notify_one();
     }
     pub async fn receive(&self, bytes: Vec<u8>) -> Result<(), CoreError> {
-        self.with_session(|s| {
+        let public_epoch = self.with_session(|s| {
             if s.snapshot().state == State::Closed {
                 Err(CoreError::SessionClosed)
             } else {
-                Ok(())
+                let snapshot = s.snapshot();
+                Ok((snapshot.state == State::AgentOwned).then_some(snapshot.epoch))
             }
         })?;
         if bytes.len() > limits::UI_CHUNK {
@@ -327,7 +360,11 @@ impl SessionHandle {
         let (reply, rx) = oneshot::channel();
         self.link
             .incoming
-            .try_send(Receive { bytes, reply })
+            .try_send(Receive {
+                bytes,
+                public_epoch,
+                reply,
+            })
             .map_err(|e| match e {
                 mpsc::error::TrySendError::Full(_) => CoreError::Busy,
                 mpsc::error::TrySendError::Closed(_) => CoreError::SessionClosed,
@@ -371,5 +408,65 @@ impl SessionHandle {
                 result=changed.changed()=> { if result.is_err() { return Err(CoreError::SessionClosed); } }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Barrier, atomic::AtomicUsize};
+
+    struct PendingClose(Arc<AtomicUsize>);
+    impl Transport for PendingClose {
+        fn write<'a>(&'a mut self, _: &'a [u8]) -> IoFuture<'a, WriteResult> {
+            Box::pin(std::future::pending())
+        }
+        fn close(&mut self) -> IoFuture<'_, ()> {
+            Box::pin(std::future::pending())
+        }
+    }
+    impl Drop for PendingClose {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn shutdown_joins_attach_admitted_before_close_gate() {
+        let id = SessionId::from_u128(1);
+        let mut registry = Registry::new(AppId::from_u128(1));
+        let mut session = Session::new(id);
+        session.connected().unwrap();
+        registry.insert_session(session).unwrap();
+        let runtime = Arc::new(Runtime::spawn(registry));
+        let barrier = Arc::new(Barrier::new(2));
+        let (entered, attached) = std::sync::mpsc::channel();
+        let attach_barrier = barrier.clone();
+        *lock(&runtime.shared.lifecycle_hooks.before_attach_insert) = Some(Arc::new(move || {
+            entered.send(()).unwrap();
+            attach_barrier.wait();
+        }));
+        *lock(&runtime.shared.lifecycle_hooks.before_shutdown_close) = Some(Arc::new(move || {
+            barrier.wait();
+        }));
+        let drops = Arc::new(AtomicUsize::new(0));
+        let attach_runtime = runtime.clone();
+        let attach_drops = drops.clone();
+        let executor = tokio::runtime::Handle::current();
+        let attach = std::thread::spawn(move || {
+            let _entered = executor.enter();
+            attach_runtime.attach(id, Box::new(PendingClose(attach_drops)))
+        });
+        attached
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        runtime.shutdown().await;
+        let handle = attach.join().unwrap().unwrap();
+        assert_eq!(handle.snapshot().await.state, State::Closed);
+        assert_eq!(
+            drops.load(Ordering::SeqCst),
+            1,
+            "shutdown returned before attached transport dropped"
+        );
     }
 }

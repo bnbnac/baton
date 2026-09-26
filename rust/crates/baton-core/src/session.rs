@@ -22,6 +22,13 @@ impl Session {
         self.inputs.next_request()
     }
     pub fn receive(&mut self, bytes: &[u8]) -> Result<(), CoreError> {
+        self.receive_in_epoch(bytes, Some(self.epoch))
+    }
+    pub(crate) fn receive_in_epoch(
+        &mut self,
+        bytes: &[u8],
+        public_epoch: Option<SafeInt>,
+    ) -> Result<(), CoreError> {
         if self.state == State::Closed {
             return Err(CoreError::SessionClosed);
         }
@@ -33,7 +40,7 @@ impl Session {
             });
             return Err(error);
         }
-        if self.state == State::AgentOwned {
+        if self.state == State::AgentOwned && public_epoch == Some(self.epoch) {
             if let Err(error) = self
                 .public
                 .as_mut()

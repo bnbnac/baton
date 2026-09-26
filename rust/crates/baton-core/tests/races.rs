@@ -5,6 +5,44 @@ mod support;
 use support::transport::*;
 
 #[tokio::test(start_paused = true)]
+async fn queued_receive_never_crosses_into_a_later_public_epoch() {
+    for was_public in [false, true] {
+        let f = RaceFixture::agent().await;
+        if !was_public {
+            f.handle.reclaim().await.unwrap();
+        }
+        let mut receive = Box::pin(f.handle.receive(b"OLD_BOUNDARY".to_vec()));
+        assert!(poll_once(receive.as_mut()).await.is_pending());
+        if was_public {
+            f.handle.reclaim().await.unwrap();
+        }
+        let stream = StreamId::from_u128(500);
+        f.handle.handoff(f.connection, stream).await.unwrap();
+        assert_eq!(receive.await, Ok(()));
+        let page = f
+            .handle
+            .read(
+                ReadCall {
+                    connection: f.connection,
+                    epoch: f.handle.snapshot().await.epoch,
+                    stream,
+                    cursor: SafeInt::new(0).unwrap(),
+                    limit: 100,
+                },
+                0,
+            )
+            .await
+            .unwrap();
+        assert_eq!(page.text, "", "queued public={was_public} bytes leaked");
+        assert_eq!(
+            f.handle.next_ui_chunk().await.unwrap().bytes,
+            b"OLD_BOUNDARY"
+        );
+        f.runtime.shutdown().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_cancelled_accepted_call_is_invalidated_before_later_write_start() {
     let f = RaceFixture::agent().await;
     f.handle.submit(f.call(1, b"FIRST")).await.unwrap();

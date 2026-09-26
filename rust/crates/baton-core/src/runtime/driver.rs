@@ -139,7 +139,7 @@ pub(super) async fn run(
             Some(message)=incoming.recv()=>{
                 let mut r=lock(&shared.registry); let s=r.session_mut(link.id).unwrap();
                 s.tick(shared.origin.elapsed());
-                let result=s.receive(&message.bytes); link.publish(s);
+                let result=s.receive_in_epoch(&message.bytes,message.public_epoch); link.publish(s);
                 let _=message.reply.send(result);
             },
             Some(message)=commands.recv()=>{
