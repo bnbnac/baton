@@ -8,6 +8,7 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch}
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 mod driver;
+mod lifecycle;
 
 pub type IoFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// Implementations must never block a polling thread. Dropping the transport
@@ -55,6 +56,8 @@ struct Link {
     wake: Notify,
     close_deadline: Mutex<Option<Instant>>,
     task: Mutex<Option<JoinHandle<()>>>,
+    finished: AtomicBool,
+    retired: AtomicBool,
 }
 impl Link {
     fn publish(&self, s: &Session) {
@@ -127,14 +130,22 @@ impl Runtime {
         id: SessionId,
         transport: Box<dyn Transport>,
     ) -> Result<SessionHandle, CoreError> {
+        self.attach_inner(id, transport, false)
+    }
+    fn attach_inner(
+        &self,
+        id: SessionId,
+        transport: Box<dyn Transport>,
+        activate: bool,
+    ) -> Result<SessionHandle, CoreError> {
         if self.shared.stopping.load(Ordering::Acquire) {
             return Err(CoreError::SessionClosed);
         }
-        let registry = lock(&self.shared.registry);
+        let mut registry = lock(&self.shared.registry);
         if self.shared.stopping.load(Ordering::Acquire) {
             return Err(CoreError::SessionClosed);
         }
-        let session = registry.session(id)?;
+        let session = registry.session_mut(id)?;
         if session.snapshot().state == State::Closed {
             return Err(CoreError::SessionClosed);
         }
@@ -143,6 +154,9 @@ impl Runtime {
         let mut links = lock(&self.shared.links);
         if links.contains_key(&id) {
             return Err(CoreError::Busy);
+        }
+        if activate {
+            session.connected()?;
         }
         let (commands, rx) = mpsc::channel(32);
         let (incoming, output_rx) = mpsc::channel(1);
@@ -155,6 +169,8 @@ impl Runtime {
             wake: Notify::new(),
             close_deadline: Mutex::new(None),
             task: Mutex::new(None),
+            finished: AtomicBool::new(false),
+            retired: AtomicBool::new(false),
         });
         links.insert(id, link.clone());
         *lock(&link.task) = Some(tokio::spawn(driver::run(
@@ -229,9 +245,19 @@ impl Drop for Runtime {
 impl SessionHandle {
     fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> R {
         let mut r = lock(&self.shared.registry);
+        if self.link.retired.load(Ordering::Acquire) {
+            // A retired handle has a permanent closed view, even if a trusted
+            // assembler accidentally registers the same ID again.
+            let snapshot = self.link.changed.borrow().clone();
+            let mut closed = Session::new(self.link.id);
+            closed.epoch = snapshot.epoch;
+            closed.assigned = snapshot.assigned;
+            closed.close(CloseReason::User);
+            return f(&mut closed);
+        }
         let s = r
             .session_mut(self.link.id)
-            .expect("attached session is retained");
+            .expect("live link retains session");
         let before = s.snapshot();
         s.tick(self.shared.origin.elapsed());
         let result = f(s);
@@ -330,6 +356,9 @@ impl SessionHandle {
     }
     pub async fn handoff(&self, to: ConnectionId, stream: StreamId) -> Result<(), CoreError> {
         let mut r = lock(&self.shared.registry);
+        if self.link.retired.load(Ordering::Acquire) {
+            return Err(CoreError::SessionClosed);
+        }
         r.session_mut(self.link.id)?
             .tick(self.shared.origin.elapsed());
         let result = r.handoff(self.link.id, to, stream, self.shared.origin.elapsed());
