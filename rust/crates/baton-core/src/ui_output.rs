@@ -18,7 +18,7 @@ impl UiOutput {
             sequence: SafeInt::new(0).unwrap(),
         }
     }
-    pub fn push(&mut self, bytes: &[u8]) -> Result<(), CoreError> {
+    pub fn push(&mut self, bytes: &[u8], queries: Vec<QueryMark>) -> Result<(), CoreError> {
         if bytes.len() > limits::UI_BYTES - self.bytes {
             return Err(CoreError::Capacity);
         }
@@ -31,11 +31,23 @@ impl UiOutput {
         {
             return Err(CoreError::CounterExhausted);
         }
-        for part in bytes.chunks(limits::UI_CHUNK) {
+        for (index, part) in bytes.chunks(limits::UI_CHUNK).enumerate() {
             self.sequence = self.sequence.checked_next().unwrap();
             self.queued.push_back(UiChunk {
                 seq: self.sequence,
                 bytes: part.to_vec(),
+                queries: queries
+                    .iter()
+                    .filter(|q| {
+                        (index * limits::UI_CHUNK..index * limits::UI_CHUNK + part.len())
+                            .contains(&q.end_offset)
+                    })
+                    .map(|q| {
+                        let mut q = q.clone();
+                        q.end_offset -= index * limits::UI_CHUNK;
+                        q
+                    })
+                    .collect(),
             });
         }
         self.bytes += bytes.len();

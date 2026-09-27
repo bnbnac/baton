@@ -10,7 +10,7 @@ macro_rules! identity {
         }
     )+};
 }
-identity!(AppId, ConnectionId, SessionId, StreamId, RequestId);
+identity!(AppId, ConnectionId, SessionId, StreamId, RequestId, ViewId);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 pub struct SafeInt(u64);
@@ -115,6 +115,12 @@ pub enum CoreError {
     UnknownId,
     InvalidAck,
     InvalidCompletion,
+    StaleView,
+    UnknownQuery,
+    QueryExpired,
+    WrongQueryKind,
+    InvalidPosition,
+    QueryLimit,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InputCall {
@@ -155,6 +161,7 @@ pub struct WriteOp {
 pub struct UiChunk {
     pub seq: SafeInt,
     pub bytes: Vec<u8>,
+    pub queries: Vec<crate::QueryMark>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Usage {

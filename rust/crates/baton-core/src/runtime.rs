@@ -72,7 +72,7 @@ struct Submit {
 }
 struct Receive {
     bytes: Vec<u8>,
-    public_epoch: Option<SafeInt>,
+    scope: crate::session::ReceiveScope,
     reply: oneshot::Sender<Result<(), CoreError>>,
 }
 struct CancelOnDrop {
@@ -243,7 +243,7 @@ impl Drop for Runtime {
     }
 }
 impl SessionHandle {
-    fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> R {
+    pub(crate) fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> R {
         let mut r = lock(&self.shared.registry);
         if self.link.retired.load(Ordering::Acquire) {
             // A retired handle has a permanent closed view, even if a trusted
@@ -375,12 +375,11 @@ impl SessionHandle {
         self.link.wake.notify_one();
     }
     pub async fn receive(&self, bytes: Vec<u8>) -> Result<(), CoreError> {
-        let public_epoch = self.with_session(|s| {
+        let scope = self.with_session(|s| {
             if s.snapshot().state == State::Closed {
                 Err(CoreError::SessionClosed)
             } else {
-                let snapshot = s.snapshot();
-                Ok((snapshot.state == State::AgentOwned).then_some(snapshot.epoch))
+                Ok(s.receive_scope())
             }
         })?;
         if bytes.len() > limits::UI_CHUNK {
@@ -391,7 +390,7 @@ impl SessionHandle {
             .incoming
             .try_send(Receive {
                 bytes,
-                public_epoch,
+                scope,
                 reply,
             })
             .map_err(|e| match e {

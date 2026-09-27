@@ -1,6 +1,14 @@
 use crate::*;
 use std::time::Duration;
 
+#[derive(Clone, Copy)]
+pub(crate) struct ReceiveScope {
+    pub epoch: SafeInt,
+    pub control_allowed: bool,
+    pub public_allowed: bool,
+    pub received_at: Duration,
+}
+
 pub struct Session {
     pub(crate) id: SessionId,
     pub(crate) state: State,
@@ -13,6 +21,9 @@ pub struct Session {
     deadline: Option<Duration>,
     public: Option<PublicOutput>,
     ui: crate::ui_output::UiOutput,
+    pub(crate) view: Option<ViewId>,
+    pub(crate) queries: crate::queries::Queries,
+    pub(crate) clock: Duration,
 }
 impl Session {
     pub(crate) fn transition_deadline(&self) -> Option<Duration> {
@@ -22,17 +33,40 @@ impl Session {
         self.inputs.next_request()
     }
     pub fn receive(&mut self, bytes: &[u8]) -> Result<(), CoreError> {
-        self.receive_in_epoch(bytes, Some(self.epoch))
+        self.receive_scoped(bytes, self.receive_scope())
     }
-    pub(crate) fn receive_in_epoch(
+    pub(crate) fn receive_scope(&self) -> ReceiveScope {
+        ReceiveScope {
+            epoch: self.epoch,
+            control_allowed: matches!(self.state, State::UserOwned | State::AgentOwned),
+            public_allowed: self.state == State::AgentOwned,
+            received_at: self.clock,
+        }
+    }
+    pub(crate) fn receive_scoped(
         &mut self,
         bytes: &[u8],
-        public_epoch: Option<SafeInt>,
+        scope: ReceiveScope,
     ) -> Result<(), CoreError> {
         if self.state == State::Closed {
             return Err(CoreError::SessionClosed);
         }
-        if let Err(error) = self.ui.push(bytes) {
+        let origin = (scope.epoch == self.epoch
+            && scope.control_allowed
+            && matches!(self.state, State::UserOwned | State::AgentOwned))
+        .then_some(scope.epoch);
+        let queries = match self.queries.receive(bytes, origin, scope.received_at) {
+            Ok(queries) => queries,
+            Err(e) => {
+                self.close(if e == CoreError::CounterExhausted {
+                    CloseReason::CounterExhausted
+                } else {
+                    CloseReason::OutputOverload
+                });
+                return Err(e);
+            }
+        };
+        if let Err(error) = self.ui.push(bytes, queries) {
             self.close(if error == CoreError::CounterExhausted {
                 CloseReason::CounterExhausted
             } else {
@@ -40,7 +74,7 @@ impl Session {
             });
             return Err(error);
         }
-        if self.state == State::AgentOwned && public_epoch == Some(self.epoch) {
+        if self.state == State::AgentOwned && scope.public_allowed && scope.epoch == self.epoch {
             if let Err(error) = self
                 .public
                 .as_mut()
@@ -148,6 +182,9 @@ impl Session {
             deadline: None,
             public: None,
             ui: crate::ui_output::UiOutput::new(),
+            view: None,
+            queries: crate::queries::Queries::new(),
+            clock: Duration::ZERO,
         }
     }
     pub fn id(&self) -> SessionId {
@@ -198,6 +235,8 @@ impl Session {
         Ok(())
     }
     fn begin_transition(&mut self, now: Duration) -> Result<(), CoreError> {
+        self.clock = self.clock.max(now);
+        self.queries.invalidate();
         self.public = None;
         self.inputs.begin_epoch();
         self.deadline = now.checked_add(limits::TRANSITION_TIMEOUT);
@@ -245,6 +284,7 @@ impl Session {
         }
     }
     pub fn tick(&mut self, now: Duration) {
+        self.clock = self.clock.max(now);
         if self.deadline.is_some_and(|end| now >= end) {
             self.close(CloseReason::TransitionTimeout);
         }
@@ -261,6 +301,7 @@ impl Session {
         self.pending_stream = None;
         self.public = None;
         self.ui.clear();
+        self.queries.invalidate();
     }
     pub fn status_for(&self, connection: ConnectionId) -> Result<Snapshot, CoreError> {
         if self.assigned != Some(connection) {
