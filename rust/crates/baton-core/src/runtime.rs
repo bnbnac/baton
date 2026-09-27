@@ -16,6 +16,9 @@ pub type IoFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait Transport: Send + 'static {
     fn write<'a>(&'a mut self, bytes: &'a [u8]) -> IoFuture<'a, WriteResult>;
     fn close(&mut self) -> IoFuture<'_, ()>;
+    fn resize(&mut self, _geometry: Geometry) -> IoFuture<'_, Result<(), TransportError>> {
+        Box::pin(async { Err(TransportError::Failed) })
+    }
 }
 fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
     value
@@ -243,6 +246,9 @@ impl Drop for Runtime {
     }
 }
 impl SessionHandle {
+    pub(crate) fn wake_driver(&self) {
+        self.link.wake.notify_one();
+    }
     pub(crate) fn with_session<R>(&self, f: impl FnOnce(&mut Session) -> R) -> R {
         let mut r = lock(&self.shared.registry);
         if self.link.retired.load(Ordering::Acquire) {

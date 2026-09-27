@@ -121,6 +121,8 @@ pub enum CoreError {
     WrongQueryKind,
     InvalidPosition,
     QueryLimit,
+    StaleResize,
+    InvalidGeometry,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InputCall {

@@ -1,9 +1,11 @@
 //! SDK-independent session policy and bounded execution.
+mod geometry;
 mod input;
 mod output;
 mod queries;
 mod ui_output;
 mod view;
+pub use geometry::*;
 pub use output::PublicOutput;
 pub use view::*;
 pub mod limits;

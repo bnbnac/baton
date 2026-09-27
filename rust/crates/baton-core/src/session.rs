@@ -16,7 +16,8 @@ pub struct Session {
     pub(crate) assigned: Option<ConnectionId>,
     pub(crate) stream: Option<StreamId>,
     pub(crate) close_reason: Option<CloseReason>,
-    inputs: crate::input::Inputs,
+    pub(crate) inputs: crate::input::Inputs,
+    pub(crate) controls: crate::geometry::Controls,
     pending_stream: Option<StreamId>,
     deadline: Option<Duration>,
     public: Option<PublicOutput>,
@@ -147,7 +148,7 @@ impl Session {
         Ok(())
     }
     pub fn start_write(&mut self) -> Option<WriteOp> {
-        if !matches!(self.state, State::UserOwned | State::AgentOwned) {
+        if !matches!(self.state, State::UserOwned | State::AgentOwned) || self.controls.active() {
             return None;
         }
         match self.inputs.start() {
@@ -178,6 +179,7 @@ impl Session {
             stream: None,
             close_reason: None,
             inputs: crate::input::Inputs::new(),
+            controls: crate::geometry::Controls::new(),
             pending_stream: None,
             deadline: None,
             public: None,
@@ -238,6 +240,7 @@ impl Session {
         self.clock = self.clock.max(now);
         self.queries.invalidate();
         self.public = None;
+        self.controls.invalidate_replies();
         self.inputs.begin_epoch();
         self.deadline = now.checked_add(limits::TRANSITION_TIMEOUT);
         if self.deadline.is_none() {
@@ -247,8 +250,8 @@ impl Session {
         self.finish_transition();
         Ok(())
     }
-    fn finish_transition(&mut self) {
-        if self.inputs.active() {
+    pub(crate) fn finish_transition(&mut self) {
+        if self.inputs.active() || self.controls.active() {
             return;
         }
         match self.state {
@@ -302,6 +305,7 @@ impl Session {
         self.public = None;
         self.ui.clear();
         self.queries.invalidate();
+        self.controls.clear();
     }
     pub fn status_for(&self, connection: ConnectionId) -> Result<Snapshot, CoreError> {
         if self.assigned != Some(connection) {

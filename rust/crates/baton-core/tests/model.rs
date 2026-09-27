@@ -10,6 +10,7 @@ struct System {
     ids: BTreeSet<SessionId>,
     now: Duration,
     sent: Vec<(SessionId, SafeInt, Vec<u8>)>,
+    resizes: Vec<(SessionId, SafeInt, Geometry)>,
 }
 impl System {
     fn new() -> Self {
@@ -18,10 +19,38 @@ impl System {
             ids: BTreeSet::new(),
             now: Duration::ZERO,
             sent: Vec::new(),
+            resizes: Vec::new(),
         }
     }
     fn apply(&mut self, event: &Event) -> Observation {
         let reply = match event {
+            Event::BindView(id, v) => {
+                Reply::Binding(self.registry.session_mut(*id).and_then(|s| s.bind_view(*v)))
+            }
+            Event::Resize(id, r) => {
+                Reply::Unit(self.registry.session_mut(*id).and_then(|s| s.resize(*r)))
+            }
+            Event::StartIo(id) => {
+                let result = self
+                    .registry
+                    .session_mut(*id)
+                    .map(|s| s.start_transport_op(self.now));
+                match &result {
+                    Ok(Some(TransportOp::Input(op))) => {
+                        self.sent.push((*id, op.id, op.payload.clone()))
+                    }
+                    Ok(Some(TransportOp::Resize { seq, geometry })) => {
+                        self.resizes.push((*id, *seq, *geometry))
+                    }
+                    _ => {}
+                }
+                Reply::Operation(result)
+            }
+            Event::FinishIo(id, seq, r) => Reply::Unit(
+                self.registry
+                    .session_mut(*id)
+                    .and_then(|s| s.finish_transport_op(*seq, *r, self.now)),
+            ),
             Event::Connect(c) => Reply::Unit(self.registry.register_connection(*c)),
             Event::Disconnect(c) => {
                 self.registry.disconnect(*c);
@@ -103,6 +132,12 @@ impl System {
                 })
                 .collect(),
             sent: self.sent.clone(),
+            geometry: self
+                .ids
+                .iter()
+                .map(|id| (*id, self.registry.session(*id).unwrap().geometry()))
+                .collect(),
+            resizes: self.resizes.clone(),
         }
     }
 }
@@ -142,11 +177,24 @@ fn model_1000_seeds_200_events() {
                 Reply::Input(r) => r.is_ok(),
                 Reply::Write(r) => r.is_ok(),
                 Reply::Page(r) => r.is_ok(),
+                Reply::Binding(r) => r.is_ok(),
+                Reply::Operation(r) => r.is_ok(),
             };
             if ok {
                 accepted += 1;
             } else {
                 rejected += 1;
+            }
+            if let Reply::Page(Err(error)) = &got.reply {
+                *coverage
+                    .entry(format!("read_rejection_{error:?}"))
+                    .or_default() += 1;
+            }
+            if matches!(
+                (event, &got.reply),
+                (Event::Resize(..), Reply::Unit(Err(CoreError::StaleView)))
+            ) {
+                *coverage.entry("stale_view_resizes".into()).or_default() += 1;
             }
             for (_, snapshot, usage) in &got.sessions {
                 assert!(usage.queued <= 32 && usage.active <= 1 && usage.history <= 4096);
@@ -173,6 +221,11 @@ fn model_1000_seeds_200_events() {
         "Tick",
         "CloseSession",
         "CloseApp",
+        "BindView",
+        "Resize",
+        "StartIo",
+        "FinishIo",
+        "stale_view_resizes",
     ] {
         assert!(
             coverage.get(name).is_some_and(|count| *count > 0),
@@ -180,6 +233,22 @@ fn model_1000_seeds_200_events() {
         );
     }
     assert!(accepted > 0 && rejected > 0 && transitioning > 0);
+    assert!(
+        coverage
+            .get("read_rejection_StaleControlEpoch")
+            .copied()
+            .unwrap_or(0)
+            > 0,
+        "stale_epoch_reads must be exercised"
+    );
+    assert!(
+        coverage
+            .get("read_rejection_StaleStream")
+            .copied()
+            .unwrap_or(0)
+            > 0,
+        "stale_stream_reads must be exercised"
+    );
     println!(
         "MODEL seeds=1000 events=200000 accepted={accepted} rejected={rejected} transition_observations={transitioning} coverage={coverage:?}"
     );

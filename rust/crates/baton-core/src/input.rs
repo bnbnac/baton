@@ -76,9 +76,8 @@ impl Inputs {
         if self.active.is_some() || self.queued.is_empty() {
             return Ok(None);
         }
-        let sequence = self.sequence.checked_next()?;
+        let sequence = self.reserve_sequence()?;
         let id = self.queued.pop_front().unwrap();
-        self.sequence = sequence;
         self.active = Some(Active {
             op: sequence,
             request: id,
@@ -102,6 +101,10 @@ impl Inputs {
     }
     pub fn active(&self) -> bool {
         self.active.is_some()
+    }
+    pub fn reserve_sequence(&mut self) -> Result<SafeInt, CoreError> {
+        self.sequence = self.sequence.checked_next()?;
+        Ok(self.sequence)
     }
     fn invalidate_queued(&mut self) {
         for id in self.queued.drain(..) {

@@ -43,7 +43,7 @@ impl Queries {
         now: Duration,
     ) -> Result<Vec<QueryMark>, CoreError> {
         self.pending
-            .retain(|_, p| now.saturating_sub(p.created) < Duration::from_secs(2));
+            .retain(|_, p| p.claimed || now.saturating_sub(p.created) < Duration::from_secs(2));
         let mut marks = vec![];
         for (end_offset, byte) in bytes.iter().copied().enumerate() {
             let state = std::mem::replace(&mut self.parser, Parser::Ground);
@@ -140,6 +140,14 @@ impl Queries {
             }
         }
         Ok(marks)
+    }
+    pub fn claimed_live(&self, id: QueryId, epoch: SafeInt, now: Duration) -> bool {
+        self.pending.get(&id).is_some_and(|p| {
+            p.claimed && p.epoch == epoch && now.saturating_sub(p.created) < Duration::from_secs(2)
+        })
+    }
+    pub fn release(&mut self, id: QueryId) {
+        self.pending.remove(&id);
     }
     pub fn prepare_reply(&mut self, call: &ReplyCall, now: Duration) -> Result<Vec<u8>, CoreError> {
         let p = self

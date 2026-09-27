@@ -65,6 +65,7 @@ pub fn generate(mut seed: u64, max_events: usize) -> Vec<Event> {
         Event::Open(SessionId::from_u128(2)),
         Event::Connected(SessionId::from_u128(2)),
         Event::Handoff(SessionId::from_u128(2), a, StreamId::from_u128(3)),
+        Event::BindView(SessionId::from_u128(2), ViewId::from_u128(1)),
     ];
     let mut reference = Reference::new();
     let mut events = Vec::new();
@@ -78,19 +79,20 @@ pub fn generate(mut seed: u64, max_events: usize) -> Vec<Event> {
     }
     while events.len() < max_events {
         let r = next(&mut seed);
+        let event_kind = next(&mut seed) % 40;
         let id = SessionId::from_u128(((r >> 8) % 18 + 1).into());
         let view = reference.view(id);
-        let epoch = if r % 4 != 0 {
+        let epoch = if next(&mut seed) % 4 != 0 {
             view.as_ref().map_or(n(0), |s| s.epoch)
         } else {
             n((r >> 18) % 8)
         };
-        let owner = if r % 5 != 0 {
+        let owner = if next(&mut seed) % 5 != 0 {
             view.as_ref().and_then(|s| s.assigned).unwrap_or(a)
         } else {
             b
         };
-        let principal = if r % 3 == 0 {
+        let principal = if next(&mut seed) % 3 == 0 {
             Principal::User
         } else {
             Principal::Agent(owner)
@@ -101,7 +103,7 @@ pub fn generate(mut seed: u64, max_events: usize) -> Vec<Event> {
             1 => "한😀".as_bytes().to_vec(),
             _ => b"\x1b[31mR".to_vec(),
         };
-        let stream = if r % 4 != 0 {
+        let stream = if next(&mut seed) % 4 != 0 {
             view.as_ref()
                 .and_then(|s| s.stream)
                 .unwrap_or(StreamId::from_u128(0))
@@ -111,7 +113,48 @@ pub fn generate(mut seed: u64, max_events: usize) -> Vec<Event> {
         let event = if events.len() + 1 == max_events {
             Event::CloseApp
         } else {
-            match r % 32 {
+            match event_kind {
+                32 => Event::BindView(
+                    id,
+                    ViewId::from_u128(if next(&mut seed) % 4 == 0 { 2 } else { 1 }),
+                ),
+                33..=35 => {
+                    let mut binding = reference.binding(id);
+                    if next(&mut seed) % 4 == 0 {
+                        binding.generation = ViewId::from_u128(999);
+                    }
+                    Event::Resize(
+                        id,
+                        GeometryRequest {
+                            binding,
+                            resize_seq: n(if next(&mut seed) % 4 == 0 {
+                                1
+                            } else {
+                                events.len() as u64
+                            }),
+                            geometry: Geometry {
+                                columns: [0, 20, 91, 120, 150, 500, 501]
+                                    [(next(&mut seed) % 7) as usize],
+                                rows: [0, 5, 27, 32, 200, 201][(next(&mut seed) % 6) as usize],
+                            },
+                        },
+                    )
+                }
+                36 | 37 => Event::StartIo(id),
+                38 | 39 => {
+                    let (seq, result) = reference
+                        .active_io(id)
+                        .unwrap_or((n(1), TransportCompletion::Resize(Ok(()))));
+                    Event::FinishIo(
+                        id,
+                        if next(&mut seed) % 4 == 0 {
+                            n(999)
+                        } else {
+                            seq
+                        },
+                        result,
+                    )
+                }
                 0 => Event::Connect(ConnectionId::from_u128(((r >> 16) % 34).into())),
                 1 => Event::Disconnect(if r & 64 == 0 { a } else { b }),
                 2 | 3 => Event::Open(id),

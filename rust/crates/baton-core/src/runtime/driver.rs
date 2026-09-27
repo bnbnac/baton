@@ -1,7 +1,7 @@
 use super::*;
 use std::future::{pending, poll_fn};
 use std::task::Poll;
-type WriteFuture = IoFuture<'static, (Box<dyn Transport>, WriteResult)>;
+type WriteFuture = IoFuture<'static, (Box<dyn Transport>, TransportCompletion)>;
 struct Cancellation {
     principal: Principal,
     epoch: SafeInt,
@@ -63,20 +63,32 @@ pub(super) fn run(
                 let mut started = false;
                 if active.is_none() {
                     let request = s.next_input();
-                    if let Some(op) = s.start_write() {
-                        if let Some(id) = request {
-                            cancellations.remove(&id);
+                    if let Some(op) = s.start_transport_op(shared.origin.elapsed()) {
+                        if matches!(op, TransportOp::Input(_)) {
+                            if let Some(id) = request {
+                                cancellations.remove(&id);
+                            }
                         }
-                        let id = op.id;
+                        let id = op.seq();
                         let mut writer = transport.take().unwrap();
                         let mut future: WriteFuture = Box::pin(async move {
-                            let result = writer.write(&op.payload).await;
+                            let result = match op {
+                                TransportOp::Input(op) => {
+                                    TransportCompletion::Data(writer.write(&op.payload).await)
+                                }
+                                TransportOp::Reply { bytes, .. } => {
+                                    TransportCompletion::Data(writer.write(&bytes).await)
+                                }
+                                TransportOp::Resize { geometry, .. } => {
+                                    TransportCompletion::Resize(writer.resize(geometry).await)
+                                }
+                            };
                             (writer, result)
                         });
                         match future.as_mut().poll(cx) {
                             Poll::Ready((writer, result)) => {
                                 transport = Some(writer);
-                                let _ = s.finish_write(id, result);
+                                let _ = s.finish_transport_op(id, result, shared.origin.elapsed());
                             }
                             Poll::Pending => active = Some((id, future)),
                         }
@@ -92,7 +104,7 @@ pub(super) fn run(
             let (snapshot, reason, transition) = {
                 let r = lock(&shared.registry);
                 let s = r.session(link.id).unwrap();
-                (s.snapshot(), s.close_reason(), s.transition_deadline())
+                (s.snapshot(), s.close_reason(), s.io_deadline())
             };
             if snapshot.state == State::Closed {
                 commands.close();
@@ -138,7 +150,7 @@ pub(super) fn run(
                     let id=active.take().unwrap().0; transport=Some(writer);
                     let mut r=lock(&shared.registry); let s=r.session_mut(link.id).unwrap();
                     s.tick(shared.origin.elapsed());
-                    let _=s.finish_write(id,result); link.publish(s);
+                    let _=s.finish_transport_op(id,result,shared.origin.elapsed()); link.publish(s);
                 },
                 Some(message)=incoming.recv()=>{
                     let mut r=lock(&shared.registry); let s=r.session_mut(link.id).unwrap();

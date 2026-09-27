@@ -1,6 +1,7 @@
 use baton_core::{
-    ConnectionId, CoreError, InputCall, InputResult, Principal, ReadCall, ReadPage, RequestId,
-    SafeInt, SessionId, Snapshot, State, StreamId, Usage, WriteOp, WriteResult,
+    ConnectionId, CoreError, Geometry, GeometryRequest, InputCall, InputResult, Principal,
+    ReadCall, ReadPage, RequestId, SafeInt, SessionId, Snapshot, State, StreamId,
+    TransportCompletion, TransportOp, Usage, ViewBinding, ViewId, WriteOp, WriteResult,
 };
 use std::time::Duration;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,6 +15,10 @@ pub enum Event {
     Submit(SessionId, InputCall),
     StartWrite(SessionId),
     FinishWrite(SessionId, SafeInt, WriteResult),
+    BindView(SessionId, ViewId),
+    Resize(SessionId, GeometryRequest),
+    StartIo(SessionId),
+    FinishIo(SessionId, SafeInt, TransportCompletion),
     Receive(SessionId, Vec<u8>),
     Read(SessionId, ReadCall),
     CancelInput(SessionId, Principal, SafeInt, RequestId),
@@ -27,12 +32,16 @@ pub enum Reply {
     Input(Result<InputResult, CoreError>),
     Write(Result<Option<WriteOp>, CoreError>),
     Page(Result<ReadPage, CoreError>),
+    Binding(Result<ViewBinding, CoreError>),
+    Operation(Result<Option<TransportOp>, CoreError>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Observation {
     pub reply: Reply,
     pub sessions: Vec<(SessionId, Snapshot, Usage)>,
     pub sent: Vec<(SessionId, SafeInt, Vec<u8>)>,
+    pub geometry: Vec<(SessionId, Geometry)>,
+    pub resizes: Vec<(SessionId, SafeInt, Geometry)>,
 }
 use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone)]
@@ -55,6 +64,13 @@ struct Shell {
     public: String,
     oldest: u64,
     ui_bytes: usize,
+    view: Option<ViewId>,
+    resize_seq: u64,
+    geometry: Geometry,
+    pending_size: Option<Geometry>,
+    resizing: Option<(u64, Geometry)>,
+    next_resize: Duration,
+    control_turn: bool,
 }
 fn safe(n: u64) -> SafeInt {
     SafeInt::new(n).unwrap()
@@ -74,6 +90,16 @@ impl Shell {
             public: String::new(),
             oldest: 0,
             ui_bytes: 0,
+            view: None,
+            resize_seq: 0,
+            geometry: Geometry {
+                columns: 120,
+                rows: 32,
+            },
+            pending_size: None,
+            resizing: None,
+            next_resize: Duration::ZERO,
+            control_turn: true,
         }
     }
     fn snapshot(&self) -> Snapshot {
@@ -108,6 +134,8 @@ impl Shell {
         self.public.clear();
         self.oldest = 0;
         self.ui_bytes = 0;
+        self.pending_size = None;
+        self.resizing = None;
     }
     fn control_error(&self, from: State) -> Option<CoreError> {
         if self.phase == State::Closed {
@@ -152,7 +180,7 @@ impl Shell {
         self.complete_transition();
     }
     fn complete_transition(&mut self) {
-        if self.active.is_some() {
+        if self.active.is_some() || self.resizing.is_some() {
             return;
         }
         if self.phase == State::Reclaiming {
@@ -193,7 +221,10 @@ impl Shell {
         Ok(InputResult::Pending)
     }
     fn start(&mut self) -> Option<WriteOp> {
-        if !matches!(self.phase, State::UserOwned | State::AgentOwned) || self.active.is_some() {
+        if !matches!(self.phase, State::UserOwned | State::AgentOwned)
+            || self.active.is_some()
+            || self.resizing.is_some()
+        {
             return None;
         }
         let entry = self
@@ -207,6 +238,96 @@ impl Shell {
             id: safe(self.sequence),
             payload: entry.data.clone(),
         })
+    }
+    fn bind(&mut self, id: SessionId, view: ViewId) -> Result<ViewBinding, CoreError> {
+        if self.phase == State::Closed {
+            return Err(CoreError::SessionClosed);
+        }
+        if self.view.is_some_and(|old| old != view) {
+            self.close();
+            return Err(CoreError::StaleView);
+        }
+        self.view = Some(view);
+        Ok(ViewBinding {
+            session: id,
+            generation: view,
+        })
+    }
+    fn resize(&mut self, id: SessionId, request: GeometryRequest) -> Result<(), CoreError> {
+        if self.phase == State::Closed {
+            return Err(CoreError::SessionClosed);
+        }
+        if request.binding.session != id || Some(request.binding.generation) != self.view {
+            return Err(CoreError::StaleView);
+        }
+        let g = request.geometry;
+        if g.columns < 20 || g.columns > 500 || g.rows < 5 || g.rows > 200 {
+            return Err(CoreError::InvalidGeometry);
+        }
+        if request.resize_seq.get() <= self.resize_seq {
+            return Err(CoreError::StaleResize);
+        }
+        self.resize_seq = request.resize_seq.get();
+        self.pending_size = Some(g);
+        Ok(())
+    }
+    fn start_io(&mut self, now: Duration) -> Option<TransportOp> {
+        if self.active.is_some()
+            || self.resizing.is_some()
+            || !matches!(self.phase, State::UserOwned | State::AgentOwned)
+        {
+            return None;
+        }
+        if self.pending_size == Some(self.geometry) {
+            self.pending_size = None;
+        }
+        let ready = now >= self.next_resize && self.pending_size.is_some();
+        let input_ready = self
+            .input
+            .iter()
+            .any(|i| i.result == InputResult::Pending && !i.started);
+        if ready && (self.control_turn || !input_ready) {
+            let g = self.pending_size.take().unwrap();
+            self.sequence += 1;
+            self.resizing = Some((self.sequence, g));
+            self.next_resize = now + Duration::from_millis(100);
+            self.control_turn = false;
+            Some(TransportOp::Resize {
+                seq: safe(self.sequence),
+                geometry: g,
+            })
+        } else {
+            let op = self.start();
+            if op.is_some() {
+                self.control_turn = true;
+            }
+            op.map(TransportOp::Input)
+        }
+    }
+    fn finish_io(&mut self, id: SafeInt, result: TransportCompletion) -> Result<(), CoreError> {
+        if let Some((seq, g)) = self.resizing {
+            if id.get() != seq {
+                return Err(CoreError::InvalidCompletion);
+            }
+            match result {
+                TransportCompletion::Resize(Ok(())) => {
+                    self.geometry = g;
+                    self.resizing = None;
+                    self.complete_transition();
+                    Ok(())
+                }
+                TransportCompletion::Resize(Err(_)) => {
+                    self.close();
+                    Ok(())
+                }
+                _ => Err(CoreError::InvalidCompletion),
+            }
+        } else {
+            match result {
+                TransportCompletion::Data(r) => self.finish(id, r),
+                _ => Err(CoreError::InvalidCompletion),
+            }
+        }
     }
     fn finish(&mut self, id: SafeInt, result: WriteResult) -> Result<(), CoreError> {
         let Some((op, request)) = self.active else {
@@ -311,6 +432,7 @@ pub struct Reference {
     shells: BTreeMap<SessionId, Shell>,
     now: Duration,
     sent: Vec<(SessionId, SafeInt, Vec<u8>)>,
+    resizes: Vec<(SessionId, SafeInt, Geometry)>,
 }
 impl Reference {
     pub fn new() -> Self {
@@ -319,6 +441,7 @@ impl Reference {
             shells: BTreeMap::new(),
             now: Duration::ZERO,
             sent: Vec::new(),
+            resizes: Vec::new(),
         }
     }
     pub fn view(&self, id: SessionId) -> Option<Snapshot> {
@@ -326,6 +449,25 @@ impl Reference {
     }
     pub fn active(&self, id: SessionId) -> Option<SafeInt> {
         self.shells.get(&id)?.active.map(|(op, _)| safe(op))
+    }
+    pub fn active_io(&self, id: SessionId) -> Option<(SafeInt, TransportCompletion)> {
+        let s = self.shells.get(&id)?;
+        if let Some((seq, _)) = s.resizing {
+            Some((safe(seq), TransportCompletion::Resize(Ok(()))))
+        } else {
+            s.active
+                .map(|(seq, _)| (safe(seq), TransportCompletion::Data(WriteResult::Delivered)))
+        }
+    }
+    pub fn binding(&self, id: SessionId) -> ViewBinding {
+        ViewBinding {
+            session: id,
+            generation: self
+                .shells
+                .get(&id)
+                .and_then(|s| s.view)
+                .unwrap_or(ViewId::from_u128(1)),
+        }
     }
     pub fn apply(&mut self, event: &Event) -> Observation {
         let reply = self.step(event);
@@ -337,10 +479,51 @@ impl Reference {
                 .map(|(id, s)| (*id, s.snapshot(), s.usage()))
                 .collect(),
             sent: self.sent.clone(),
+            geometry: self
+                .shells
+                .iter()
+                .map(|(id, s)| (*id, s.geometry))
+                .collect(),
+            resizes: self.resizes.clone(),
         }
     }
     fn step(&mut self, event: &Event) -> Reply {
         match event {
+            Event::BindView(id, v) => Reply::Binding(
+                self.shells
+                    .get_mut(id)
+                    .ok_or(CoreError::UnknownId)
+                    .and_then(|s| s.bind(*id, *v)),
+            ),
+            Event::Resize(id, r) => Reply::Unit(
+                self.shells
+                    .get_mut(id)
+                    .ok_or(CoreError::UnknownId)
+                    .and_then(|s| s.resize(*id, *r)),
+            ),
+            Event::StartIo(id) => {
+                let result = self
+                    .shells
+                    .get_mut(id)
+                    .ok_or(CoreError::UnknownId)
+                    .map(|s| s.start_io(self.now));
+                match &result {
+                    Ok(Some(TransportOp::Input(op))) => {
+                        self.sent.push((*id, op.id, op.payload.clone()))
+                    }
+                    Ok(Some(TransportOp::Resize { seq, geometry })) => {
+                        self.resizes.push((*id, *seq, *geometry))
+                    }
+                    _ => {}
+                }
+                Reply::Operation(result)
+            }
+            Event::FinishIo(id, seq, r) => Reply::Unit(
+                self.shells
+                    .get_mut(id)
+                    .ok_or(CoreError::UnknownId)
+                    .and_then(|s| s.finish_io(*seq, *r)),
+            ),
             Event::Connect(c) => {
                 let result = if self.connections.contains(c) {
                     Err(CoreError::DuplicateId)
