@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$InjectFailure, [string]$CleanupReport, [switch]$StallAfterReady)
+param([switch]$InjectFailure, [string]$CleanupReport, [switch]$StallAfterReady, [switch]$Phase2)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $suffix = [Guid]::NewGuid().ToString('N')
@@ -47,7 +47,8 @@ try {
         throw 'stall_not_interrupted'
     }
     if ($InjectFailure) { throw 'injected_container-ready' }
-    & node (Join-Path $repo 'rust/tests/openssh.test.mjs')
+    if ($Phase2) { & node (Join-Path $repo 'rust/tests/phase2/openssh.test.mjs') }
+    else { & node (Join-Path $repo 'rust/tests/openssh.test.mjs') }
     if ($LASTEXITCODE -ne 0) { throw 'openssh_probe_failed' }
 } finally {
     $env:BATON_PROBE_SSH_PORT = $oldPort

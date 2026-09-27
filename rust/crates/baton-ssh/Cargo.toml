@@ -1,0 +1,30 @@
+[package]
+name = "baton-ssh"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+autotests = false
+
+[features]
+acceptance = ["dep:serde_json"]
+
+[dependencies]
+baton-core = { path = "../baton-core" }
+russh = { version = "=0.63.1", default-features = false, features = ["ring", "rsa"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "io-util", "net", "sync", "time"] }
+tokio-util = { version = "=0.7.19", features = ["rt"] }
+zeroize = "=1.9.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
+[[bin]]
+name = "baton-ssh-fixture-driver"
+path = "tests/driver.rs"
+required-features = ["acceptance"]
+
+[[test]]
+name = "auth"
+path = "tests/auth.rs"

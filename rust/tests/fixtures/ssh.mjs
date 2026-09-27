@@ -39,16 +39,17 @@ const server = new Server({ hostKeys: [hostKey.private] }, client => {
   client.on('ready', () => client.on('session', accept => {
     const session = accept();
     session.on('pty', (accept, reject, info) => {
-      emit('pty', { columns: info.cols, rows: info.rows }); accept();
+      emit('pty', { columns: info.cols, rows: info.rows }); if(caseName==='pty-reject')reject();else accept();
     });
     session.on('window-change', (accept, reject, info) => {
       emit('resize', { columns: info.cols, rows: info.rows }); accept?.();
     });
-    session.on('shell', accept => {
+    session.on('shell', (accept,reject) => {
       emit('shell');
+      if(caseName==='shell-reject'){reject();return;}
       const stream = accept();
       stream.write('READY\r\n');
-      stream.on('data', data => { emit('received', { hex: data.toString('hex') }); stream.write(data); });
+      stream.on('data', data => { emit('received', { hex: data.toString('hex') }); if(caseName==='remote-exit'){stream.exit(0);stream.end();}else if(caseName==='tcp-close'){client.destroy();}else stream.write(data); });
     });
   }));
 });

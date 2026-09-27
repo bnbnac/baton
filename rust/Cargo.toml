@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["experiments/ssh-probe", "experiments/mcp-probe", "experiments/terminal-probe/src-tauri", "crates/baton-core"]
+members = ["experiments/ssh-probe", "experiments/mcp-probe", "experiments/terminal-probe/src-tauri", "crates/baton-core", "crates/baton-ssh"]
 
 [workspace.package]
 edition = "2024"

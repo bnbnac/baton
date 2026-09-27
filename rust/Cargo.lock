@@ -180,6 +180,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "baton-ssh"
+version = "0.1.0"
+dependencies = [
+ "baton-core",
+ "russh",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "zeroize",
+]
+
+[[package]]
 name = "baton-ssh-probe"
 version = "0.1.0"
 dependencies = [
@@ -4623,6 +4636,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
