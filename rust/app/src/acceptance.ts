@@ -20,6 +20,7 @@ function equal(a:unknown,b:unknown){if(JSON.stringify(a)!==JSON.stringify(b))thr
 async function rejected(p:Promise<unknown>){try{await p;}catch{return;}throw Error('expected_rejection');}
 async function until(check:()=>boolean|Promise<boolean>,label:string){const end=Date.now()+8000;while(!await check()){if(Date.now()>end)throw Error(label);await delay(10);}}
 const sessions=new Map<string,Session>();let active:TerminalView|undefined;let number=0;
+let openSshMode=false,openSshFingerprint:string|undefined;
 const fixture=(request:unknown)=>invoke<any>('fixture',{request});
 const owner=async(binding:Binding,user:boolean,stream=1)=>{const s=await invoke<Session>('set_owner',{binding,user,stream});active?.applySnapshot(s);return s;};
 const cases:Record<string,{parts:string[];want:string}>={
@@ -74,7 +75,10 @@ async function scenario(name:string,port:number){
  for(const frame of pending)accept(frame);
  try{
    if(!['private_public_private','unsupported_user','tokenless_user'].includes(name))await owner(binding,false);
-   if(name==='wrap_max')view.term.resize(500,200);
+   const dims=name==='wrap_max'?[500,200]:[120,32];
+   const screen=view.term.element!.querySelector('.xterm-screen')!.getBoundingClientRect();
+   host.style.width=`${Math.ceil(screen.width/view.term.cols*dims[0]+15)}px`;host.style.height=`${Math.ceil(screen.height/view.term.rows*dims[1])}px`;
+   await until(()=>view!.term.cols===dims[0]&&view!.term.rows===dims[1],'test_viewport_not_fitted');
    if(name==='hidden_parser')view.setVisible(false);
    let total=0;
    for(const part of cases[name].parts){total+=bytes(part).length;await fixture({action:'inject',user:username,bytes:bytes(part)});await until(()=>!!failed||finished>=total,'output_timeout');if(failed)throw failed;
@@ -113,10 +117,88 @@ async function overload(name:string,port:number){
    equal((await fixture({action:'audit',user:username})).hex,'');
  }finally{for(const s of [bad,good]){await command('close_session',{id:s.id});await until(async()=>{try{await command('remove_closed_session',{id:s.id});return true;}catch{return false;}},'close_timeout');}}
 }
+async function geometry(port:number,second:number){
+ const entries:{session:Session;view:TerminalView;username:string;server:number;host:HTMLElement}[]=[];
+ const errors:unknown[]=[];
+ try{
+   for(let i=0;i<3;i++){
+     const username=`fixture-${++number}`,server=i===2?2:1;
+     const session=await command<Session>('connect_session',{host:'127.0.0.1',port:server===2?second:port,username,label:`geometry-${i}`,method:'password'});
+     await until(()=>sessions.get(session.id)?.state==='user_owned','connect_timeout');
+     const pane=document.createElement('div');pane.style.cssText='width:900px;height:480px';pane.hidden=i!==0;host.append(pane);
+     let view:TerminalView;const binding=await bindTerminal(session.id,frame=>{void view.write(frame).catch(e=>errors.push(e));});
+     view=new TerminalView(binding,pane,terminalBridge(e=>errors.push(e)));view.applySnapshot(sessions.get(session.id)!);view.setVisible(i===0);
+     entries.push({session,view,username,server,host:pane});
+   }
+   const a=entries[0];
+   const audit=(e:typeof a)=>fixture({action:'audit',user:e.username,server:e.server});
+   const size=async(cols:number,rows:number)=>{
+     const screen=a.view.term.element!.querySelector('.xterm-screen')!.getBoundingClientRect();
+     a.host.style.width=`${Math.ceil(screen.width/a.view.term.cols*cols+15)}px`;
+     a.host.style.height=`${Math.ceil(screen.height/a.view.term.rows*rows)}px`;
+     await until(async()=>{const r=await audit(a);return r.sizes.at(-1)[0]===cols&&r.sizes.at(-1)[1]===rows;},'remote_geometry_not_fitted');
+     equal([a.view.term.cols,a.view.term.rows],[cols,rows]);
+   };
+   await size(91,27);await size(120,32);await size(91,27);
+   const prior=(await audit(a)).sizes.length;
+   await size(91,27);await delay(150);equal((await audit(a)).sizes.length,prior);
+   a.view.setVisible(false);a.host.style.width='700px';a.host.style.height='400px';await delay(150);equal((await audit(a)).sizes.length,prior);
+   a.view.setVisible(true);await until(async()=> (await audit(a)).sizes.length>prior,'restore_not_fitted');
+   const restored=(await audit(a)).sizes.length;
+   a.host.style.width='0px';a.host.style.height='0px';await delay(150);equal((await audit(a)).sizes.length,restored);
+   for(const e of entries.slice(1))equal((await audit(e)).sizes.map((x:number[])=>x.slice(0,2)),[[120,32]]);
+   await rejected(terminalBridge(()=>{}).resize({...a.view.binding,view:entries[1].view.binding.view},100,80,24));
+   a.host.style.width='1px';a.host.style.height='1px';await until(async()=>{const sizes=(await audit(a)).sizes;return sizes.at(-1)[0]===20&&sizes.at(-1)[1]===5;},'minimum_not_clamped');
+   a.host.style.width='10000px';a.host.style.height='10000px';await until(async()=>{const sizes=(await audit(a)).sizes;return sizes.at(-1)[0]===500&&sizes.at(-1)[1]===200;},'maximum_not_clamped');
+   const finalCount=(await audit(a)).sizes.length;
+   a.view.applySnapshot({state:'closed',epoch:1});a.host.style.width='1000px';a.host.style.height='600px';await delay(150);equal((await audit(a)).sizes.length,finalCount);
+   a.view.dispose();a.host.style.width='1100px';await delay(150);equal((await audit(a)).sizes.length,finalCount);
+   equal(sessions.get(a.session.id)?.epoch,0);equal(errors,[]);
+ }finally{for(const e of entries){e.view.dispose();e.host.remove();await command('close_session',{id:e.session.id});await until(async()=>{try{await command('remove_closed_session',{id:e.session.id});return true;}catch{return false;}},'close_timeout');}}
+}
+async function interactiveOpenSsh(port:number,second:number){
+ const entries:{session:Session;view:TerminalView;host:HTMLElement;raw:string;failure?:unknown}[]=[];
+ const screen=(view:TerminalView)=>{const b=view.term.buffer.active;return Array.from({length:b.length},(_,i)=>b.getLine(i)?.translateToString(true)??'').join('\n');};
+ const send=async(e:typeof entries[number],text:string)=>{e.view.term.input(text);await e.view.input.flush();if(e.failure)throw e.failure;};
+ const marker=async(e:typeof entries[number],text:string)=>{const start=e.raw.length;await send(e,`printf '${text}\\n'\r`);await until(()=>e.raw.slice(start).includes(text+'\r\n'),'shell_marker_missing');};
+ try{
+   for(let i=0;i<3;i++){
+     const session=await command<Session>('connect_session',{host:'127.0.0.1',port:i===2?second:port,username:'batonfixture',label:`openssh-${i}`,method:'password'});
+     await until(()=>sessions.get(session.id)?.state==='user_owned','openssh_connect_timeout');
+     const pane=document.createElement('div');pane.style.cssText='width:1000px;height:580px';pane.hidden=i!==0;host.append(pane);
+     let entry:typeof entries[number]|undefined;const pending:Frame[]=[];
+     const consume=(frame:Frame)=>{entry!.raw+=new TextDecoder().decode(new Uint8Array(frame.bytes));void entry!.view.write(frame).catch(e=>entry!.failure=e);};
+     const binding=await bindTerminal(session.id,frame=>entry?consume(frame):pending.push(frame));
+     const view=new TerminalView(binding,pane,terminalBridge(e=>{if(entry)entry.failure=e;}));view.applySnapshot(sessions.get(session.id)!);view.setVisible(i===0);
+     entry={session,view,host:pane,raw:''};entries.push(entry);for(const frame of pending)consume(frame);
+     await send(entry,"stty -echo; PS1='BATON_SHELL> '; printf '__READY__\\n'\r");
+     await until(()=>entry!.raw.includes('__READY__\r\n'),'shell_not_ready');
+   }
+   const a=entries[0];active=a.view;
+   for(let i=0;i<entries.length;i++)await marker(entries[i],`SHELL_${i}`);
+   for(let i=0;i<entries.length;i++)for(let j=0;j<entries.length;j++)if(i!==j&&entries[i].raw.includes(`SHELL_${j}`))throw Error('shell_crossed');
+   const beforeVi=a.raw.length;await send(a,'vi\r');await until(()=>a.view.term.buffer.active.type==='alternate'&&a.raw.slice(beforeVi).includes('No file'),'vi_not_open');
+   await send(a,'iBATON_EDITOR_TEST\x1b');await until(()=>screen(a.view).includes('BATON_EDITOR_TEST'),'vi_input_missing');
+   await owner(a.view.binding,false,7);
+   a.host.style.width='850px';a.host.style.height='500px';
+   await until(async()=>String(await invoke('public_read',{binding:a.view.binding})).includes('BATON_EDITOR_TEST'),'vi_resize_redraw_not_observed');
+   await owner(a.view.binding,true);
+   let start=a.raw.length;await send(a,':q!\r');await until(()=>a.raw.slice(start).includes('BATON_SHELL>'),'vi_did_not_exit');
+   start=a.raw.length;await send(a,'top\r');await until(()=>/Mem:|CPU:|load average/.test(a.raw.slice(start)),'interactive_top_not_open');
+   a.host.style.width='940px';a.host.style.height='540px';await delay(250);
+   start=a.raw.length;await send(a,'q');await until(()=>a.raw.slice(start).includes('BATON_SHELL>'),'top_did_not_exit');
+   start=a.raw.length;await send(a,"printf '__SLEEP__\\n'; sleep 30\r");await until(()=>a.raw.slice(start).includes('__SLEEP__\r\n'),'sleep_not_started');await send(a,'\x03');await marker(a,'AFTER_INTERRUPT');
+   for(const e of entries.slice(1)){start=e.raw.length;await send(e,'stty size\r');await until(()=>e.raw.slice(start).includes('32 120\r\n'),'other_pty_resized');}
+   start=a.raw.length;await send(a,'stty size\r');await until(()=>a.raw.slice(start).includes(`${a.view.term.rows} ${a.view.term.cols}\r\n`),'local_remote_size_mismatch');
+   for(const e of entries)if(e.failure)throw e.failure;
+ }finally{active=undefined;for(const e of entries){e.view.dispose();e.host.remove();await command('close_session',{id:e.session.id});await until(async()=>{try{await command('remove_closed_session',{id:e.session.id});return true;}catch{return false;}},'close_timeout');}}
+}
 async function run(){const outcomes:{name:string;passed:boolean;error?:string}[]=[];
- await subscribe(event=>{if(event.type==='sessions'){for(const s of event.sessions){sessions.set(s.id,s);if(active?.binding.session===s.id)active.applySnapshot(s);}}else if(event.type==='auth'){const p=event.prompt;void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:p.kind==='host'?{kind:'host',accept:true}:{kind:'password',password:'fixture-only'}});}});
- const {port,single}=await invoke<{port:number;single?:string}>('fixture_config');
- for(const name of single?[single]:[...Object.keys(cases),'queue_overload','query_overload']){await fixture({action:'progress',name});try{if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
+ await subscribe(event=>{if(event.type==='sessions'){for(const s of event.sessions){sessions.set(s.id,s);if(active?.binding.session===s.id)active.applySnapshot(s);}}else if(event.type==='auth'){const p=event.prompt;void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:p.kind==='host'?{kind:'host',accept:!openSshMode||!!openSshFingerprint&&p.display.endsWith(openSshFingerprint)}:{kind:'password',password:openSshMode?'baton-fixture-only':'fixture-only'}});}});
+ const {port,second,single,suite,openssh,otherOpenSsh,fingerprint}=await invoke<{port:number;second:number;single?:string;suite:string;openssh?:string;otherOpenSsh?:string;fingerprint?:string}>('fixture_config');
+ openSshMode=suite==='openssh';openSshFingerprint=fingerprint;
+ const names=single?[single]:suite==='openssh'?['interactive-openssh']:suite==='geometry'?['geometry']:suite==='all'?[...Object.keys(cases),'queue_overload','query_overload','geometry']:[...Object.keys(cases),'queue_overload','query_overload'];
+ for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
  await invoke('finish',{outcomes});
 }
 void run().catch(error=>{void invoke('finish',{outcomes:[{name:'startup',passed:false,error:String(error)}]});});

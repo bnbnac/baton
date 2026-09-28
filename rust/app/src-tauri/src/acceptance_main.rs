@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[tauri::command]
 fn fixture_config() -> serde_json::Value {
     eprintln!("fixture frontend ready");
-    serde_json::json!({"port":std::env::var("BATON_FIXTURE_PORT").unwrap().parse::<u16>().unwrap(),"single":std::env::var("BATON_DESKTOP_CASE").ok()})
+    serde_json::json!({"port":std::env::var("BATON_FIXTURE_PORT").unwrap().parse::<u16>().unwrap(),"second":std::env::var("BATON_SECOND_PORT").unwrap().parse::<u16>().unwrap(),"single":std::env::var("BATON_DESKTOP_CASE").ok(),"suite":std::env::var("BATON_DESKTOP_SUITE").unwrap_or("terminal".into()),"openssh":std::env::var("BATON_PROBE_SSH_PORT").ok(),"otherOpenSsh":std::env::var("BATON_PROBE_OTHER_SSH_PORT").ok(),"fingerprint":std::env::var("BATON_PROBE_HOST_KEY").ok()})
 }
 #[tauri::command]
 async fn fixture(request: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -13,10 +13,14 @@ async fn fixture(request: serde_json::Value) -> Result<serde_json::Value, String
         eprintln!("case: {}", request["name"]);
         return Ok(serde_json::Value::Null);
     }
-    let port = std::env::var("BATON_CONTROL_PORT")
-        .map_err(|_| "no_control")?
-        .parse::<u16>()
-        .map_err(|_| "bad_control")?;
+    let port = std::env::var(if request["server"] == 2 {
+        "BATON_SECOND_CONTROL"
+    } else {
+        "BATON_CONTROL_PORT"
+    })
+    .map_err(|_| "no_control")?
+    .parse::<u16>()
+    .map_err(|_| "bad_control")?;
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         let mut socket = tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
             .await
