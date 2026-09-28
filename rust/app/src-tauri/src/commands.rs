@@ -2,6 +2,14 @@ use crate::{dto::*, *};
 use std::sync::{Arc, Mutex};
 use tauri::{State, WebviewWindow, ipc::Channel};
 pub struct Pipe(pub Mutex<Option<Channel<UiEvent>>>);
+struct OutputPipe(Channel<FrameDto>);
+impl OutputSink for OutputPipe {
+    fn frame(&self, frame: FrameDto) -> Result<(), AppError> {
+        self.0
+            .send(frame)
+            .map_err(|_| AppError::new("frontend_lost"))
+    }
+}
 impl EventSink for Pipe {
     fn emit(&self, event: UiEvent) -> Result<(), AppError> {
         self.0
@@ -92,9 +100,14 @@ pub async fn bind_terminal(
     window: WebviewWindow,
     state: State<'_, Managed>,
     request: SessionRequest,
+    output: Channel<FrameDto>,
 ) -> Result<Binding, AppError> {
     local(&window)?;
-    state.service.bind(request.id).await
+    let binding = state.service.bind(request.id).await?;
+    state
+        .service
+        .start_output(binding, Arc::new(OutputPipe(output)))?;
+    Ok(binding)
 }
 #[tauri::command]
 pub async fn user_input(

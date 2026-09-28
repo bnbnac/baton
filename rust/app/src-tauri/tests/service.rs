@@ -231,7 +231,7 @@ async fn foreign_view_and_duplicate_input_cannot_cross_user_session() {
         binding,
         epoch: SafeInt::new(0).unwrap(),
         input_seq: SafeInt::new(seq).unwrap(),
-        text: "hello".into(),
+        data: b"hello".to_vec(),
     };
     assert_eq!(
         app.user_input(input(
@@ -300,6 +300,21 @@ async fn late_success_after_cancel_cannot_reopen_the_reserved_session() {
     assert!(app.bind(id).await.is_err());
     app.shutdown().await;
 }
+#[tokio::test]
+async fn binding_before_connect_does_not_poison_the_later_terminal() {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let app = AppService::with_connector(
+        Arc::new(Late(Mutex::new(Some(rx)))),
+        Arc::new(Sink::default()),
+    );
+    let id = app.connect(request()).unwrap().id;
+    assert!(app.bind(id).await.is_err());
+    tx.send(()).unwrap();
+    connected(&app, id).await;
+    assert!(app.bind(id).await.is_ok());
+    assert_eq!(app.list()[0].state, "user_owned");
+    app.shutdown().await;
+}
 #[tokio::test(start_paused = true)]
 async fn stale_heartbeat_cannot_keep_a_lost_frontend_alive() {
     let sink = Arc::new(Sink::default());
@@ -357,4 +372,78 @@ fn identifiers_serialize_as_strings_and_unknown_command_fields_are_rejected() {
         "\"ffffffffffffffffffffffffffffffff\""
     );
     assert!(serde_json::from_str::<ConnectionRequest>(r#"{"host":"localhost","port":22,"username":"u","label":"l","method":"password","principal":"agent"}"#).is_err());
+}
+
+#[test]
+fn binary_input_dto_accepts_exact_bytes_without_utf8_conversion() {
+    let value = serde_json::json!({"binding":{"session":"00000000000000000000000000000001","view":"00000000000000000000000000000002"},"epoch":0,"input_seq":1,"data":[27,91,77,255]});
+    assert!(serde_json::from_value::<UserInput>(value).is_ok());
+}
+struct CaptureConnector(Arc<Mutex<Option<SessionHandle>>>);
+struct CaptureReady(SessionId, Arc<Mutex<Option<SessionHandle>>>);
+impl ReadyConnection for CaptureReady {
+    fn activate(self: Box<Self>, runtime: &Runtime) -> Result<SessionHandle, SshError> {
+        let handle = runtime.activate_session(self.0, Box::new(Wire)).unwrap();
+        *self.1.lock().unwrap() = Some(handle.clone());
+        Ok(handle)
+    }
+}
+impl Connector for CaptureConnector {
+    fn connect(
+        &self,
+        r: ConnectRequest,
+        _: Arc<dyn AuthUi>,
+        _: CancellationToken,
+    ) -> IoFuture<'_, Result<Box<dyn ReadyConnection>, SshError>> {
+        Box::pin(async move {
+            Ok(Box::new(CaptureReady(r.session, self.0.clone())) as Box<dyn ReadyConnection>)
+        })
+    }
+}
+struct Frames(tokio::sync::mpsc::UnboundedSender<FrameDto>);
+impl OutputSink for Frames {
+    fn frame(&self, frame: FrameDto) -> Result<(), AppError> {
+        self.0.send(frame).map_err(|_| AppError::new("sink_closed"))
+    }
+}
+#[tokio::test]
+async fn output_pump_drains_existing_output_and_ack_wakes_the_final_blocked_byte() {
+    let captured = Arc::new(Mutex::new(None));
+    let app = AppService::with_connector(
+        Arc::new(CaptureConnector(captured.clone())),
+        Arc::new(Sink::default()),
+    );
+    let id = app.connect(request()).unwrap().id;
+    connected(&app, id).await;
+    let handle = captured.lock().unwrap().clone().unwrap();
+    let binding = app.bind(id).await.unwrap();
+    handle.receive(vec![b'x'; 65536]).await.unwrap();
+    handle.receive(vec![b'y']).await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.start_output(binding, Arc::new(Frames(tx))).unwrap();
+    let first = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+        .await
+        .expect("pump did not drain")
+        .unwrap();
+    assert_eq!(first.bytes, vec![b'x'; 65536]);
+    assert!(rx.try_recv().is_err());
+    app.ack(AckRequest {
+        binding,
+        seq: first.seq,
+    })
+    .await
+    .unwrap();
+    let last = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+        .await
+        .expect("ack wake lost")
+        .unwrap();
+    assert_eq!(last.bytes, b"y");
+    assert_eq!(last.seq.get(), first.seq.get() + 1);
+    app.ack(AckRequest {
+        binding,
+        seq: last.seq,
+    })
+    .await
+    .unwrap();
+    app.shutdown().await;
 }

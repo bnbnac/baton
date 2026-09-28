@@ -1,0 +1,5 @@
+{
+  "$schema":"https://schema.tauri.app/config/2","productName":"Baton UI Acceptance","version":"0.1.0","identifier":"dev.baton.acceptance",
+  "build":{"frontendDist":"../../dist-acceptance"},
+  "app":{"windows":[{"label":"main","title":"Baton Acceptance","create":false,"width":1180,"height":820}],"security":{"csp":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"}},"bundle":{"active":false,"icon":["../icons/icon.ico"]}
+}

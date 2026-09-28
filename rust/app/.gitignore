@@ -1,4 +1,5 @@
 node_modules/
 dist/
+dist-acceptance/
 .test-output/
 src-tauri/gen/

@@ -51,6 +51,8 @@ pub(crate) struct Entry {
     pub binding: Option<Binding>,
     pub last_input: SafeInt,
     pub tasks: Vec<JoinHandle<()>>,
+    pub output_ready: Arc<tokio::sync::Notify>,
+    pub output_started: bool,
 }
 pub(crate) struct AppState {
     pub entries: BTreeMap<Id, Entry>,
@@ -84,7 +86,11 @@ impl AppService {
         self.handle(r.binding)?
             .ack_ui_frame(r.binding.core(), r.seq)
             .await
-            .map_err(core_error)
+            .map_err(core_error)?;
+        if let Some(entry) = self.state.lock().unwrap().entries.get(&r.binding.session) {
+            entry.output_ready.notify_one();
+        }
+        Ok(())
     }
     pub async fn resize(&self, r: ResizeRequest) -> Result<(), AppError> {
         self.handle(r.binding)?
@@ -115,7 +121,7 @@ impl AppService {
     }
     pub async fn user_input(&self, input: UserInput) -> Result<(), AppError> {
         let handle = self.handle(input.binding)?;
-        if input.text.len() > limits::INPUT_BYTES {
+        if input.data.len() > limits::INPUT_BYTES {
             return Err(AppError::new("input_too_large"));
         }
         {
@@ -134,17 +140,28 @@ impl AppService {
                 principal: Principal::User,
                 epoch: input.epoch,
                 request_id: RequestId::from_u128(input.input_seq.get().into()),
-                payload: input.text.into_bytes(),
+                payload: input.data,
             })
             .await
             .map(|_| ())
             .map_err(core_error)
     }
     pub fn with_connector(connector: Arc<dyn Connector>, sink: Arc<dyn EventSink>) -> Arc<Self> {
-        Arc::new(Self {
-            runtime: Arc::new(Runtime::spawn(Registry::new(AppId::from_u128(
+        Self::with_registry(
+            connector,
+            sink,
+            Registry::new(AppId::from_u128(
                 crate::ids::fresh().expect("OS entropy required").0,
-            )))),
+            )),
+        )
+    }
+    pub(crate) fn with_registry(
+        connector: Arc<dyn Connector>,
+        sink: Arc<dyn EventSink>,
+        registry: Registry,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            runtime: Arc::new(Runtime::spawn(registry)),
             state: Mutex::new(AppState {
                 entries: BTreeMap::new(),
                 stopping: false,
@@ -244,6 +261,8 @@ impl AppService {
                     binding: None,
                     last_input: SafeInt::new(0).unwrap(),
                     tasks: vec![task, forward],
+                    output_ready: Arc::new(tokio::sync::Notify::new()),
+                    output_started: false,
                 },
             );
         }
@@ -342,6 +361,10 @@ impl AppService {
         }
     }
     pub async fn bind(&self, id: Id) -> Result<Binding, AppError> {
+        let handle = self
+            .runtime
+            .session_handle(SessionId::from_u128(id.0))
+            .map_err(core_error)?;
         let binding = {
             let mut state = self.state.lock().unwrap();
             if state.stopping {
@@ -363,9 +386,7 @@ impl AppService {
             entry.binding = Some(binding);
             binding
         };
-        self.runtime
-            .session_handle(SessionId::from_u128(id.0))
-            .map_err(core_error)?
+        handle
             .bind_view(ViewId::from_u128(binding.view.0))
             .await
             .map_err(core_error)?;

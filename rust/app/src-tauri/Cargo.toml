@@ -7,6 +7,12 @@ build = "build.rs"
 
 [features]
 desktop = ["dep:tauri", "dep:tauri-build"]
+acceptance = ["tokio/net", "tokio/io-util"]
+
+[[bin]]
+name = "baton-ui-acceptance"
+path = "src/acceptance_main.rs"
+required-features = ["desktop", "acceptance"]
 
 [[bin]]
 name = "baton"

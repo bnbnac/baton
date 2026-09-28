@@ -114,13 +114,28 @@ pub struct Binding {
     pub session: Id,
     pub view: Id,
 }
+#[derive(Clone, Debug, Serialize)]
+pub struct FrameDto {
+    pub binding: Binding,
+    pub seq: SafeInt,
+    pub bytes: Vec<u8>,
+    pub queries: Vec<QueryDto>,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryDto {
+    pub id: SafeInt,
+    pub kind: String,
+    pub epoch: SafeInt,
+    pub end_offset: usize,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserInput {
     pub binding: Binding,
     pub epoch: SafeInt,
     pub input_seq: SafeInt,
-    pub text: String,
+    pub data: Vec<u8>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
