@@ -1,0 +1,6 @@
+{
+  "$schema":"https://schema.tauri.app/config/2","productName":"Baton","version":"0.1.0","identifier":"dev.baton.desktop",
+  "build":{"beforeBuildCommand":"npm run build","frontendDist":"../dist"},
+  "app":{"windows":[{"label":"main","title":"Baton","create":false,"width":1180,"height":820,"minWidth":760,"minHeight":540}],"security":{"csp":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"}},
+  "bundle":{"active":false}
+}
