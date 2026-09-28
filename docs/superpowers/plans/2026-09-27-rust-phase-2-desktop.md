@@ -1,6 +1,6 @@
 # Baton Rust Phase 2 SSH and Terminal Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 사용자가 직접 SSH 서버에 접속·인증하고 여러 독립 셸을 조작하는 Rust/Tauri 앱을 만든다. 단계 0에서 남은 실제 Windows 입력과 WebView 종료를 이번 단계에서 검증한다.
 
@@ -10,7 +10,7 @@
 
 **Spec:** [구조 설계](../specs/2026-09-20-rust-transition-design.md), [검증 기준](../specs/2026-09-20-rust-verification-design.md), [단계 0 보고서](../../testing/rust-phase-0-report.md), [단계 1 보고서](../../testing/rust-phase-1-report.md).
 
-상태: 2026-09-27 작성. 사용자 검토 대상이며 모든 구현 단계는 미실행이다. 실행 방식은 기존 **Native**를 유지한다. 기준 코드 `d62b85a`의 코어 55개/workspace 64개 결과는 단계 1 증거이며 이 계획의 시험 결과로 합산하지 않는다.
+상태: 2026-09-29. Tasks 1–7 구현 완료. Task 8 자동 검사 통과, 필수 Windows 물리 관측과 최종 리뷰는 진행 중이다. 실행 방식은 기존 **Native**를 유지한다. 기준 코드 `d62b85a`의 코어 55개/workspace 64개 결과는 단계 1 증거이며 이 계획의 시험 결과로 합산하지 않는다.
 
 ## Global Constraints
 
@@ -120,7 +120,7 @@ Transport::resize(&mut self, geometry: Geometry) -> IoFuture<'_, Result<(), Tran
 
 **Interfaces:** 위 Runtime API 생산. 기존 `spawn(Registry)`, `attach`, SessionHandle API는 기존 시험이 계속 동작하도록 유지하거나 호출부를 동일 계약으로 이관한다. reserve는 Connecting 삽입, activate는 attach+connected를 같은 gate에서 수행한다.
 
-- [ ] **Step 1: 실패하는 lifecycle 시험을 작성한다.** 타입 선언/최소 stub 뒤 assertion 실패를 확인한다.
+- [x] **Step 1: 실패하는 lifecycle 시험을 작성한다.** 타입 선언/최소 stub 뒤 assertion 실패를 확인한다.
 
 ```rust
 // reserve_close_late_activate_never_opens: reserve → close → activate
@@ -138,10 +138,10 @@ assert_eq!(transport_drops_at_shutdown_return, admitted_transports);
 
 추가: 16개 Connecting/Closed 포함 한도, 중복 ID, 원격 종료 후 다른 셸 유지, reserve 직후 앱 종료, activate 앞뒤 취소, list가 제거된 세션을 반환하지 않는 순서를 고정한다. Debug/metadata에서 비밀을 보유하지 않는다.
 
-- [ ] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test lifecycle` → 새 계약 assertion FAIL. 컴파일 실패만으로 RED를 충족했다고 기록하지 않는다.
-- [ ] **Step 3:** 등록·활성화·shutdown을 같은 registry gate에 묶는다. close는 Connecting도 처리한다. driver join 완료 뒤만 map 정리; 제거/과거 handle 호출에 panic 없음. reserve 후 실패는 Closed로 남긴다.
-- [ ] **Step 4:** 동일 명령 PASS, 기존 `races` 및 전체 core PASS. `shutdown_joins_attach_admitted_before_close_gate`는 유지한다.
-- [ ] **Step 5:** Task 1 파일만 stage 후 `git commit -m "feat: manage live core session lifecycles"`.
+- [x] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test lifecycle` → 새 계약 assertion FAIL. 컴파일 실패만으로 RED를 충족했다고 기록하지 않는다.
+- [x] **Step 3:** 등록·활성화·shutdown을 같은 registry gate에 묶는다. close는 Connecting도 처리한다. driver join 완료 뒤만 map 정리; 제거/과거 handle 호출에 panic 없음. reserve 후 실패는 Closed로 남긴다.
+- [x] **Step 4:** 동일 명령 PASS, 기존 `races` 및 전체 core PASS. `shutdown_joins_attach_admitted_before_close_gate`는 유지한다.
+- [x] **Step 5:** Task 1 파일만 stage 후 `git commit -m "feat: manage live core session lifecycles"`.
 
 ## Task 2: 뷰 권한과 실제 수신에 묶인 terminal reply
 
@@ -149,7 +149,7 @@ assert_eq!(transport_drops_at_shutdown_return, admitted_transports);
 
 **Interfaces:** `ViewBinding`, `QueryMark`, `UiFrame`, `ReplyCall` 및 view/frame 메서드 생산. 기존 public-only 수신 표식을 내부 `ReceiveScope{epoch:SafeInt,control_allowed:bool,public_allowed:bool}`로 확장한다. `SessionHandle::receive` 진입 gate에서 UserOwned/AgentOwned이면 control_allowed, AgentOwned이면 public_allowed를 기록한다. `Session::receive_scoped(bytes,scope)`는 원본 UI를 보존하고, scope가 현재 epoch와 같고 처리 시에도 해당 상태가 허용할 때만 query/public에 반영한다. 동기 `Session::receive`는 현재 scope를 만드는 편의 wrapper로 유지한다. 내부 `Queries::receive(epoch, seq, bytes, now) -> Result<Vec<QueryMark>,CoreError>`와 `Queries::prepare_reply(call, now) -> Result<Vec<u8>,CoreError>`가 token 검증/소모와 응답 바이트 생성을 담당한다. 이 Task의 시험은 승인된 바이트까지 검증하며 실제 transport로 보내는 `SessionHandle::protocol_reply`와 송신 직전 재검사는 Task3에서 연결한다. parser는 bounded incremental 상태이며 패킷 전체를 누적하지 않는다.
 
-- [ ] **Step 1:** 아래 효과 시험을 먼저 작성한다.
+- [x] **Step 1:** 아래 효과 시험을 먼저 작성한다.
 
 ```rust
 // token_once_expired_foreign_and_transition
@@ -165,10 +165,10 @@ assert_eq!(thirty_third_query_result, Err(CoreError::QueryLimit));
 
 모든 분할 위치에서 `ESC[06n ESC[2;3H ESC[6n`, leading zero, OSC/DCS 안의 ESC→CSI, 64바이트보다 긴 CSI, CAN/SUB, UTF-8 분할과 ASCII 제어를 조합한다. 기대 바이트는 Phase0 실측 fixture와 비교한다. 조회 시작 epoch를 저장하고 이전 epoch에서 시작한 미완성 CSI에 다음 epoch의 token을 주지 않는다. UI를 늦춰 오래된 frame이 다음 token을 빌리는 사례를 재현한다. `queued_user_query_then_handoff_has_no_reply`는 UserOwned에서 수신 큐에 들어온 조회가 처리 전 전달되면 새 epoch token/응답 0회임을 확인한다. UserOwned의 정상 조회는 공개 출력 없이 terminal reply를 생성할 수 있어야 한다.
 
-- [ ] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test queries` → token/epoch/offset assertion FAIL.
-- [ ] **Step 3:** 실제 수신 경계에서만 token을 발급한다. frame 분할 후 `end_offset`은 그 frame 안의 조회 최종 바이트를 가리킨다. 생성 시각은 UI pump 시각이 아니다. 과거 scope의 바이트도 parser의 구조 상태에는 반영하되 조회 권한을 만들지 않는다. 전환 때 parser를 무조건 Ground로 초기화해 긴 OSC/DCS의 나머지를 새 CSI로 오인하지 않는다. 32개 상한은 미응답 token과 송신 대기 reply 합계에 적용하며, UI 지연으로 만료된 token을 새 token으로 교체하지 않는다. 상한 초과는 해당 세션을 OutputOverload로 명시적으로 닫는다. view의 첫 bind만 허용하며 다른 generation으로 재부착하면 FrontendLost로 닫는다. 같은 binding 확인은 idempotent지만 과거 frame을 재전송하지 않는다. ack/reply의 view와 seq/epoch는 Rust에서 검사한다.
-- [ ] **Step 4:** 동일 시험 PASS. core output/races PASS, 특히 queued_receive 경계 회귀 유지. 생성기의 invalid-read 누락 보강은 Task3 모델 확장에 포함한다.
-- [ ] **Step 5:** `git commit -m "feat: bind terminal replies to received queries"`.
+- [x] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test queries` → token/epoch/offset assertion FAIL.
+- [x] **Step 3:** 실제 수신 경계에서만 token을 발급한다. frame 분할 후 `end_offset`은 그 frame 안의 조회 최종 바이트를 가리킨다. 생성 시각은 UI pump 시각이 아니다. 과거 scope의 바이트도 parser의 구조 상태에는 반영하되 조회 권한을 만들지 않는다. 전환 때 parser를 무조건 Ground로 초기화해 긴 OSC/DCS의 나머지를 새 CSI로 오인하지 않는다. 32개 상한은 미응답 token과 송신 대기 reply 합계에 적용하며, UI 지연으로 만료된 token을 새 token으로 교체하지 않는다. 상한 초과는 해당 세션을 OutputOverload로 명시적으로 닫는다. view의 첫 bind만 허용하며 다른 generation으로 재부착하면 FrontendLost로 닫는다. 같은 binding 확인은 idempotent지만 과거 frame을 재전송하지 않는다. ack/reply의 view와 seq/epoch는 Rust에서 검사한다.
+- [x] **Step 4:** 동일 시험 PASS. core output/races PASS, 특히 queued_receive 경계 회귀 유지. 생성기의 invalid-read 누락 보강은 Task3 모델 확장에 포함한다.
+- [x] **Step 5:** `git commit -m "feat: bind terminal replies to received queries"`.
 
 ## Task 3: 단일 transport 작업과 동적 geometry
 
@@ -176,7 +176,7 @@ assert_eq!(thirty_third_query_result, Err(CoreError::QueryLimit));
 
 **Interfaces:** Geometry/resize 및 `protocol_reply` API 생산. `Geometry::new(columns:u16,rows:u16)->Result<Geometry,CoreError>`는 범위를 검사한다. `TransportError` 정의. core 내부 `TransportOp = Input(WriteOp) | Reply{seq,epoch,bytes} | Resize{seq,view,geometry}`, `TransportCompletion = Data(WriteResult) | Resize(Result<(),TransportError>)`를 정의한다. 기존 write sequence를 모든 transport 작업의 공통 단조 증가 sequence로 확장하며 종류별로 같은 번호를 따로 발급하지 않는다. `Session::start_transport_op(now) -> Option<TransportOp>`, `finish_transport_op(seq, completion, now) -> Result<(),CoreError>`를 driver가 사용한다. 외부 raw reply 입력은 노출하지 않는다.
 
-- [ ] **Step 1:** 다음 assertion을 가진 시험을 작성한다.
+- [x] **Step 1:** 다음 assertion을 가진 시험을 작성한다.
 
 ```rust
 assert_eq!(geometry_after_zero_measurement, Geometry::new(120,32).unwrap());
@@ -192,10 +192,10 @@ assert_eq!(concurrent_transport_ops_max, 1);
 
 일반 queue32+active1에서 reply/resize를 보내고 회수·close가 즉시 수락되는지 검사한다. 전환 중 latest geometry 하나만 유지하며 완료 후 해당 view가 여전히 유효할 때 전송한다. reply는 enqueue와 첫 transport poll 직전에 token/epoch/2초 만료를 검사한다. 일반 입력, reply, resize가 이미 시작했다면 모두 5초 전환 장벽의 대상이다. 실패한 resize로 geometry 성공값을 갱신하지 않는다.
 
-- [ ] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test geometry --test control_io` → 구체적 상한/경합 assertion FAIL.
-- [ ] **Step 3:** 단일 active future를 작업 enum으로 일반화한다. reply는 token 소모 후에도 송신/취소까지 32개 예산에 남는다. resize는 일반 입력 queue를 쓰지 않고 latest slot 하나를 교체한다. close/transition은 큐와 독립이며, 실행 가능한 reply/resize 묶음과 ordinary input 사이를 번갈아 선택해 일반 입력이 계속 굶지 않게 한다. elapsed clock은 주입 가능하게 유지한다. resize에 새 input epoch/stream을 발급하지 않는다.
-- [ ] **Step 4:** 독립 모델에 resize request/start/complete와 view 교체/닫힘을 추가한다. event 선택과 invalid field 선택에 독립 PRNG draw를 사용해 Phase1의 modulo 상관 문제를 없애고 `stale_epoch_reads > 0`, `stale_stream_reads > 0`, `stale_view_resizes > 0`를 실제 집계한다. 1,000 seeds×200 events에서 사건별/거부별 coverage 출력, 실패 축소 유지. `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --all-targets` PASS, fmt/clippy PASS. 바뀐 모델 결과를 이전 200,000 사건 통계와 혼합하지 않는다.
-- [ ] **Step 5:** `git commit -m "feat: serialize terminal controls and coalesce resize"`.
+- [x] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --test geometry --test control_io` → 구체적 상한/경합 assertion FAIL.
+- [x] **Step 3:** 단일 active future를 작업 enum으로 일반화한다. reply는 token 소모 후에도 송신/취소까지 32개 예산에 남는다. resize는 일반 입력 queue를 쓰지 않고 latest slot 하나를 교체한다. close/transition은 큐와 독립이며, 실행 가능한 reply/resize 묶음과 ordinary input 사이를 번갈아 선택해 일반 입력이 계속 굶지 않게 한다. elapsed clock은 주입 가능하게 유지한다. resize에 새 input epoch/stream을 발급하지 않는다.
+- [x] **Step 4:** 독립 모델에 resize request/start/complete와 view 교체/닫힘을 추가한다. event 선택과 invalid field 선택에 독립 PRNG draw를 사용해 Phase1의 modulo 상관 문제를 없애고 `stale_epoch_reads > 0`, `stale_stream_reads > 0`, `stale_view_resizes > 0`를 실제 집계한다. 1,000 seeds×200 events에서 사건별/거부별 coverage 출력, 실패 축소 유지. `cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core --all-targets` PASS, fmt/clippy PASS. 바뀐 모델 결과를 이전 200,000 사건 통계와 혼합하지 않는다.
+- [x] **Step 5:** `git commit -m "feat: serialize terminal controls and coalesce resize"`.
 
 ## Task 4: 취소 가능한 russh 인증과 PTY transport
 
@@ -205,14 +205,14 @@ assert_eq!(concurrent_transport_ops_max, 1);
 
 `tests/driver.rs`는 일반 libtest로 실행하지 않는다. manifest에 `[[bin]] name="baton-ssh-fixture-driver", path="tests/driver.rs", required-features=["acceptance"]`로 선언한다. Node helper가 `cargo +stable build --manifest-path rust/Cargo.toml --locked -p baton-ssh --features acceptance --bin baton-ssh-fixture-driver --message-format=json`의 executable 경로를 읽어 실행한다. fixture 선택·합성 인증정보는 길이 제한 stdin으로만 받고 argv/로그에 넣지 않는다. 일반 product build의 default feature에 acceptance를 넣지 않는다.
 
-- [ ] **Step 1:** Node ssh2 독립 서버 audit으로 host reject/cancel, wrong password, encrypted key/wrong passphrase, keyboard-interactive 2회, password partial-success→interactive, 취소 전/라운드 사이/PTY 전/late success를 작성한다. 취소 후 실제 success를 받는 케이스는 서버 auth 해제와 클라이언트 관측을 모두 확인하고 `pty=0`, `shell=0`, `connection_closed=1`을 assert한다. prompt replay/wrong attempt/다른 session 답변은 auth 효과 0회여야 한다.
-- [ ] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml -p baton-ssh --no-run` 후 고정 버전 lock 검토. `node --test rust/tests/phase2/auth.test.mjs rust/tests/phase2/ssh.test.mjs` → 제품 driver의 계약 assertion FAIL. fixture/probe 성공을 제품 성공으로 대신하지 않는다.
-- [ ] **Step 3:** 단계0에서 확인한 `check_server_key`, authenticate API, PTY/shell Success 관측을 제품 actor로 구현한다. 사용자의 host 승인 전에 authenticate를 호출하지 않는다. challenge ID는 한 번 사용하고 stale answer를 폐기한다. key/plain secret은 필요한 범위만 소유하고 사용 후 `zeroize`로 지운다. JS/SDK 내부 복사의 완전한 메모리 소거까지 주장하지 않는다.
+- [x] **Step 1:** Node ssh2 독립 서버 audit으로 host reject/cancel, wrong password, encrypted key/wrong passphrase, keyboard-interactive 2회, password partial-success→interactive, 취소 전/라운드 사이/PTY 전/late success를 작성한다. 취소 후 실제 success를 받는 케이스는 서버 auth 해제와 클라이언트 관측을 모두 확인하고 `pty=0`, `shell=0`, `connection_closed=1`을 assert한다. prompt replay/wrong attempt/다른 session 답변은 auth 효과 0회여야 한다.
+- [x] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml -p baton-ssh --no-run` 후 고정 버전 lock 검토. `node --test rust/tests/phase2/auth.test.mjs rust/tests/phase2/ssh.test.mjs` → 제품 driver의 계약 assertion FAIL. fixture/probe 성공을 제품 성공으로 대신하지 않는다.
+- [x] **Step 3:** 단계0에서 확인한 `check_server_key`, authenticate API, PTY/shell Success 관측을 제품 actor로 구현한다. 사용자의 host 승인 전에 authenticate를 호출하지 않는다. challenge ID는 한 번 사용하고 stale answer를 폐기한다. key/plain secret은 필요한 범위만 소유하고 사용 후 `zeroize`로 지운다. JS/SDK 내부 복사의 완전한 메모리 소거까지 주장하지 않는다.
 
 `Channel::split()`의 read/write half를 사용한다 (russh 0.63.1 로컬 소스 확인). read task는 Data/ExtendedData의 순서를 보존해 하나씩 코어에 전달하고 EOF/Close/오류 때 해당 세션만 닫는다. write/resize는 core 단일 작업 경로를 사용한다. SDK 송신 성공은 Delivered, 시작 이후 실패는 Uncertain이며 자동 재시도하지 않는다. SSH reader/connection supervisor는 하나의 소유 객체와 cancel/join 경로로 묶는다. transport Drop은 그 세션의 reader/SDK 작업도 중단한다. normal close는 channel close→disconnect→connection task 종료를 같은 종료 기한 안에서 기다린다. close callback 재수신은 보장하지 않는다.
 
-- [ ] **Step 4:** fixture 시험 PASS. 독립 서버 두 개/셸 네 개에서 A 출력·입력이 B에 섞이지 않고 A 종료 뒤 B 명령 성공. 실제 OpenSSH fixture에서 `stty size` 32×120→27×91, Ctrl+C→새 명령 marker, PTY/shell 거절·원격 exit·TCP close를 관측한다. session close와 reader가 서로 join을 기다리는 교착이 없어야 한다. blackhole 즉시 탐지·원격 작업 전체 종료는 주장하지 않는다.
-- [ ] **Step 5:** fmt/clippy+core+SSH 통과 후 `git commit -m "feat: connect authenticated SSH terminal transports"`.
+- [x] **Step 4:** fixture 시험 PASS. 독립 서버 두 개/셸 네 개에서 A 출력·입력이 B에 섞이지 않고 A 종료 뒤 B 명령 성공. 실제 OpenSSH fixture에서 `stty size` 32×120→27×91, Ctrl+C→새 명령 marker, PTY/shell 거절·원격 exit·TCP close를 관측한다. session close와 reader가 서로 join을 기다리는 교착이 없어야 한다. blackhole 즉시 탐지·원격 작업 전체 종료는 주장하지 않는다.
+- [x] **Step 5:** fmt/clippy+core+SSH 통과 후 `git commit -m "feat: connect authenticated SSH terminal transports"`.
 
 ## Task 5: Tauri 앱과 연결·인증 화면
 
@@ -220,14 +220,14 @@ assert_eq!(concurrent_transport_ops_max, 1);
 
 **Interfaces:** `AppService`가 Runtime, 세션 metadata, auth attempt, 유효 view를 소유한다. UI command는 `connect_session`, `answer_auth`, `cancel_connect`, `list_sessions`, `close_session`, `remove_closed_session`, `bind_terminal`, `user_input`, `ack_output`, `terminal_reply`, `resize_terminal`, `frontend_pong`으로 한정한다. Rust가 app/session/view ID·입력 Principal::User를 결정하고 UI의 `input_seq`를 검증해 core RequestId로 변환한다. command payload에 임의 principal/connection을 받지 않는다. DTO는 `deny_unknown_fields`를 적용한다. AppService 자체는 Tauri 타입 없이 시험 가능하게 하고 `commands.rs`가 Channel을 연결한다.
 
-- [ ] **Step 1:** AppService 시험에서 유효하지 않은 host/port/key size/prompt 답변, foreign view, closed session, startup 후16/17, 취소 직후 늦은 성공, 앱 종료 중 connect를 거부한다. 허용 command 목록에 agent handoff/exec/file-read가 없음을 검사한다. 인증표식이 로그/에러 DTO/세션 metadata에 없는지 fixture marker로 검사한다. UI 테스트에서는 응답 제출 후 secret field가 비워지고 다른 세션 challenge에 재사용되지 않음을 확인한다.
-- [ ] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml -p baton-app --test service` 및 `npm.cmd test --prefix rust/app` → assertion FAIL. 순수 TS 시험은 tsc로 test output에 컴파일 후 Node test runner로 실행한다; WebView 검사라고 부르지 않는다.
-- [ ] **Step 3:** 독립 app package와 최소 Tauri capability/CSP를 만든다. 앱 전체 state는 Rust AppService이며 UI store는 표시용이다. 데이터는 textContent/xterm에만 넣는다. Tauri file/shell/opener plugin은 추가하지 않는다. main 로컬 window만 command 권한을 가진다. CSP remote script/navigation 차단. auth challenge는 Channel로 전달하고 취소/창 닫기 때 pending oneshot을 끝낸다. stale view가 붙거나 UI output channel이 끊기면 앱 모든 세션을 FrontendLost로 닫고 자동 복원하지 않는다.
+- [x] **Step 1:** AppService 시험에서 유효하지 않은 host/port/key size/prompt 답변, foreign view, closed session, startup 후16/17, 취소 직후 늦은 성공, 앱 종료 중 connect를 거부한다. 허용 command 목록에 agent handoff/exec/file-read가 없음을 검사한다. 인증표식이 로그/에러 DTO/세션 metadata에 없는지 fixture marker로 검사한다. UI 테스트에서는 응답 제출 후 secret field가 비워지고 다른 세션 challenge에 재사용되지 않음을 확인한다.
+- [x] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml -p baton-app --test service` 및 `npm.cmd test --prefix rust/app` → assertion FAIL. 순수 TS 시험은 tsc로 test output에 컴파일 후 Node test runner로 실행한다; WebView 검사라고 부르지 않는다.
+- [x] **Step 3:** 독립 app package와 최소 Tauri capability/CSP를 만든다. 앱 전체 state는 Rust AppService이며 UI store는 표시용이다. 데이터는 textContent/xterm에만 넣는다. Tauri file/shell/opener plugin은 추가하지 않는다. main 로컬 window만 command 권한을 가진다. CSP remote script/navigation 차단. auth challenge는 Channel로 전달하고 취소/창 닫기 때 pending oneshot을 끝낸다. stale view가 붙거나 UI output channel이 끊기면 앱 모든 세션을 FrontendLost로 닫고 자동 복원하지 않는다.
 
 frontend loss는 send 실패·reload/window event로 관측하고 backend challenge에 대한 heartbeat도 추가한다. heartbeat는 노출된 main window의 별도 control channel을 통해 5초마다 challenge, 마지막 유효 응답 이후 30초 만료로 정의한다. 숨김/최소화만으로 상태를 잃지 않게 실제 WebView에서 검증한다. 기한을 UI 환경 때문에 지킬 수 없다면 정상 최소화 종료를 수용하지 말고 관측 근거로 이 정책을 고쳐 다시 검증한다. heartbeat는 output ack를 대신하지 않는다.
 
-- [ ] **Step 4:** service/TS PASS, `npm.cmd run build --prefix rust/app` PASS, desktop build PASS. 실제 제품 실행에는 시험용 연결/명령 경로가 없음을 built assets와 invoke handler 목록으로 검사한다. preview를 보이게 실행할 때만 visible 창을 사용하고 background fixture는 hidden으로 시작한다.
-- [ ] **Step 5:** `git commit -m "feat: add desktop connection and authentication UI"`.
+- [x] **Step 4:** service/TS PASS, `npm.cmd run build --prefix rust/app` PASS, desktop build PASS. 실제 제품 실행에는 시험용 연결/명령 경로가 없음을 built assets와 invoke handler 목록으로 검사한다. preview를 보이게 실행할 때만 visible 창을 사용하고 background fixture는 hidden으로 시작한다.
+- [x] **Step 5:** `git commit -m "feat: add desktop connection and authentication UI"`.
 
 ## Task 6: xterm 출력·일반 입력·프로토콜 응답 통합
 
@@ -237,16 +237,16 @@ frontend loss는 send 실패·reload/window event로 관측하고 backend challe
 
 acceptance 전용 frontend entry와 Rust binary는 제품과 다른 dist/실행 파일/identifier를 쓴다. `baton-app`의 `desktop` feature는 실제 GUI build, `acceptance` feature는 `baton-ui-acceptance` binary에만 필요하게 한다. 각 시험은 같은 제품 TerminalView/AppService를 import하되 시험용 connection 등록·회수 제어는 그 binary에만 컴파일한다. AppService 생성 시 `Runtime::spawn`에 시험 연결을 미리 등록해 전달하는 방식으로 기존 trusted assembly를 쓰며, 단계3 dynamic IPC 등록을 선구현하지 않는다.
 
-- [ ] **Step 1:** 실제 Tauri Channel→xterm→typed reply→russh fixture 경로에서 DSR/CPR/DA 지원 응답 정확히1회, 중복/만료/다른 view/이전 epoch 0회, unsupported 조회가 뒤 토큰을 빌리지 않는다는 assertion을 쓴다. Phase0 38개 WebView 케이스의 해당 회귀 입력을 제품 컴포넌트에 다시 적용한다. `P(private)→Q(public)→R(private)→재전달`에서 UI PQR 유지, public에 해당 구간 Q만 노출, 새 stream에 저장된 P/R 없음. MCP 대신 core read로 검증했다고 명시한다.
-- [ ] **Step 2:** `pwsh -NoProfile -File rust/scripts/test-desktop.ps1 -Suite terminal` → 제품 연결 경로의 assertion FAIL. 지원 hook 없는 baseline에서는 기본 onData 응답이 올바르게 차단/분리되지 않아 실패해야 한다.
-- [ ] **Step 3:** xterm public parser hook만 사용한다. query 최종 byte를 처리하는 동안에만 해당 token을 활성화하고 그 이전 prefix에는 토큰을 주지 않는다. 지원 조회는 유효 token이 없더라도 기본 응답을 억제한다. old/expired reply 거부는 기대된 경계 결과로 처리하고 전체 UI 실패로 바꾸지 않는다. output payload를 과거 UI scrollback에서 만들지 않는다.
+- [x] **Step 1:** 실제 Tauri Channel→xterm→typed reply→russh fixture 경로에서 DSR/CPR/DA 지원 응답 정확히1회, 중복/만료/다른 view/이전 epoch 0회, unsupported 조회가 뒤 토큰을 빌리지 않는다는 assertion을 쓴다. Phase0 38개 WebView 케이스의 해당 회귀 입력을 제품 컴포넌트에 다시 적용한다. `P(private)→Q(public)→R(private)→재전달`에서 UI PQR 유지, public에 해당 구간 Q만 노출, 새 stream에 저장된 P/R 없음. MCP 대신 core read로 검증했다고 명시한다.
+- [x] **Step 2:** `pwsh -NoProfile -File rust/scripts/test-desktop.ps1 -Suite terminal` → 제품 연결 경로의 assertion FAIL. 지원 hook 없는 baseline에서는 기본 onData 응답이 올바르게 차단/분리되지 않아 실패해야 한다.
+- [x] **Step 3:** xterm public parser hook만 사용한다. query 최종 byte를 처리하는 동안에만 해당 token을 활성화하고 그 이전 prefix에는 토큰을 주지 않는다. 지원 조회는 유효 token이 없더라도 기본 응답을 억제한다. old/expired reply 거부는 기대된 경계 결과로 처리하고 전체 UI 실패로 바꾸지 않는다. output payload를 과거 UI scrollback에서 만들지 않는다.
 
 UserOwned에서만 onData를 일반 입력으로 보내고 Rust에서 재검사한다. 조합 시작의 binding/epoch를 기억해 회수 후 composition commit을 폐기한다. 정상 재전달 뒤 새 조합은 입력 가능해야 한다. 긴 paste는 16KiB UTF-8 이하 scalar 경계 조각으로 순서대로 보내되 전체 paste의 binding/epoch를 고정하고 최초 거부 후 나머지를 중단한다. 무제한 input Promise를 쌓지 않고 동시 in-flight UI call을 1개, 대기를32개로 제한한다; 포화 시 입력 거부를 UI에 표시하며 자동 재시도하지 않는다.
 
 frame은 seq 순서로 xterm.write callback까지 완료한 뒤 ack한다. callback 전 ack·중복 ack·미래 ack는 금지한다. 여러 작은 frame의 합계도 64KiB를 넘지 않도록 Rust 예산을 사용한다. 구독자를 먼저 등록한 뒤 상태/queue를 확인해 마지막 출력의 wakeup 유실을 막고, pending output이 있으면 drain한 뒤 기다린다. 숨긴 탭도 renderer/parser는 계속 소비한다.
 
-- [ ] **Step 4:** terminal acceptance PASS. ack 정지 후 1MiB 초과는 해당 세션 명시적 종료·입력 차단, 다른 셸 유지. OSC52/긴 OSC·DCS·CSI·잘못된 수치는 clipboard read/write·file·navigation 0회. xterm private API나 source patch 없음. 입력 회수 전후 실제 서버 bytes=0/정확값을 검사한다.
-- [ ] **Step 5:** `git commit -m "feat: connect bounded terminal rendering and input"`.
+- [x] **Step 4:** terminal acceptance PASS. ack 정지 후 1MiB 초과는 해당 세션 명시적 종료·입력 차단, 다른 셸 유지. OSC52/긴 OSC·DCS·CSI·잘못된 수치는 clipboard read/write·file·navigation 0회. xterm private API나 source patch 없음. 입력 회수 전후 실제 서버 bytes=0/정확값을 검사한다.
+- [x] **Step 5:** `git commit -m "feat: connect bounded terminal rendering and input"`.
 
 ## Task 7: 다중 세션 화면과 실제 resize
 
@@ -254,11 +254,11 @@ frame은 seq 순서로 xterm.write callback까지 완료한 뒤 ack한다. callb
 
 **Interfaces:** `GeometryObserver(binding,term,fit,bridge)`는 ResizeObserver/visibility event를 연결하고 `setVisible(bool)`, `dispose()`를 제공한다. UI는 safe resize_seq를 증가시켜 Task3 API 호출. core가 최종 rate/중복/권한 검사를 담당한다. 표시 geometry는 마지막 transport 전달 성공값이다.
 
-- [ ] **Step 1:** 연속91×27→120×32→91×27, 같은 값 반복, viewport0, 숨긴 탭, stale view callback, DPI100/150/200%에서 검사한다. 다른 셸 `stty size` 불변, 현재 셸 최종 원격 크기=최종 fit, 100ms 내 중복 전송 없음, epoch/stream/cursor 유지. 비공개 vi 문서의 resize 재출력이 public에 새로 들어올 수 있음을 별도 fixture로 검증한다.
-- [ ] **Step 2:** `pwsh -NoProfile -File rust/scripts/test-desktop.ps1 -Suite geometry` → geometry/대상 assertion FAIL.
-- [ ] **Step 3:** 보이는 양수 viewport에서만 FitAddon을 사용하고 규격 범위로 clamp한다. 숨긴 탭/최소화 동안 resize를 보내지 않고 복귀 때 다시 측정한다. Tab DOM를 숨겨도 xterm 인스턴스를 폐기하지 않는다. 세션 이름 변경/목록 순서 변경은 binding을 바꾸지 않는다. 마지막 닫힌 탭 제거 후도 다른 셸에 늦은 callbacks를 보내지 않는다.
-- [ ] **Step 4:** geometry acceptance PASS. 같은 서버2셸+별도서버1셸에서 interactive vi에 입력→저장 없이 종료, interactive top→resize→종료, Ctrl+C 이후 같은 셸 명령 성공. batch top만으로 대체하지 않는다. 실제 키/IME/DPI 관측은 Task8 기록이 없으면 미확인으로 남긴다.
-- [ ] **Step 5:** `git commit -m "feat: fit independent terminal views to remote PTYs"`.
+- [x] **Step 1:** 연속91×27→120×32→91×27, 같은 값 반복, viewport0, 숨긴 탭, stale view callback, DPI100/150/200%에서 검사한다. 다른 셸 `stty size` 불변, 현재 셸 최종 원격 크기=최종 fit, 100ms 내 중복 전송 없음, epoch/stream/cursor 유지. 비공개 vi 문서의 resize 재출력이 public에 새로 들어올 수 있음을 별도 fixture로 검증한다.
+- [x] **Step 2:** `pwsh -NoProfile -File rust/scripts/test-desktop.ps1 -Suite geometry` → geometry/대상 assertion FAIL.
+- [x] **Step 3:** 보이는 양수 viewport에서만 FitAddon을 사용하고 규격 범위로 clamp한다. 숨긴 탭/최소화 동안 resize를 보내지 않고 복귀 때 다시 측정한다. Tab DOM를 숨겨도 xterm 인스턴스를 폐기하지 않는다. 세션 이름 변경/목록 순서 변경은 binding을 바꾸지 않는다. 마지막 닫힌 탭 제거 후도 다른 셸에 늦은 callbacks를 보내지 않는다.
+- [x] **Step 4:** geometry acceptance PASS. 같은 서버2셸+별도서버1셸에서 interactive vi에 입력→저장 없이 종료, interactive top→resize→종료, Ctrl+C 이후 같은 셸 명령 성공. batch top만으로 대체하지 않는다. 실제 키/IME/DPI 관측은 Task8 기록이 없으면 미확인으로 남긴다.
+- [x] **Step 5:** `git commit -m "feat: fit independent terminal views to remote PTYs"`.
 
 ## Task 8: Windows 인수·프로세스 정리·실패하는 runner
 
@@ -266,9 +266,9 @@ frame은 seq 순서로 xterm.write callback까지 완료한 뒤 ack한다. callb
 
 **Interfaces:** `verify-phase-2.ps1 [-ManualEvidence path]` → 0 전부 충족 / 1 실패 / 2 자동 통과·필수 수동 미확인. `test-desktop.ps1 -Suite terminal|geometry|lifecycle`은 소유한 실행물만 정리한다. `record-phase-2-manual.ps1`은 관측 기록 수집/형식 검증만 하며 성공값을 자동 작성하지 않는다.
 
-- [ ] **Step 1:** runner 사본에서 외부 command 실패, 필수 test/case 누락, ignored/skip, stale sourceDigest/manual receipt, 없는 screenshot, descendant 잔존을 주입한다. 각각 exit1 또는 수동 미확인 exit2여야 한다. pass 수는 로그의 실제 결과에서 계산한다. runner를 auth 대기·UI ack 대기·cleanup 직전에 실제 중단시키는 시험을 먼저 실패시킨다.
-- [ ] **Step 2:** `node --test rust/tests/phase2/runner.test.mjs rust/tests/phase2/cleanup.test.mjs` → 누락/잔존을 성공으로 처리하는 초기 runner assertion FAIL.
-- [ ] **Step 3:** source/lock/executable hash, commit/dirty, Rust/Node/WebView2/Windows 버전, 명령·시간·pass/fail/skip, fixture ID와 정리 결과를 `artifacts/rust-phase-2/<run-id>/`에 기록한다. 전체 output은 합성 fixture만 저장한다. 타임아웃/수동 미확인/환경 부재를 pass로 바꾸지 않는다.
+- [x] **Step 1:** runner 사본에서 외부 command 실패, 필수 test/case 누락, ignored/skip, stale sourceDigest/manual receipt, 없는 screenshot, descendant 잔존을 주입한다. 각각 exit1 또는 수동 미확인 exit2여야 한다. pass 수는 로그의 실제 결과에서 계산한다. runner를 auth 대기·UI ack 대기·cleanup 직전에 실제 중단시키는 시험을 먼저 실패시킨다.
+- [x] **Step 2:** `node --test rust/tests/phase2/runner.test.mjs rust/tests/phase2/cleanup.test.mjs` → 누락/잔존을 성공으로 처리하는 초기 runner assertion FAIL.
+- [x] **Step 3:** source/lock/executable hash, commit/dirty, Rust/Node/WebView2/Windows 버전, 명령·시간·pass/fail/skip, fixture ID와 정리 결과를 `artifacts/rust-phase-2/<run-id>/`에 기록한다. 전체 output은 합성 fixture만 저장한다. 타임아웃/수동 미확인/환경 부재를 pass로 바꾸지 않는다.
 
 소유 프로세스는 생성 직후 root PID+시작 시각+실행 경로를 기록하고, 살아 있는 동안 해당 WebView user-data-dir과 부모 계통으로 자손 PID+시작 시각을 기록한다. root가 죽은 뒤 현재 PPID만 보고 소유권을 추정하지 않는다. 긴 WMI query를 cleanup의 유일한 방법으로 사용하지 않는다. 관찰 자체에 기한을 두고 입증되지 않은 프로세스는 이름으로 일괄 종료하지 않는다. 정상 앱 close에서 자손이 스스로 끝났는지와 runner 비정상 종료 뒤 강제 정리했는지를 별도 결과로 보고한다. 두 번째 sentinel 앱/WebView는 살아 있어야 한다.
 

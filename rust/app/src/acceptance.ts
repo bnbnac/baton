@@ -4,6 +4,7 @@ import {subscribe,command,type Session} from './bridge.js';
 import {TerminalView} from './terminal/terminal.js';
 import {bindTerminal,terminalBridge} from './terminal/bridge.js';
 import type {Frame,Binding} from './terminal/types.js';
+import {manualTerminal} from './manual.js';
 const host=document.querySelector<HTMLElement>('#terminal')!;
 const enc=new TextEncoder();const bytes=(s:string)=>Array.from(enc.encode(s));
 const hex=(s:string)=>bytes(s).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -21,6 +22,7 @@ async function rejected(p:Promise<unknown>){try{await p;}catch{return;}throw Err
 async function until(check:()=>boolean|Promise<boolean>,label:string){const end=Date.now()+8000;while(!await check()){if(Date.now()>end)throw Error(label);await delay(10);}}
 const sessions=new Map<string,Session>();let active:TerminalView|undefined;let number=0;
 let openSshMode=false,openSshFingerprint:string|undefined;
+let holdStage:string|undefined;
 const fixture=(request:unknown)=>invoke<any>('fixture',{request});
 const owner=async(binding:Binding,user:boolean,stream=1)=>{const s=await invoke<Session>('set_owner',{binding,user,stream});active?.applySnapshot(s);return s;};
 const cases:Record<string,{parts:string[];want:string}>={
@@ -194,11 +196,23 @@ async function interactiveOpenSsh(port:number,second:number){
  }finally{active=undefined;for(const e of entries){e.view.dispose();e.host.remove();await command('close_session',{id:e.session.id});await until(async()=>{try{await command('remove_closed_session',{id:e.session.id});return true;}catch{return false;}},'close_timeout');}}
 }
 async function run(){const outcomes:{name:string;passed:boolean;error?:string}[]=[];
- await subscribe(event=>{if(event.type==='sessions'){for(const s of event.sessions){sessions.set(s.id,s);if(active?.binding.session===s.id)active.applySnapshot(s);}}else if(event.type==='auth'){const p=event.prompt;void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:p.kind==='host'?{kind:'host',accept:!openSshMode||!!openSshFingerprint&&p.display.endsWith(openSshFingerprint)}:{kind:'password',password:openSshMode?'baton-fixture-only':'fixture-only'}});}});
- const {port,second,single,suite,openssh,otherOpenSsh,fingerprint}=await invoke<{port:number;second:number;single?:string;suite:string;openssh?:string;otherOpenSsh?:string;fingerprint?:string}>('fixture_config');
+ await subscribe(event=>{if(event.type==='sessions'){for(const s of event.sessions){sessions.set(s.id,s);if(active?.binding.session===s.id)active.applySnapshot(s);}}else if(event.type==='auth'){const p=event.prompt;if(holdStage==='auth-wait'&&p.kind==='password'){void fixture({action:'barrier',stage:holdStage});return;}void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:p.kind==='host'?{kind:'host',accept:!openSshMode||!!openSshFingerprint&&p.display.endsWith(openSshFingerprint)}:{kind:'password',password:openSshMode?'baton-fixture-only':'fixture-only'}});}});
+ const {port,second,single,suite,openssh,otherOpenSsh,fingerprint,hold}=await invoke<{port:number;second:number;single?:string;suite:string;openssh?:string;otherOpenSsh?:string;fingerprint?:string;hold?:string}>('fixture_config');
+ holdStage=hold;
+ if(suite==='manual'||suite==='manual-smoke'){await manualTerminal(port,host,sessions,view=>{active=view;},suite==='manual-smoke');return;}
+ if(hold==='sentinel'){await fixture({action:'barrier',stage:hold});return;}
+ if(hold==='auth-wait'||hold==='output-wait'){
+   const username=`fixture-${++number}`;
+   const s=await command<Session>('connect_session',{host:'127.0.0.1',port,username,label:hold,method:'password'});
+   if(hold==='auth-wait')return;
+   await until(()=>sessions.get(s.id)?.state==='user_owned','connect_timeout');
+   await bindTerminal(s.id,()=>{void fixture({action:'barrier',stage:hold});});
+   await fixture({action:'inject',user:username,bytes:bytes('X'.repeat(65537))});return;
+ }
  openSshMode=suite==='openssh';openSshFingerprint=fingerprint;
  const names=single?[single]:suite==='openssh'?['interactive-openssh']:suite==='geometry'?['geometry']:suite==='all'?[...Object.keys(cases),'queue_overload','query_overload','geometry']:[...Object.keys(cases),'queue_overload','query_overload'];
  for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
+ if(hold==='before-cleanup'){await fixture({action:'barrier',stage:hold});return;}
  await invoke('finish',{outcomes});
 }
 void run().catch(error=>{void invoke('finish',{outcomes:[{name:'startup',passed:false,error:String(error)}]});});

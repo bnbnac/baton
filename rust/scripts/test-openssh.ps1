@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$InjectFailure, [string]$CleanupReport, [switch]$StallAfterReady, [switch]$Phase2, [switch]$Desktop)
+param([switch]$InjectFailure, [string]$CleanupReport, [switch]$StallAfterReady, [switch]$Phase2, [switch]$Desktop, [switch]$Manual, [switch]$ManualSmoke)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $suffix = [Guid]::NewGuid().ToString('N')
@@ -14,7 +14,7 @@ $oldKey = $env:BATON_PROBE_HOST_KEY
 function Save-OwnedFixture {
     if ($CleanupReport) {
         $temporary = $CleanupReport + '.owned.partial'
-        @{ id = $id; name = $name; label = $suffix; tag = $tag; imageId = $imageId } | ConvertTo-Json | Set-Content -LiteralPath $temporary
+        @{ id = $id; name = $name; otherId = $otherId; otherName = "$name-other"; label = $suffix; tag = $tag; imageId = $imageId } | ConvertTo-Json | Set-Content -LiteralPath $temporary
         Move-Item -LiteralPath $temporary -Destination ($CleanupReport + '.owned.json') -Force
     }
 }
@@ -52,6 +52,7 @@ try {
     if ($Desktop) {
         $otherId = & docker run --detach --name "$name-other" --publish '127.0.0.1::22' --label "baton.rust-probe=$suffix" $tag
         if ($LASTEXITCODE -ne 0 -or $otherId -notmatch '^[0-9a-f]{64}$') { throw 'second_fixture_start_failed' }
+        Save-OwnedFixture
         $otherBinding = & docker port $otherId '22/tcp'
         if ($LASTEXITCODE -ne 0 -or $otherBinding -notmatch '^127\.0\.0\.1:(\d+)$') { throw 'second_fixture_port_failed' }
         $env:BATON_PROBE_OTHER_SSH_PORT=$Matches[1]
@@ -62,7 +63,8 @@ try {
             if (!$otherReady) { Start-Sleep -Milliseconds 100 }
         }
         if (!$otherReady) { throw 'second_fixture_not_ready' }
-        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'test-desktop.ps1') -Suite openssh
+        $desktopSuite=if($Manual){'manual'}elseif($ManualSmoke){'manual-smoke'}else{'openssh'}
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'test-desktop.ps1') -Suite $desktopSuite
     }
     elseif ($Phase2) { & node (Join-Path $repo 'rust/tests/phase2/openssh.test.mjs') }
     else { & node (Join-Path $repo 'rust/tests/openssh.test.mjs') }
@@ -90,7 +92,7 @@ try {
     if ($CleanupReport) {
         $remaining = @(& docker ps --all --quiet --filter "label=baton.rust-probe=$suffix")
         if ($LASTEXITCODE -ne 0) { throw 'cleanup_inspection_failed' }
-        @{ id = $id; name = $name; label = $suffix; remaining = $remaining.Count } | ConvertTo-Json | Set-Content -LiteralPath $CleanupReport
+        @{ id = $id; name = $name; otherId = $otherId; label = $suffix; remaining = $remaining.Count } | ConvertTo-Json | Set-Content -LiteralPath $CleanupReport
         if ($remaining.Count -ne 0) { throw 'container_leaked' }
     }
 }

@@ -5,10 +5,18 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[tauri::command]
 fn fixture_config() -> serde_json::Value {
     eprintln!("fixture frontend ready");
-    serde_json::json!({"port":std::env::var("BATON_FIXTURE_PORT").unwrap().parse::<u16>().unwrap(),"second":std::env::var("BATON_SECOND_PORT").unwrap().parse::<u16>().unwrap(),"single":std::env::var("BATON_DESKTOP_CASE").ok(),"suite":std::env::var("BATON_DESKTOP_SUITE").unwrap_or("terminal".into()),"openssh":std::env::var("BATON_PROBE_SSH_PORT").ok(),"otherOpenSsh":std::env::var("BATON_PROBE_OTHER_SSH_PORT").ok(),"fingerprint":std::env::var("BATON_PROBE_HOST_KEY").ok()})
+    serde_json::json!({"port":std::env::var("BATON_FIXTURE_PORT").unwrap().parse::<u16>().unwrap(),"second":std::env::var("BATON_SECOND_PORT").unwrap().parse::<u16>().unwrap(),"single":std::env::var("BATON_DESKTOP_CASE").ok(),"suite":std::env::var("BATON_DESKTOP_SUITE").unwrap_or("terminal".into()),"openssh":std::env::var("BATON_PROBE_SSH_PORT").ok(),"otherOpenSsh":std::env::var("BATON_PROBE_OTHER_SSH_PORT").ok(),"fingerprint":std::env::var("BATON_PROBE_HOST_KEY").ok(),"hold":std::env::var("BATON_DESKTOP_HOLD").ok()})
 }
 #[tauri::command]
 async fn fixture(request: serde_json::Value) -> Result<serde_json::Value, String> {
+    if request["action"] == "barrier" {
+        std::fs::write(
+            std::env::var("BATON_DESKTOP_BARRIER").map_err(|_| "barrier_path_missing")?,
+            serde_json::to_vec(&serde_json::json!({"stage":request["stage"]})).unwrap(),
+        )
+        .map_err(|e| e.to_string())?;
+        return Ok(serde_json::Value::Null);
+    }
     if request["action"] == "progress" {
         eprintln!("case: {}", request["name"]);
         return Ok(serde_json::Value::Null);
