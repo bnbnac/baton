@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 public sealed class BatonOwnedJob : IDisposable {
  [StructLayout(LayoutKind.Sequential)] struct Basic { public long a,b; public uint flags; public UIntPtr min,max; public uint active; public UIntPtr affinity; public uint priority,scheduling; }
  [StructLayout(LayoutKind.Sequential)] struct Io {public ulong a,b,c,d,e,f;}
@@ -30,6 +31,8 @@ public sealed class BatonOwnedJob : IDisposable {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]static extern bool Process32First(IntPtr s,ref Entry e);
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]static extern bool Process32Next(IntPtr s,ref Entry e);
  [DllImport("kernel32.dll")]static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool QueryFullProcessImageName(IntPtr p,uint flags,StringBuilder path,ref uint size);
+ [DllImport("kernel32.dll")]static extern bool GetProcessTimes(IntPtr p,out long created,out long exited,out long kernel,out long user);
  [DllImport("ntdll.dll")]static extern int NtQueryInformationProcess(IntPtr p,int c,IntPtr b,int n,out int size);
  IntPtr job,rootHandle,threadHandle;public int RootPid {get;private set;}
  public bool RootExited {get{return rootHandle!=IntPtr.Zero&&WaitForSingleObject(rootHandle,0)==0;}}
@@ -48,6 +51,9 @@ public sealed class BatonOwnedJob : IDisposable {
  public int[] Pids(){IntPtr b=Marshal.AllocHGlobal(8192);try{if(!QueryInformationJobObject(job,3,b,8192,IntPtr.Zero))throw Fail("query_job");int n=Marshal.ReadInt32(b,4);var ids=new int[n];for(int i=0;i<n;i++)ids[i]=(int)Marshal.ReadIntPtr(b,8+i*IntPtr.Size);return ids;}finally{Marshal.FreeHGlobal(b);}}
  public static Dictionary<int,int> Parents(){var result=new Dictionary<int,int>();IntPtr s=CreateToolhelp32Snapshot(2,0);if(s==new IntPtr(-1))throw Fail("snapshot");try{var e=new Entry{size=(uint)Marshal.SizeOf<Entry>()};if(Process32First(s,ref e))do{result[(int)e.pid]=(int)e.parent;}while(Process32Next(s,ref e));return result;}finally{CloseHandle(s);}}
  public static bool UsesDataDirectory(int pid,string dir){IntPtr p=OpenProcess(0x1000,false,pid);if(p==IntPtr.Zero)return false;IntPtr b=IntPtr.Zero;try{int n;NtQueryInformationProcess(p,60,IntPtr.Zero,0,out n);if(n<16||n>1048576)return false;b=Marshal.AllocHGlobal(n);if(NtQueryInformationProcess(p,60,b,n,out n)!=0)return false;int length=(ushort)Marshal.ReadInt16(b);IntPtr text=Marshal.ReadIntPtr(b,IntPtr.Size);return (Marshal.PtrToStringUni(text,length/2)??"").IndexOf(dir,StringComparison.OrdinalIgnoreCase)>=0;}finally{if(b!=IntPtr.Zero)Marshal.FreeHGlobal(b);CloseHandle(p);}}
+ // Query the image without enumerating modules of a sandboxed WebView process.
+ // Validate creation time on the same native handle before accepting its path.
+ public static string ImagePath(int pid,long ticks){IntPtr p=OpenProcess(0x1000,false,pid);if(p==IntPtr.Zero)return null;try{long created,exited,kernel,user;if(!GetProcessTimes(p,out created,out exited,out kernel,out user)||DateTime.FromFileTimeUtc(created).Ticks!=ticks)return null;uint size=32768;var path=new StringBuilder((int)size);return QueryFullProcessImageName(p,0,path,ref size)?path.ToString():null;}finally{CloseHandle(p);}}
  public void Kill(){if(!TerminateJobObject(job,1))throw Fail("terminate_job");}
  public void Dispose(){if(job!=IntPtr.Zero){CloseHandle(job);job=IntPtr.Zero;}if(rootHandle!=IntPtr.Zero){CloseHandle(rootHandle);rootHandle=IntPtr.Zero;}if(threadHandle!=IntPtr.Zero){CloseHandle(threadHandle);threadHandle=IntPtr.Zero;}}
 }
@@ -76,7 +82,9 @@ try {
         foreach ($childId in $ids) {
             if (!$records.ContainsKey($childId)) {
                 $p=Get-Process -Id $childId -ErrorAction SilentlyContinue
-                if ($p) {$records[$childId]=@{pid=$childId;startedTicks=$p.StartTime.ToUniversalTime().Ticks.ToString();path=$p.Path;parent=$parents[$childId];dataDirectoryMatch=[BatonOwnedJob]::UsesDataDirectory($childId,$env:BATON_WEBVIEW_DATA);exited=$false}}
+                if ($p) {$ticks=$p.StartTime.ToUniversalTime().Ticks;$records[$childId]=@{pid=$childId;startedTicks=$ticks.ToString();path=[BatonOwnedJob]::ImagePath($childId,$ticks);parent=$parents[$childId];dataDirectoryMatch=[BatonOwnedJob]::UsesDataDirectory($childId,$env:BATON_WEBVIEW_DATA);exited=$false}}
+            } elseif (!$records[$childId].path) {
+                $records[$childId].path=[BatonOwnedJob]::ImagePath($childId,[long]$records[$childId].startedTicks)
             }
         }
         foreach ($item in $records.Values) {if($item.pid -notin $ids){$item.exited=$true}}
@@ -93,6 +101,7 @@ try {
         Start-Sleep -Milliseconds 50
     }
     if (!@($records.Values|Where-Object {$_.dataDirectoryMatch}).Count) {throw 'webview_data_directory_not_observed'}
+    if (@($records.Values|Where-Object {!$_.path -or !$_.startedTicks -or !$_.parent}).Count) {throw 'descendant_identity_incomplete'}
     $receipt.descendantAudit='verified'
 }catch{$receipt.failure=$_.Exception.Message}
 finally{if($job){$job.Dispose()};Save-Evidence}

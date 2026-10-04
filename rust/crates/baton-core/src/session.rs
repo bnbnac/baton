@@ -21,7 +21,7 @@ pub struct Session {
     pending_stream: Option<StreamId>,
     deadline: Option<Duration>,
     public: Option<PublicOutput>,
-    ui: crate::ui_output::UiOutput,
+    pub(crate) ui: crate::ui_output::UiOutput,
     pub(crate) view: Option<ViewId>,
     pub(crate) queries: crate::queries::Queries,
     pub(crate) clock: Duration,
@@ -303,7 +303,9 @@ impl Session {
         self.deadline = None;
         self.pending_stream = None;
         self.public = None;
-        self.ui.clear();
+        if reason != CloseReason::RemoteClosed {
+            self.ui.clear();
+        }
         self.queries.invalidate();
         self.controls.clear();
     }

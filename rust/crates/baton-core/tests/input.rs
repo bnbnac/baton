@@ -7,6 +7,106 @@ fn request(n: u128) -> RequestId {
 }
 
 #[test]
+fn user_actions_release_bytes_and_reject_replays_across_epochs() {
+    let mut s = Session::new(SessionId::from_u128(71));
+    s.connected().unwrap();
+    let binding = s.bind_view(ViewId::from_u128(72)).unwrap();
+    let epoch = s.snapshot().epoch;
+    for n in 1..=4100 {
+        let seq = SafeInt::new(n).unwrap();
+        let bytes = if n == 4100 { vec![3] } else { b"key".to_vec() };
+        s.submit_user_action(binding, epoch, seq, bytes.clone())
+            .unwrap();
+        assert_eq!(
+            s.submit_user_action(binding, epoch, seq, bytes.clone()),
+            Err(CoreError::StaleInput)
+        );
+        let op = s.start_write().unwrap();
+        assert_eq!(op.payload, bytes);
+        s.finish_write(op.id, WriteResult::Delivered).unwrap();
+        assert_eq!(s.usage().input_bytes, 0);
+        assert_eq!(s.usage().history, 0);
+        assert!(s.start_write().is_none());
+    }
+    s.handoff(
+        ConnectionId::from_u128(9),
+        StreamId::from_u128(10),
+        Duration::ZERO,
+    )
+    .unwrap();
+    let seq = SafeInt::new(4101).unwrap();
+    assert_eq!(
+        s.submit_user_action(binding, s.snapshot().epoch, seq, vec![3]),
+        Err(CoreError::ControlUnavailable)
+    );
+    s.reclaim(Duration::ZERO).unwrap();
+    assert_eq!(
+        s.submit_user_action(
+            binding,
+            s.snapshot().epoch,
+            SafeInt::new(1).unwrap(),
+            vec![3]
+        ),
+        Err(CoreError::StaleInput)
+    );
+    assert_eq!(
+        s.submit_user_action(binding, epoch, seq, vec![3]),
+        Err(CoreError::StaleControlEpoch)
+    );
+    let foreign = ViewBinding {
+        session: SessionId::from_u128(99),
+        ..binding
+    };
+    assert_eq!(
+        s.submit_user_action(foreign, s.snapshot().epoch, seq, vec![3]),
+        Err(CoreError::StaleView)
+    );
+    s.submit_user_action(binding, s.snapshot().epoch, seq, vec![3])
+        .unwrap();
+    assert_eq!(s.start_write().unwrap().payload, vec![3]);
+}
+
+#[test]
+fn user_action_queue_is_bounded_and_handoff_invalidates_pending_actions() {
+    let mut s = Session::new(SessionId::from_u128(71));
+    s.connected().unwrap();
+    let binding = s.bind_view(ViewId::from_u128(72)).unwrap();
+    let epoch = s.snapshot().epoch;
+    s.submit_user_action(binding, epoch, SafeInt::new(1).unwrap(), vec![1])
+        .unwrap();
+    let active = s.start_write().unwrap();
+    for n in 2..=33 {
+        s.submit_user_action(binding, epoch, SafeInt::new(n).unwrap(), vec![2])
+            .unwrap();
+    }
+    assert_eq!(s.usage().queued, 32);
+    assert_eq!(s.usage().active, 1);
+    assert_eq!(s.usage().input_bytes, 33);
+    assert_eq!(
+        s.submit_user_action(binding, epoch, SafeInt::new(34).unwrap(), vec![3]),
+        Err(CoreError::InputQueueFull)
+    );
+    s.finish_write(active.id, WriteResult::Delivered).unwrap();
+    let active = s.start_write().unwrap();
+    assert_eq!(
+        s.submit_user_action(binding, epoch, SafeInt::new(34).unwrap(), vec![3]),
+        Err(CoreError::StaleInput)
+    );
+    s.handoff(
+        ConnectionId::from_u128(9),
+        StreamId::from_u128(10),
+        Duration::ZERO,
+    )
+    .unwrap();
+    assert_eq!(s.usage().queued, 0);
+    assert_eq!(s.usage().input_bytes, 1);
+    s.finish_write(active.id, WriteResult::Uncertain).unwrap();
+    assert_eq!(s.usage().input_bytes, 0);
+    assert_eq!(s.snapshot().state, State::AgentOwned);
+    assert!(s.start_write().is_none());
+}
+
+#[test]
 fn duplicate_input_has_one_effect_and_conflict_has_none() {
     let (mut s, a, e, _) = agent_session();
     for _ in 0..100 {

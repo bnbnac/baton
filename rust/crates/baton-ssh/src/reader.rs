@@ -15,5 +15,5 @@ pub(crate) async fn run(mut channel: ChannelReadHalf, session: SessionHandle) {
             _ => {}
         }
     }
-    session.close(CloseReason::TransportLost).await;
+    session.close(CloseReason::RemoteClosed).await;
 }

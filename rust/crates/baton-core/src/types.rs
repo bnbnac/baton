@@ -84,6 +84,7 @@ pub enum Principal {
 pub enum CloseReason {
     User,
     TransportLost,
+    RemoteClosed,
     ConnectionLost,
     AppExit,
     TransitionTimeout,
@@ -116,6 +117,7 @@ pub enum CoreError {
     InvalidAck,
     InvalidCompletion,
     StaleView,
+    StaleInput,
     UnknownQuery,
     QueryExpired,
     WrongQueryKind,

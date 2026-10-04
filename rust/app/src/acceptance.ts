@@ -5,6 +5,7 @@ import {TerminalView} from './terminal/terminal.js';
 import {bindTerminal,terminalBridge} from './terminal/bridge.js';
 import type {Frame,Binding} from './terminal/types.js';
 import {manualTerminal} from './manual.js';
+import {SessionViews} from './sessions/view.js';
 const host=document.querySelector<HTMLElement>('#terminal')!;
 const enc=new TextEncoder();const bytes=(s:string)=>Array.from(enc.encode(s));
 const hex=(s:string)=>bytes(s).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -101,6 +102,42 @@ async function scenario(name:string,port:number){
    equal(sideEffects,0);
    if(name!=='input_paths')equal(errors.length,0);
  }finally{active=undefined;view.dispose();host.replaceChildren();await command('close_session',{id:info.id});await until(async()=>{try{await command('remove_closed_session',{id:info.id});return true;}catch{return false;}},'close_timeout');}
+}
+async function remoteExit(port:number,late:boolean){
+ const username=`fixture-${++number}`,errors:unknown[]=[];
+ const info=await command<Session>('connect_session',{host:'127.0.0.1',port,username,label:'remote-exit',method:'password'});
+ await until(()=>sessions.get(info.id)?.state==='user_owned','connect_timeout');
+ let view:TerminalView|undefined,views:SessionViews|undefined,chain=Promise.resolve(),rendered=0;
+ const pending:Frame[]=[];
+ const consume=(frame:Frame)=>{chain=chain.then(async()=>{
+   await until(()=>sessions.get(info.id)?.state==='closed','remote_not_closed');
+   await view!.write(frame);rendered+=frame.bytes.length;
+ }).catch(e=>{errors.push(e);});};
+ if(!late){
+   const binding=await bindTerminal(info.id,frame=>view?consume(frame):pending.push(frame));
+   view=new TerminalView(binding,host,terminalBridge(e=>errors.push(e)));active=view;
+   view.applySnapshot(sessions.get(info.id)!);for(const frame of pending)consume(frame);
+ }
+ // More than one in-flight window, followed by a query that must not revive input.
+ const payload='X'.repeat(65536)+'\r\nFINAL_RESULT\r\n\x1b[6n';
+ await fixture({action:'remote-exit',user:username,bytes:bytes(payload)});
+ await until(()=>sessions.get(info.id)?.state==='closed','remote_not_closed');
+ equal(sessions.get(info.id)?.has_terminal,true);
+ if(late){
+   views=new SessionViews(host,e=>errors.push(e));views.update([sessions.get(info.id)!],info.id);
+   await until(()=>!!host.querySelector('.xterm-screen')||errors.length>0,'late_terminal_missing');
+   await until(()=>host.textContent?.includes('FINAL_RESULT')===true||errors.length>0,'late_final_result_not_rendered');
+ }else{
+   await until(()=>rendered===bytes(payload).length||errors.length>0,'final_output_missing');
+   const b=view!.term.buffer.active;
+   const screen=Array.from({length:b.length},(_,i)=>b.getLine(i)?.translateToString(true)??'').join('\n');
+   if(!screen.includes('FINAL_RESULT'))throw Error('final_result_not_rendered');
+   await rejected(terminalBridge(()=>{}).input({binding:view!.binding,epoch:0,inputSeq:1,data:[3]}));
+ }
+ if(errors.length)throw errors[0];equal((await fixture({action:'audit',user:username})).hex,'');
+ // Rendering is asserted above; removal also waits for the SSH driver's bounded cleanup.
+ await until(async()=>{try{await command('remove_closed_session',{id:info.id});return true;}catch{return false;}},'remote_close_cleanup_timeout');
+ if(errors.length)throw errors[0];active=undefined;view?.dispose();views?.update([],null);host.replaceChildren();
 }
 async function overload(name:string,port:number){
  const username=`fixture-${++number}`,survivor=`fixture-${++number}`;
@@ -210,8 +247,8 @@ async function run(){const outcomes:{name:string;passed:boolean;error?:string}[]
    await fixture({action:'inject',user:username,bytes:bytes('X'.repeat(65537))});return;
  }
  openSshMode=suite==='openssh';openSshFingerprint=fingerprint;
- const names=single?[single]:suite==='openssh'?['interactive-openssh']:suite==='geometry'?['geometry']:suite==='all'?[...Object.keys(cases),'queue_overload','query_overload','geometry']:[...Object.keys(cases),'queue_overload','query_overload'];
- for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
+ const names=single?[single]:suite==='openssh'?['interactive-openssh']:suite==='geometry'?['geometry']:suite==='all'?[...Object.keys(cases),'queue_overload','query_overload','remote_exit','remote_exit_late_view','geometry']:[...Object.keys(cases),'queue_overload','query_overload','remote_exit','remote_exit_late_view'];
+ for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.startsWith('remote_exit'))await remoteExit(port,name==='remote_exit_late_view');else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
  if(hold==='before-cleanup'){await fixture({action:'barrier',stage:hold});return;}
  await invoke('finish',{outcomes});
 }

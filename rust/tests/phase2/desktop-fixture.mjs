@@ -34,6 +34,7 @@ const server=new ssh2.Server({hostKeys:[ssh2.utils.generateKeyPairSync('ed25519'
 const control=net.createServer(socket=>{socket.on('error',()=>{});createInterface({input:socket}).once('line',line=>{void(async()=>{
  const m=JSON.parse(line);let result;
  if(m.action==='inject'){const stream=streams.get(m.user);if(!stream)throw Error('missing_stream');stream.write(Buffer.from(m.bytes));result={ok:true};}
+ else if(m.action==='remote-exit'){const stream=streams.get(m.user);if(!stream)throw Error('missing_stream');stream.end(Buffer.from(m.bytes));stream.exit(0);result={ok:true};}
  else if(m.action==='audit'){result=audit.get(m.user)??null;}
  else if(m.action==='mark'&&process.env.BATON_MANUAL_PROXY_PORT){
    const state=audit.get(m.user);if(!state)throw Error('missing_stream');

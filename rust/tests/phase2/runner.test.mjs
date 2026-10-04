@@ -20,7 +20,7 @@ test('gate rejects absent Rust suites, ignored tests, and filtered runs',()=>{
 const desktop=()=>({webviewVersion:'154.0.4258.37',outcomes:[{name:'cpr_agent_owned',passed:true}],process:{pid:123,startedTicks:'123456789012345678',path:'app.exe',normalExit:true,forcedCleanup:false,descendantAudit:'verified',descendants:[{pid:124,startedTicks:'123456789012345679',path:'webview.exe',parent:123,dataDirectoryMatch:true,exited:true}]}});
 test('gate rejects missing desktop case and any unobserved or forced normal-close cleanup',()=>{
  checkDesktop(desktop(),['cpr_agent_owned']);
- for(const mutate of [d=>d.outcomes=[],d=>d.outcomes[0].passed=false,d=>d.process.descendantAudit='unverified',d=>d.process.descendants[0].exited=false,d=>d.process.forcedCleanup=true,d=>d.process.descendants=[]]){const d=desktop();mutate(d);assert.throws(()=>checkDesktop(d,['cpr_agent_owned']));}
+ for(const mutate of [d=>d.outcomes=[],d=>d.outcomes[0].passed=false,d=>d.process.descendantAudit='unverified',d=>d.process.descendants[0].exited=false,d=>d.process.descendants[0].path=null,d=>d.process.forcedCleanup=true,d=>d.process.descendants=[]]){const d=desktop();mutate(d);assert.throws(()=>checkDesktop(d,['cpr_agent_owned']));}
 });
 test('gate rejects changed source, lock, or executable identity',()=>{
  const a={sourceDigest:'a',cargoLock:'b',npmLock:'c',productExecutable:'d',acceptanceExecutable:'e'};

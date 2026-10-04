@@ -44,6 +44,7 @@ pub struct SessionInfo {
     pub state: String,
     pub epoch: SafeInt,
     pub error: Option<String>,
+    pub has_terminal: bool,
 }
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct AppError {

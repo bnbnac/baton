@@ -3,7 +3,7 @@ import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 const requireValue=(value,message)=>{if(!value)throw Error(message);};
 export const manualCases=['physical-key','physical-paste','ime-commit','ime-reclaim-mid-composition','mouse','hidden-restore','minimize-restore','dpi-100','dpi-150','dpi-200','interactive-vi','interactive-top','webview-descendant-exit'];
-export const terminalCases=['cpr_agent_owned','mixed_queries','two_cpr','leading_zero','osc_escape','dcs_escape','untracked_prefix','alternate','origin','scroll_region','wrap_pending','wrap_max','token_attacks','expired','epoch','tokenless','untrusted_sequences','output_pressure','input_paths','private_public_private','hidden_parser','unsupported_user','tokenless_user',...Array.from({length:3},(_,i)=>`split_${i+1}`),...Array.from({length:14},(_,i)=>`mixed_split_${i+1}`),'queue_overload','query_overload'];
+export const terminalCases=['cpr_agent_owned','mixed_queries','two_cpr','leading_zero','osc_escape','dcs_escape','untracked_prefix','alternate','origin','scroll_region','wrap_pending','wrap_max','token_attacks','expired','epoch','tokenless','untrusted_sequences','output_pressure','input_paths','private_public_private','hidden_parser','unsupported_user','tokenless_user',...Array.from({length:3},(_,i)=>`split_${i+1}`),...Array.from({length:14},(_,i)=>`mixed_split_${i+1}`),'queue_overload','query_overload','remote_exit','remote_exit_late_view'];
 export function checkTap(log,required=[]){
  const count=name=>{const matches=[...log.matchAll(new RegExp(`^# ${name} (\\d+)\\s*$`,'gm'))];requireValue(matches.length===1,`tap_summary_missing:${name}`);return Number(matches[0][1]);};
  const passed=count('pass'),failed=count('fail'),skipped=count('skipped'),tests=count('tests');

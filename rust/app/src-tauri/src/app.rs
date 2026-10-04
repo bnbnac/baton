@@ -136,14 +136,13 @@ impl AppService {
             entry.last_input = input.input_seq;
         }
         handle
-            .submit(InputCall {
-                principal: Principal::User,
-                epoch: input.epoch,
-                request_id: RequestId::from_u128(input.input_seq.get().into()),
-                payload: input.data,
-            })
+            .submit_user_action(
+                input.binding.core(),
+                input.epoch,
+                input.input_seq,
+                input.data,
+            )
             .await
-            .map(|_| ())
             .map_err(core_error)
     }
     pub fn with_connector(connector: Arc<dyn Connector>, sink: Arc<dyn EventSink>) -> Arc<Self> {
@@ -199,6 +198,7 @@ impl AppService {
             state: "connecting".into(),
             epoch: SafeInt::new(0).unwrap(),
             error: None,
+            has_terminal: false,
         };
         {
             let mut state = self.state.lock().unwrap();
@@ -236,7 +236,12 @@ impl AppService {
                         Err(error) => Err(error),
                     };
                     match connected {
-                        Ok(handle) => app.watch_session(id, handle),
+                        Ok(handle) => {
+                            if let Some(entry) = app.state.lock().unwrap().entries.get_mut(&id) {
+                                entry.info.has_terminal = true;
+                            }
+                            app.watch_session(id, handle);
+                        }
                         Err(error) => {
                             signal.cancel();
                             let _ = app

@@ -5,30 +5,51 @@ struct Entry {
     payload: Vec<u8>,
     result: InputResult,
 }
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum InputId {
+    Request(RequestId),
+    User(SafeInt),
+}
 #[derive(Clone, Copy)]
 struct Active {
     op: SafeInt,
-    request: RequestId,
+    request: InputId,
 }
 pub(crate) struct Inputs {
-    entries: BTreeMap<RequestId, Entry>,
-    queued: VecDeque<RequestId>,
+    entries: BTreeMap<InputId, Entry>,
+    queued: VecDeque<InputId>,
     active: Option<Active>,
+    last_user: SafeInt,
     pub(crate) sequence: SafeInt,
 }
 impl Inputs {
     pub(crate) fn next_request(&self) -> Option<RequestId> {
-        self.queued.front().copied()
+        match self.queued.front()? {
+            InputId::Request(id) => Some(*id),
+            InputId::User(_) => None,
+        }
     }
     pub fn new() -> Self {
         Self {
             entries: BTreeMap::new(),
             queued: VecDeque::new(),
             active: None,
+            last_user: SafeInt::new(0).unwrap(),
             sequence: SafeInt::new(0).unwrap(),
         }
     }
     pub fn submit(&mut self, id: RequestId, payload: Vec<u8>) -> Result<InputResult, CoreError> {
+        self.enqueue(InputId::Request(id), payload)
+    }
+    pub fn submit_user(&mut self, seq: SafeInt, payload: Vec<u8>) -> Result<(), CoreError> {
+        if seq <= self.last_user {
+            return Err(CoreError::StaleInput);
+        }
+        // Consume even a rejected admission: a delayed retry cannot become new input.
+        self.last_user = seq;
+        self.enqueue(InputId::User(seq), payload).map(|_| ())
+    }
+    fn enqueue(&mut self, id: InputId, payload: Vec<u8>) -> Result<InputResult, CoreError> {
         if payload.len() > limits::INPUT_BYTES {
             return Err(CoreError::InputTooLarge);
         }
@@ -42,7 +63,7 @@ impl Inputs {
         if self.queued.len() >= limits::INPUT_QUEUE {
             return Err(CoreError::InputQueueFull);
         }
-        if self.entries.len() >= limits::INPUT_HISTORY {
+        if matches!(id, InputId::Request(_)) && self.history_len() >= limits::INPUT_HISTORY {
             return Err(CoreError::RequestHistoryFull);
         }
         self.entries.insert(
@@ -57,11 +78,12 @@ impl Inputs {
     }
     pub fn result(&self, id: RequestId) -> Result<InputResult, CoreError> {
         self.entries
-            .get(&id)
+            .get(&InputId::Request(id))
             .map(|e| e.result)
             .ok_or(CoreError::UnknownId)
     }
     pub fn cancel(&mut self, id: RequestId) -> Result<InputResult, CoreError> {
+        let id = InputId::Request(id);
         let entry = self.entries.get_mut(&id).ok_or(CoreError::UnknownId)?;
         if self.active.is_some_and(|a| a.request == id) {
             return Ok(entry.result);
@@ -92,10 +114,17 @@ impl Inputs {
             .active
             .filter(|a| a.op == id)
             .ok_or(CoreError::InvalidCompletion)?;
-        self.entries.get_mut(&active.request).unwrap().result = match result {
-            WriteResult::Delivered => InputResult::Delivered,
-            WriteResult::Uncertain => InputResult::Uncertain,
-        };
+        match active.request {
+            InputId::User(_) => {
+                self.entries.remove(&active.request);
+            }
+            InputId::Request(_) => {
+                self.entries.get_mut(&active.request).unwrap().result = match result {
+                    WriteResult::Delivered => InputResult::Delivered,
+                    WriteResult::Uncertain => InputResult::Uncertain,
+                };
+            }
+        }
         self.active = None;
         Ok(())
     }
@@ -125,10 +154,16 @@ impl Inputs {
         Usage {
             queued: self.queued.len(),
             active: usize::from(self.active.is_some()),
-            history: self.entries.len(),
+            history: self.history_len(),
             input_bytes: self.entries.values().map(|e| e.payload.len()).sum(),
             ..Usage::default()
         }
+    }
+    fn history_len(&self) -> usize {
+        self.entries
+            .keys()
+            .filter(|id| matches!(id, InputId::Request(_)))
+            .count()
     }
 }
 #[cfg(test)]

@@ -1,6 +1,55 @@
 use baton_core::*;
 use std::time::Duration;
 mod support;
+#[test]
+fn remote_close_drains_received_frames_without_restoring_control() {
+    let (mut s, v) = session();
+    s.receive(&vec![b'x'; 65536]).unwrap();
+    let first = s.next_ui_frame(v).unwrap().unwrap();
+    s.receive(b"FINAL_RESULT\r\n\x1b[6n").unwrap();
+    s.close(CloseReason::RemoteClosed);
+    assert_eq!(s.snapshot().state, State::Closed);
+    assert_eq!(s.usage().ui_bytes, 65554);
+    let foreign = ViewBinding {
+        generation: ViewId::from_u128(99),
+        ..v
+    };
+    assert_eq!(s.next_ui_frame(foreign), Err(CoreError::StaleView));
+    assert!(s.next_ui_frame(v).unwrap().is_none());
+    s.ack_ui_frame(v, first.seq).unwrap();
+    let last = s.next_ui_frame(v).unwrap().unwrap();
+    assert_eq!(last.bytes, b"FINAL_RESULT\r\n\x1b[6n");
+    assert!(last.queries.is_empty());
+    assert_eq!(s.receive(b"late"), Err(CoreError::SessionClosed));
+    assert_eq!(
+        s.prepare_reply(ReplyCall {
+            binding: v,
+            epoch: s.snapshot().epoch,
+            query: QueryId(SafeInt::new(1).unwrap()),
+            kind: QueryKind::Dsr,
+            row: None,
+            column: None
+        }),
+        Err(CoreError::SessionClosed)
+    );
+    s.ack_ui_frame(v, last.seq).unwrap();
+    assert_eq!(s.usage().ui_bytes, 0);
+    assert_eq!(s.next_ui_frame(v), Err(CoreError::SessionClosed));
+}
+
+#[test]
+fn first_view_can_render_a_remote_closed_shell_but_cannot_rebind_it() {
+    let mut s = Session::new(SessionId::from_u128(1));
+    s.connected().unwrap();
+    s.receive(b"LOGIN_FINAL\r\n").unwrap();
+    s.close(CloseReason::RemoteClosed);
+    let v = s.bind_view(ViewId::from_u128(2)).unwrap();
+    assert_eq!(
+        s.next_ui_frame(v).unwrap().unwrap().bytes,
+        b"LOGIN_FINAL\r\n"
+    );
+    assert_eq!(s.bind_view(ViewId::from_u128(3)), Err(CoreError::StaleView));
+}
 fn session() -> (Session, ViewBinding) {
     let mut s = Session::new(SessionId::from_u128(1));
     s.connected().unwrap();

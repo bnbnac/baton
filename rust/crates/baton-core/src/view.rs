@@ -36,8 +36,21 @@ pub struct ReplyCall {
     pub column: Option<u16>,
 }
 impl Session {
+    /// Trusted bound UI lane: admission is atomic with ownership validation.
+    /// Completed actions are discarded; the sequence remains across ownership epochs.
+    pub fn submit_user_action(
+        &mut self,
+        binding: ViewBinding,
+        epoch: SafeInt,
+        seq: SafeInt,
+        data: Vec<u8>,
+    ) -> Result<(), CoreError> {
+        self.validate_view(binding)?;
+        self.authorize(Principal::User, epoch)?;
+        self.inputs.submit_user(seq, data)
+    }
     pub fn bind_view(&mut self, generation: ViewId) -> Result<ViewBinding, CoreError> {
-        if self.state == State::Closed {
+        if self.state == State::Closed && self.close_reason != Some(CloseReason::RemoteClosed) {
             return Err(CoreError::SessionClosed);
         }
         if self.view.is_some_and(|old| old != generation) {
@@ -60,17 +73,33 @@ impl Session {
         Ok(())
     }
     pub fn next_ui_frame(&mut self, binding: ViewBinding) -> Result<Option<UiFrame>, CoreError> {
-        self.validate_view(binding)?;
+        self.validate_output_view(binding)?;
         Ok(self.next_ui_chunk().map(|chunk| UiFrame {
             binding,
             seq: chunk.seq,
             bytes: chunk.bytes,
-            queries: chunk.queries,
+            queries: if self.state == State::Closed {
+                Vec::new()
+            } else {
+                chunk.queries
+            },
         }))
     }
     pub fn ack_ui_frame(&mut self, binding: ViewBinding, seq: SafeInt) -> Result<(), CoreError> {
-        self.validate_view(binding)?;
+        self.validate_output_view(binding)?;
         self.ack_ui(seq)
+    }
+    fn validate_output_view(&self, binding: ViewBinding) -> Result<(), CoreError> {
+        if self.state != State::Closed {
+            return self.validate_view(binding);
+        }
+        if self.close_reason != Some(CloseReason::RemoteClosed) || self.ui.bytes() == 0 {
+            return Err(CoreError::SessionClosed);
+        }
+        if binding.session != self.id || self.view != Some(binding.generation) {
+            return Err(CoreError::StaleView);
+        }
+        Ok(())
     }
     /// Trusted core control assembly; returns only bytes derived from a live query.
     pub fn prepare_reply(&mut self, reply: ReplyCall) -> Result<Vec<u8>, CoreError> {
@@ -85,6 +114,17 @@ impl Session {
     }
 }
 impl SessionHandle {
+    pub async fn submit_user_action(
+        &self,
+        binding: ViewBinding,
+        epoch: SafeInt,
+        seq: SafeInt,
+        data: Vec<u8>,
+    ) -> Result<(), CoreError> {
+        let result = self.with_session(|s| s.submit_user_action(binding, epoch, seq, data));
+        self.wake_driver();
+        result
+    }
     pub async fn bind_view(&self, generation: ViewId) -> Result<ViewBinding, CoreError> {
         self.with_session(|s| s.bind_view(generation))
     }

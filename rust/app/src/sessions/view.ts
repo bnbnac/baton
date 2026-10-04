@@ -13,7 +13,7 @@ export class SessionViews {
     for(const [id,entry] of this.entries)if(!sessions.some(s=>s.id===id)){entry.removed=true;entry.view?.dispose();entry.host.remove();this.entries.delete(id);}
     for(const session of sessions){
       let entry=this.entries.get(session.id);
-      if(!entry&&['user_owned','agent_owned'].includes(session.state)){
+      if(!entry&&(session.has_terminal||['user_owned','agent_owned'].includes(session.state))){
         const host=document.createElement('div');host.className='terminal-view';host.hidden=session.id!==selected;this.host.append(host);
         entry={host,pending:[],bytes:0,removed:false,latest:session};this.entries.set(session.id,entry);void this.open(entry);
       }

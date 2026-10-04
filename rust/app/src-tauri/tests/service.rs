@@ -401,6 +401,121 @@ impl Connector for CaptureConnector {
     }
 }
 struct Frames(tokio::sync::mpsc::UnboundedSender<FrameDto>);
+#[tokio::test(start_paused = true)]
+async fn closed_output_ack_does_not_extend_the_single_drain_deadline() {
+    let captured = Arc::new(Mutex::new(None));
+    let app = AppService::with_connector(
+        Arc::new(CaptureConnector(captured.clone())),
+        Arc::new(Sink::default()),
+    );
+    let id = app.connect(request()).unwrap().id;
+    connected(&app, id).await;
+    let handle = captured.lock().unwrap().clone().unwrap();
+    let binding = app.bind(id).await.unwrap();
+    for _ in 0..3 {
+        handle.receive(vec![b'x'; 65536]).await.unwrap();
+    }
+    handle.close(CloseReason::RemoteClosed).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.start_output(binding, Arc::new(Frames(tx))).unwrap();
+    let first = rx.recv().await.unwrap();
+    tokio::time::advance(std::time::Duration::from_secs(3)).await;
+    app.ack(AckRequest {
+        binding,
+        seq: first.seq,
+    })
+    .await
+    .unwrap();
+    let second = rx.recv().await.unwrap();
+    assert_eq!(second.bytes.len(), 65536);
+    tokio::time::advance(std::time::Duration::from_secs(2)).await;
+    tokio::task::yield_now().await;
+    assert!(
+        rx.recv().await.is_none(),
+        "output task must end at the original deadline"
+    );
+    app.shutdown().await;
+}
+#[tokio::test]
+async fn ordinary_input_beyond_agent_history_limit_keeps_ctrl_c_available() {
+    let app = AppService::with_connector(Arc::new(Immediate), Arc::new(Sink::default()));
+    let id = app.connect(request()).unwrap().id;
+    connected(&app, id).await;
+    let binding = app.bind(id).await.unwrap();
+    for n in 1..=4100 {
+        app.user_input(UserInput {
+            binding,
+            epoch: SafeInt::new(0).unwrap(),
+            input_seq: SafeInt::new(n).unwrap(),
+            data: if n == 4100 { vec![3] } else { b"x".to_vec() },
+        })
+        .await
+        .unwrap_or_else(|e| panic!("input {n}: {e:?}"));
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(app.list()[0].state, "user_owned");
+    assert_eq!(app.list()[0].epoch.get(), 0);
+    app.shutdown().await;
+}
+#[tokio::test]
+async fn output_pump_drains_a_closed_shell_even_when_first_binding_is_late() {
+    for late in [false, true] {
+        let captured = Arc::new(Mutex::new(None));
+        let app = AppService::with_connector(
+            Arc::new(CaptureConnector(captured.clone())),
+            Arc::new(Sink::default()),
+        );
+        let id = app.connect(request()).unwrap().id;
+        connected(&app, id).await;
+        let handle = captured.lock().unwrap().clone().unwrap();
+        let mut binding = if late {
+            None
+        } else {
+            Some(app.bind(id).await.unwrap())
+        };
+        handle.receive(vec![b'x'; 65536]).await.unwrap();
+        handle.receive(b"FINAL_RESULT\r\n".to_vec()).await.unwrap();
+        handle.close(CloseReason::RemoteClosed).await;
+        if late {
+            binding = Some(app.bind(id).await.unwrap());
+        }
+        let binding = binding.unwrap();
+        assert_eq!(
+            serde_json::to_value(app.list().into_iter().find(|s| s.id == id).unwrap()).unwrap()["has_terminal"],
+            true
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        app.start_output(binding, Arc::new(Frames(tx))).unwrap();
+        let first = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.bytes, vec![b'x'; 65536]);
+        assert!(rx.try_recv().is_err());
+        app.ack(AckRequest {
+            binding,
+            seq: first.seq,
+        })
+        .await
+        .unwrap();
+        let last = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(last.bytes, b"FINAL_RESULT\r\n");
+        app.ack(AckRequest {
+            binding,
+            seq: last.seq,
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            app.list().into_iter().find(|s| s.id == id).unwrap().state,
+            "closed"
+        );
+        app.shutdown().await;
+    }
+}
 impl OutputSink for Frames {
     fn frame(&self, frame: FrameDto) -> Result<(), AppError> {
         self.0.send(frame).map_err(|_| AppError::new("sink_closed"))

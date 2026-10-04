@@ -17,7 +17,7 @@ export class TerminalView {
     this.term.loadAddon(this.fit);this.term.open(host);
     this.geometry=new GeometryObserver(binding,this.term,this.fit,bridge);
     const renderer=new QueryRenderer(this.term,binding,bridge);
-    this.output=new OutputQueue(binding,async frame=>{await renderer.write(frame);await bridge.ack(binding,frame.seq);});
+    this.output=new OutputQueue(binding,frame=>renderer.write(frame),seq=>bridge.ack(binding,seq));
     const start=()=>this.input.compositionStart(),end=()=>this.input.compositionEnd();
     const key=(event:KeyboardEvent)=>{if(!event.isComposing&&event.keyCode!==229)this.input.ordinaryKey();};
     host.addEventListener('compositionstart',start,true);host.addEventListener('compositionend',end,true);host.addEventListener('keydown',key,true);

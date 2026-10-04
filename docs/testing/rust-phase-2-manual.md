@@ -61,3 +61,15 @@ pwsh -NoProfile -File rust/scripts/record-phase-2-manual.ps1 `
 ```
 
 이 도구는 기록·해시·사용자 확인을 검증하고 수신 바이트와 기대값이 맞는지 검사한다. 누락은 exit 2, 오래된 소스/파일 누락/바이트 불일치는 exit 1이다. 성공값이나 사용자 이름을 자동 작성하지 않는다. 완성된 `manual-evidence.json`을 `verify-phase-2.ps1 -ManualEvidence '<경로>'`에 제공해 자동 검사와 함께 검증한다. 코드나 실행 파일이 바뀌면 기존 증거는 재사용할 수 없다.
+
+## 2026-10-05 검증된 빌드로 시작
+
+아래 명령은 현재 자동 검증을 통과한 빌드에 대응한다. 코드를 변경했다면 앞의 전체 검증 절차로 새 receipt를 만들어야 한다.
+
+```powershell
+Set-Location 'C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0'
+pwsh -NoProfile -File rust/scripts/test-phase-2-manual.ps1 -Verification 'artifacts/rust-phase-2/20261004T215359-4233aa2a57584dcc96c8aba1cf294f58/summary.json'
+```
+
+제품 실행 파일: `C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0\rust\target\debug\baton.exe`.
+관측 도구 실행 파일: `C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0\rust\target\debug\baton-ui-acceptance.exe`. 위 스크립트가 필요한 시험 서버와 관측 도구를 함께 시작한다.

@@ -16,7 +16,7 @@
 
 - Windows 먼저 검증·배포하고 macOS/Linux는 각 OS의 실제 인수 후 순차 지원한다. 코어·SSH crate에 Windows UI 타입을 넣지 않는다.
 - 연결 / SSH 세션: 앱당 32 / 16. Connecting·Closed 카드도 16개 한도에 포함한다. 사용자가 닫힌 카드를 제거한 뒤 빈 슬롯에 새 ID로 연결한다.
-- 일반 입력: UTF-8 16 KiB, 셸별 대기 32건, in-flight transport 작업 최대 1개. 입력 request 이력은 셸·control_epoch별 4096건이며 자동 회수·재실행으로 초기화하지 않는다.
+- 일반 입력: UTF-8 16 KiB, 셸별 대기 32건, in-flight transport 작업 최대 1개. 에이전트 request 이력은 셸·control_epoch별 4096건이며 자동 회수·재실행으로 초기화하지 않는다. 사용자 터미널 입력은 별도 bound-view 경로에서 단조 sequence로 중복을 거부하고 완료된 입력을 폐기한다. sequence는 소유권 전환 후에도 초기화하지 않는다. (2026-10-04 사용자 승인)
 - 공개 출력: 셸당 1 Mi UTF-16 단위, 조회 2–32768단위. 기존 read8/request16 정책을 보존한다.
 - UI scrollback: 셸당 최대 1000행. UI 미확인 출력은 셸당 코어 1 MiB, xterm에 넘긴 미확인 바이트 합계 64 KiB.
 - epoch·cursor·sequence는 0..2^53−1 정수. 증가 시 상한 초과는 명시적 세션 종료이며 순환 금지.
@@ -52,7 +52,7 @@ UI는 좌측 세션 목록, 우측 활성 터미널, 연결/인증 패널, 대�
 
 서버 출력은 임의 길이 전체 복사 없이 ≤64 KiB 조각으로 코어에 전달한다. russh 자체 channel/packet/window 예산도 설정하고 그 메모리는 코어 1 MiB와 별도 보고한다. GUI가 느릴 때 무제한 중간 큐나 모든 frame의 Promise 목록을 만들지 않는다.
 
-실시간 app/session ID와 UI generation은 `getrandom`으로 128-bit를 발급하고 OS entropy 실패를 전파한다. 이미 lock에 있는 호환 버전을 사용하며 0·현재 충돌이면 다시 생성한다. 이것은 UI 앱에서 필요한 ID 발급만 앞당기는 것이며 IPC connection 인증과 reconnect-ID 검증 완료를 뜻하지 않는다. UI 일반 입력은 세션당 단조 증가 `input_seq: SafeInt`를 보내며 Rust가 그 값을 `RequestId::from_u128`로 변환한다. 같은 세션에서 seq를 재사용하지 않고 상한 도달 시 종료하며 자동 재전송하지 않는다.
+실시간 app/session ID와 UI generation은 `getrandom`으로 128-bit를 발급하고 OS entropy 실패를 전파한다. 이미 lock에 있는 호환 버전을 사용하며 0·현재 충돌이면 다시 생성한다. 이것은 UI 앱에서 필요한 ID 발급만 앞당기는 것이며 IPC connection 인증과 reconnect-ID 검증 완료를 뜻하지 않는다. UI 일반 입력은 세션당 단조 증가 `input_seq: SafeInt`를 보내며 Rust는 그 값을 bound-view 사용자 입력 경로의 단조 sequence로 검증한다. 같은 세션에서 seq를 재사용하지 않고 상한 도달 시 종료하며 자동 재전송하지 않는다.
 
 ## 파일과 공통 인터페이스
 
@@ -218,7 +218,7 @@ assert_eq!(concurrent_transport_ops_max, 1);
 
 **Files:** Create `rust/app` manifest/config/entry, `src-tauri/src/{app,commands,dto,auth_bridge,lifecycle,ids}.rs`, `tests/service.rs`, UI `auth`/`sessions`/`bridge` 파일. core/SSH Task 인터페이스 소비.
 
-**Interfaces:** `AppService`가 Runtime, 세션 metadata, auth attempt, 유효 view를 소유한다. UI command는 `connect_session`, `answer_auth`, `cancel_connect`, `list_sessions`, `close_session`, `remove_closed_session`, `bind_terminal`, `user_input`, `ack_output`, `terminal_reply`, `resize_terminal`, `frontend_pong`으로 한정한다. Rust가 app/session/view ID·입력 Principal::User를 결정하고 UI의 `input_seq`를 검증해 core RequestId로 변환한다. command payload에 임의 principal/connection을 받지 않는다. DTO는 `deny_unknown_fields`를 적용한다. AppService 자체는 Tauri 타입 없이 시험 가능하게 하고 `commands.rs`가 Channel을 연결한다.
+**Interfaces:** `AppService`가 Runtime, 세션 metadata, auth attempt, 유효 view를 소유한다. UI command는 `connect_session`, `answer_auth`, `cancel_connect`, `list_sessions`, `close_session`, `remove_closed_session`, `bind_terminal`, `user_input`, `ack_output`, `terminal_reply`, `resize_terminal`, `frontend_pong`으로 한정한다. Rust가 app/session/view ID·입력 Principal::User를 결정하고 UI의 `input_seq`를 검증해 core의 별도 사용자 입력 경로로 전달한다. command payload에 임의 principal/connection을 받지 않는다. DTO는 `deny_unknown_fields`를 적용한다. AppService 자체는 Tauri 타입 없이 시험 가능하게 하고 `commands.rs`가 Channel을 연결한다.
 
 - [x] **Step 1:** AppService 시험에서 유효하지 않은 host/port/key size/prompt 답변, foreign view, closed session, startup 후16/17, 취소 직후 늦은 성공, 앱 종료 중 connect를 거부한다. 허용 command 목록에 agent handoff/exec/file-read가 없음을 검사한다. 인증표식이 로그/에러 DTO/세션 metadata에 없는지 fixture marker로 검사한다. UI 테스트에서는 응답 제출 후 secret field가 비워지고 다른 세션 challenge에 재사용되지 않음을 확인한다.
 - [x] **Step 2:** `cargo +stable test --manifest-path rust/Cargo.toml -p baton-app --test service` 및 `npm.cmd test --prefix rust/app` → assertion FAIL. 순수 TS 시험은 tsc로 test output에 컴파일 후 Node test runner로 실행한다; WebView 검사라고 부르지 않는다.
@@ -279,7 +279,7 @@ frame은 seq 순서로 xterm.write callback까지 완료한 뒤 ack한다. callb
 - [ ] **Step 4:** 다음 검사를 실제 실행한다. 외부 실패 코드를 즉시 검사한다.
 
 ```powershell
-cargo +stable fmt --manifest-path rust/Cargo.toml -- --check
+cargo +stable fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo +stable clippy --manifest-path rust/Cargo.toml --locked -p baton-core -p baton-ssh -p baton-app --all-targets --features baton-app/desktop -- -D warnings
 cargo +stable test --manifest-path rust/Cargo.toml --locked -p baton-core -p baton-ssh -p baton-app --all-targets
 npm.cmd test --prefix rust/app

@@ -4,8 +4,8 @@ export class OutputQueue {
   private bytes=0;
   private active=false;
   private stopped=false;
-  private queue:{frame:Frame;resolve:()=>void;reject:(e:unknown)=>void}[]=[];
-  constructor(readonly binding:Binding,private readonly consume:(frame:Frame)=>Promise<void>){}
+  private queue:{frame:Frame|undefined;resolve:()=>void;reject:(e:unknown)=>void}[]=[];
+  constructor(readonly binding:Binding,private readonly consume:(frame:Frame)=>Promise<void>,private readonly acknowledge:(seq:number)=>Promise<void>=async()=>{}){}
   write(frame:Frame):Promise<void>{
     if(this.stopped)return Promise.reject(Error('output_closed'));
     if(frame.binding.session!==this.binding.session||frame.binding.view!==this.binding.view)return Promise.reject(Error('foreign_frame'));
@@ -19,12 +19,19 @@ export class OutputQueue {
     this.sequence=frame.seq;this.bytes+=frame.bytes.length;
     return new Promise((resolve,reject)=>{this.queue.push({frame,resolve,reject});void this.drain();});
   }
-  dispose(){this.stopped=true;for(const item of this.queue.splice(0)){this.bytes-=item.frame.bytes.length;item.reject(Error('output_closed'));}}
+  dispose(){this.stopped=true;for(const item of this.queue.splice(0)){this.bytes-=item.frame!.bytes.length;item.reject(Error('output_closed'));}}
   private async drain(){
     if(this.active)return;this.active=true;
     try{let item;while((item=this.queue.shift())){
-      try{await this.consume(item.frame);item.resolve();}catch(error){item.reject(error);this.dispose();}
-      finally{this.bytes-=item.frame.bytes.length;}
+      const length=item.frame!.bytes.length,seq=item.frame!.seq;let released=false;
+      try{
+        await this.consume(item.frame!);
+        // The core may deliver the next window before the ack IPC promise resolves.
+        // Drop rendered payload before opening that window, but serialize subsequent rendering.
+        this.bytes-=length;released=true;item.frame=undefined;
+        await this.acknowledge(seq);item.resolve();
+      }catch(error){item.reject(error);this.dispose();}
+      finally{if(!released)this.bytes-=length;}
     }}finally{this.active=false;}
   }
 }

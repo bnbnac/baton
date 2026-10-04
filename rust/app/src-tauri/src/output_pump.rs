@@ -25,9 +25,10 @@ impl AppService {
         // Register before examining the queue so the last receive cannot be lost.
         let mut changes = handle.subscribe();
         entry.tasks.push(tokio::spawn(async move {
+            let mut drain_deadline = None;
             loop {
                 if changes.borrow_and_update().state == State::Closed {
-                    return;
+                    drain_deadline.get_or_insert_with(|| tokio::time::Instant::now() + baton_core::limits::TRANSITION_TIMEOUT);
                 }
                 loop {
                     match handle.next_ui_frame(binding.core()).await {
@@ -70,6 +71,10 @@ impl AppService {
                     }
                 }
                 tokio::select! {
+                    _ = async {
+                        if let Some(deadline) = drain_deadline { tokio::time::sleep_until(deadline).await; }
+                        else { std::future::pending::<()>().await; }
+                    } => return,
                     changed = changes.changed() => { if changed.is_err() { return; } },
                     _ = ready.notified() => {},
                 }

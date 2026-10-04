@@ -1,5 +1,5 @@
 import {invoke,Channel} from '@tauri-apps/api/core';
-export type Session={id:string;label:string;host:string;port:number;username:string;state:string;epoch:number;error:string|null};
+export type Session={id:string;label:string;host:string;port:number;username:string;state:string;epoch:number;error:string|null;has_terminal:boolean};
 export type Prompt={session:string;attempt:string;challenge:string;kind:'host'|'password'|'key'|'interactive';display:string;prompts:{text:string;echo:boolean}[]};
 export type Event={type:'sessions';sessions:Session[]}|{type:'auth';prompt:Prompt}|{type:'heartbeat';challenge:string};
 export function command<T>(name:string,request:unknown){return invoke<T>(name,{request});}
