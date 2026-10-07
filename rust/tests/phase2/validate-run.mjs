@@ -1,5 +1,5 @@
 import {readFile,writeFile} from 'node:fs/promises';import {dirname} from 'node:path';
-import {checkTap,checkRust,checkDesktop,checkIdentity,checkManual,terminalCases} from './evidence.mjs';
+import {checkTap,checkRust,checkDesktop,checkIdentity,checkManual,checkManualCollection,terminalCases} from './evidence.mjs';
 const path=process.argv[2];const receipt=JSON.parse(await readFile(path,'utf8'));let exit=1;
 try{
  const required=['fmt','clippy','rust-tests','ui-tests','ui-build','acceptance-assets','product-build','acceptance-build','node-tests','openssh','manual-smoke'];
@@ -17,7 +17,14 @@ try{
  checkIdentity(receipt.identity,receipt.identityAfter);
  receipt.counts={rust:core,ui,node,desktop:desktop.outcomes.length,openssh:openssh.outcomes.length,manualHarness:smoke.outcomes.length};receipt.webviewVersion=desktop.webviewVersion;
  const manual=process.argv[3]?JSON.parse(await readFile(process.argv[3],'utf8')):null;
- const complete=await checkManual(manual,receipt.identity,process.argv[3]?dirname(process.argv[3]):dirname(path));
- receipt.status=complete?'passed':'manual_pending';receipt.failure=null;exit=complete?0:2;
+ if(manual?.schemaVersion===2){
+   const collection=await checkManualCollection(manual,receipt.identity,dirname(process.argv[3]));
+   receipt.manual={...collection};
+   receipt.status=collection.missing.length?'manual_pending':collection.deferred.length?'passed_with_deferrals':'passed';
+   receipt.failure=null;exit=collection.missing.length?2:0;
+ }else{
+   const complete=await checkManual(manual,receipt.identity,process.argv[3]?dirname(process.argv[3]):dirname(path));
+   receipt.status=complete?'passed':'manual_pending';receipt.failure=null;exit=complete?0:2;
+ }
 }catch(error){receipt.status='failed';receipt.failure=error.message;}
 await writeFile(path,JSON.stringify(receipt,null,2));console.log(JSON.stringify({status:receipt.status,failure:receipt.failure,counts:receipt.counts}));process.exitCode=exit;

@@ -1,8 +1,16 @@
 import {readFile,writeFile} from 'node:fs/promises';import {join,resolve} from 'node:path';import {createHash} from 'node:crypto';
-import {checkIdentity,checkManual,manualCases} from './evidence.mjs';
+import {checkIdentity,checkManual,checkManualCollection,manualCases} from './evidence.mjs';
 try{
  const [directory,observationsPath,output]=process.argv.slice(2);
- const json=async path=>JSON.parse(await readFile(path,'utf8'));
+ const json=async path=>JSON.parse((await readFile(path,'utf8')).replace(/^\uFEFF/,''));
+ if(directory==='--collection'){
+   const receipt=await json(observationsPath);
+   const result=await checkManualCollection(receipt,receipt.identity,resolve(observationsPath,'..'));
+   for(const a of [receipt.baseline,...receipt.runs.flatMap(r=>[r.metadata,r.raw,r.process].filter(Boolean)),...receipt.cases.flatMap(c=>c.evidence??[])])a.path=resolve(observationsPath,'..',a.path);
+   // Never overwrite a source receipt, a selection file, or an earlier result.
+   await writeFile(output,JSON.stringify({...receipt,...result,deferred:receipt.deferred??[]},null,2),{flag:'wx'});
+   console.log(JSON.stringify(result));process.exitCode=result.missing.length?2:0;
+ }else{
  const meta=await json(join(directory,'metadata.json')),current=await json(join(directory,'identity-current.json')),result=await json(join(directory,'result.json'));
  checkIdentity(meta.identity,current);
  const observations=await json(observationsPath),raw=(await readFile(join(directory,'observations.jsonl'),'utf8')).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));
@@ -19,4 +27,5 @@ try{
  await checkManual(receipt,current,directory,receipt.cases.map(c=>c.id));
  const complete=await checkManual(receipt,current,directory);receipt.status=complete?'observed':'manual_pending';
  await writeFile(output,JSON.stringify(receipt,null,2));console.log(receipt.status);process.exitCode=complete?0:2;
+ }
 }catch(error){console.error(error.message);process.exitCode=1;}

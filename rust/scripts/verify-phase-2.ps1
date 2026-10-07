@@ -45,7 +45,7 @@ try{
     $receipt.identity=Identity
     if($receipt.identity.sourceDigest -ne $sourceBefore.sourceDigest){throw 'source_changed_during_build'}
     $receipt.desktopReport=Join-Path $OutputDirectory 'desktop.json';$env:BATON_DESKTOP_REPORT=$receipt.desktopReport
-    Run-Step 'node-tests' 'node' @('--test','--test-concurrency=1','rust/tests/phase2/auth.test.mjs','rust/tests/phase2/ssh.test.mjs','rust/tests/phase2/desktop.test.mjs','rust/tests/phase2/runner.test.mjs','rust/tests/phase2/cleanup.test.mjs','rust/tests/phase2/manual-proxy.test.mjs')
+    Run-Step 'node-tests' 'node' @('--test','--test-concurrency=1','rust/tests/phase2/auth.test.mjs','rust/tests/phase2/ssh.test.mjs','rust/tests/phase2/desktop.test.mjs','rust/tests/phase2/runner.test.mjs','rust/tests/phase2/cleanup.test.mjs','rust/tests/phase2/manual-proxy.test.mjs','rust/tests/phase2/collection.test.mjs')
     $receipt.opensshReport=Join-Path $OutputDirectory 'openssh.json';$env:BATON_DESKTOP_REPORT=$receipt.opensshReport
     $receipt.fixtureCleanup=Join-Path $OutputDirectory 'fixture-cleanup.json'
     Run-Step 'openssh' 'pwsh' @('-NoProfile','-File','rust/scripts/test-openssh.ps1','-Desktop','-CleanupReport',$receipt.fixtureCleanup)

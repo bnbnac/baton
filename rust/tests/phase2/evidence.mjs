@@ -59,3 +59,100 @@ export async function checkManual(receipt,identity,base,required=manualCases){
  }
  return true;
 }
+
+// These files cannot change the app or the manual input harness. Keep this list
+// explicit: a broad tests/scripts exclusion would conceal transport changes.
+const collectionTools=new Set(['rust/tests/phase2/evidence.mjs','rust/tests/phase2/record-manual.mjs','rust/tests/phase2/collection.test.mjs','rust/tests/phase2/validate-run.mjs','rust/scripts/verify-phase-2.ps1']);
+export function checkCollectionBuild(before,after){
+ checkIdentity({...before,sourceDigest:after?.sourceDigest},after);
+ if(before.sourceDigest===after.sourceDigest)return [];
+ const inventory=value=>{
+   requireValue(Array.isArray(value.files)&&value.files.length>0,'collection_inventory_missing');
+   const files=new Map();
+   for(const f of value.files){
+     requireValue(typeof f.path==='string'&&!f.path.includes('..')&&!files.has(f.path)&&/^[A-F0-9]{64}$/.test(f.sha256),'collection_inventory_invalid');files.set(f.path,f.sha256);
+   }
+   const hash=createHash('sha256').update(value.files.map(f=>`${f.path}:${f.sha256}`).join('\n')).digest('hex').toUpperCase();
+   requireValue(hash===value.sourceDigest,'collection_inventory_digest');return files;
+ };
+ const a=inventory(before),b=inventory(after),changed=[...new Set([...a.keys(),...b.keys()])].filter(path=>a.get(path)!==b.get(path));
+ requireValue(changed.every(path=>collectionTools.has(path)),'collection_product_source_changed');return changed.sort();
+}
+
+// A collection refers to original runs; it never fabricates a combined run.
+export async function checkManualCollection(receipt,identity,base){
+ requireValue(receipt?.schemaVersion===2,'collection_version');
+ checkIdentity(receipt.identity,identity);
+ const artifact=async a=>{
+   requireValue(a?.path&&/^[a-f0-9]{64}$/i.test(a.sha256),'collection_artifact_invalid');
+   const bytes=await readFile(resolve(base,a.path));
+   requireValue(createHash('sha256').update(bytes).digest('hex')===a.sha256.toLowerCase(),'collection_artifact_changed');
+   return bytes.toString('utf8').replace(/^\uFEFF/,'');
+ };
+ const json=async a=>JSON.parse(await artifact(a));
+ const baseline=await json(receipt.baseline);
+ requireValue(['manual_pending','passed'].includes(baseline.status),'collection_baseline_failed');
+ checkIdentity(baseline.identity,identity);checkIdentity(baseline.identityAfter,identity);
+ const runs=new Map(),toolChanges=[];
+ for(const run of receipt.runs??[]){
+   requireValue(run.id&&!runs.has(run.id),'collection_duplicate_run');
+   const meta=await json(run.metadata);const changed=checkCollectionBuild(meta.identity,identity);
+   if(changed.length)toolChanges.push({runId:run.id,files:changed});
+   const start=Date.parse(meta.startedUtc),end=Date.parse(meta.finishedUtc);
+   requireValue(meta.runId===run.id&&meta.os&&Number.isFinite(start)&&end>=start&&end<=Date.now()+60000,'collection_run_invalid');
+   const raw=(await artifact(run.raw)).split(/\r?\n/).filter(Boolean).map(line=>JSON.parse(line));
+   // A forced run may supply input observations, but cannot supply a normal exit.
+   const process=run.process?await json(run.process):null;
+   runs.set(run.id,{meta,start,end,raw,process});
+ }
+ const observed=[];
+ for(const c of receipt.cases??[]){
+   requireValue(manualCases.includes(c.id)&&!observed.includes(c.id),'collection_duplicate_or_unknown_case');
+   requireValue(['human','native'].includes(c.operator?.kind)&&c.operator.name?.trim()&&c.operator.statement?.trim(),'collection_operator_missing');
+   for(const a of c.evidence??[])await artifact(a);
+   // Human key/paste records also have the user's contemporaneous transcript.
+   requireValue(['physical-key','physical-paste'].includes(c.id)&&c.operator.kind==='human'||c.evidence?.length>0,'collection_support_missing');
+   const records=[];
+   for(const ref of c.observations??[]){
+     const run=runs.get(ref.runId);requireValue(run,'collection_run_missing');
+     const matches=run.raw.filter(o=>o.caseId===ref.caseId&&o.mode===ref.mode&&o.observedUtc===ref.observedUtc);
+     requireValue(matches.length===1,'collection_reference_ambiguous');
+     const row=matches[0],start=Date.parse(row.startedUtc),at=Date.parse(row.observedUtc);
+     requireValue(start>=run.start&&at>=start&&at<=run.end&&row.serverObserved===true,'collection_observation_invalid');
+     requireValue(typeof ref.expectedHex==='string'&&/^(?:[a-f0-9]{2})*$/.test(ref.expectedHex)&&row.receivedHex===ref.expectedHex,'collection_wire_mismatch');
+     requireValue(['user_owned','agent_owned'].includes(row.mode),'collection_mode_invalid');
+     requireValue(row.mode!=='agent_owned'||ref.expectedHex==='','collection_blocked_input');
+     records.push({...ref,row,at});
+   }
+   requireValue(new Set(records.map(r=>`${r.runId}/${r.observedUtc}/${r.caseId}/${r.mode}`)).size===records.length,'collection_duplicate_observation');
+   if(c.id==='webview-descendant-exit'){
+     const l=c.lifecycle,run=runs.get(l?.runId),at=Date.parse(l?.observedUtc);
+     requireValue(run&&['user_owned','agent_owned'].includes(l.mode)&&l.trigger?.trim()&&at>=run.start&&at<=run.end,'collection_lifecycle_missing');
+     checkDesktop({webviewVersion:'recorded-process',outcomes:[],process:run.process},[]);
+   }else if(c.id==='ime-reclaim-mid-composition'){
+     requireValue(records.length===2,'collection_transition_missing');
+     const [old,fresh]=records;
+     requireValue(old.runId===fresh.runId&&old.at<Date.parse(fresh.row.startedUtc)&&old.caseId===c.id&&fresh.caseId==='ime-commit'&&old.mode==='user_owned'&&fresh.mode==='user_owned','collection_transition_order');
+     requireValue(old.expectedHex===''&&fresh.expectedHex==='ed959ceab88020','collection_transition_wire');
+     requireValue(Number.isSafeInteger(c.transition?.beforeEpoch)&&c.transition.beforeEpoch>=0&&c.transition.afterEpoch===c.transition.beforeEpoch+2,'collection_transition_epoch');
+   }else{
+     requireValue(records.length>=2&&records.every(r=>r.caseId===c.id),'collection_observations_missing');
+     requireValue(records.some(r=>r.mode==='user_owned'&&r.expectedHex.length>0)&&records.some(r=>r.mode==='agent_owned'),'collection_ownership_missing');
+     if(c.id==='interactive-vi'){
+       requireValue(records.length===3&&records.every(r=>r.runId===records[0].runId)&&records[0].mode==='user_owned'&&records[1].mode==='agent_owned'&&records[2].mode==='user_owned','collection_vi_sequence');
+       requireValue(records[0].at<Date.parse(records[1].row.startedUtc)&&records[1].at<Date.parse(records[2].row.startedUtc)&&records[0].expectedHex.startsWith('76690d69')&&records[2].expectedHex.endsWith('1b3a71210d'),'collection_vi_exit');
+       requireValue(c.interactive?.shellReturned===true&&c.interactive.finalText==='BATON_EDITOR_TEST','collection_vi_confirmation');
+     }
+     if(c.id==='interactive-top')requireValue(c.interactive?.shellReturned===true,'collection_top_exit');
+   }
+   observed.push(c.id);
+ }
+ const deferred=[];
+ for(const d of receipt.deferred??[]){
+   requireValue(['dpi-100','dpi-150','dpi-200'].includes(d.id)&&!observed.includes(d.id)&&!deferred.includes(d.id),'collection_deferral_invalid');
+   requireValue(d.approvedBy?.trim()&&Number.isFinite(Date.parse(d.approvedUtc))&&Date.parse(d.approvedUtc)<=Date.now()+60000&&d.reason?.trim()&&d.due==='before-windows-release','collection_deferral_approval_missing');
+   deferred.push(d.id);
+ }
+ const missing=manualCases.filter(id=>!observed.includes(id)&&!deferred.includes(id));
+ return {status:missing.length?'manual_pending':deferred.length?'observed_with_deferrals':'observed',observed,deferred,missing,toolChanges};
+}

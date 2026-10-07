@@ -272,9 +272,13 @@ frame은 seq 순서로 xterm.write callback까지 완료한 뒤 ack한다. callb
 
 소유 프로세스는 생성 직후 root PID+시작 시각+실행 경로를 기록하고, 살아 있는 동안 해당 WebView user-data-dir과 부모 계통으로 자손 PID+시작 시각을 기록한다. root가 죽은 뒤 현재 PPID만 보고 소유권을 추정하지 않는다. 긴 WMI query를 cleanup의 유일한 방법으로 사용하지 않는다. 관찰 자체에 기한을 두고 입증되지 않은 프로세스는 이름으로 일괄 종료하지 않는다. 정상 앱 close에서 자손이 스스로 끝났는지와 runner 비정상 종료 뒤 강제 정리했는지를 별도 결과로 보고한다. 두 번째 sentinel 앱/WebView는 살아 있어야 한다.
 
-필수 물리 case ID: `physical-key`, `physical-paste`, `ime-commit`, `ime-reclaim-mid-composition`, `mouse`, `hidden-restore`, `minimize-restore`, `dpi-100`, `dpi-150`, `dpi-200`, `interactive-vi`, `interactive-top`, `webview-descendant-exit`. UserOwned/AgentOwned 둘 다 실제 OS 이벤트로 수행하고 fixture 서버 byte audit과 화면을 함께 기록한다. `term.paste()`/JS event dispatch는 물리 붙여넣기 증거가 아니다. native UI automation이 없으면 사용자가 수행할 순서와 현재 exe 경로를 제공하고 해당 gate만 pending으로 남긴다.
+원래 전체 물리 case ID: `physical-key`, `physical-paste`, `ime-commit`, `ime-reclaim-mid-composition`, `mouse`, `hidden-restore`, `minimize-restore`, `dpi-100`, `dpi-150`, `dpi-200`, `interactive-vi`, `interactive-top`, `webview-descendant-exit`. UserOwned/AgentOwned 둘 다 실제 OS 이벤트로 수행하고 fixture 서버 byte audit과 화면을 함께 기록한다. `term.paste()`/JS event dispatch는 물리 붙여넣기 증거가 아니다. native UI automation이 없으면 사용자가 수행할 순서와 현재 exe 경로를 제공하고 해당 gate만 pending으로 남긴다.
+
+2026-10-06 사용자 승인에 따른 범위 조정: `dpi-100`, `dpi-150`, `dpi-200`의 실제 Windows 배율 전수 검사는 Windows 배포 전 호환성 검사로 이관한다. 현재 배율에서의 창 크기 변경은 기존 vi/top 관측의 PTY `141×39 → 314×75 → 141×39` 증거를 재사용한다. 실제 배율 숫자와 다른 배율에서의 잘림·가독성·마우스 좌표는 미검증으로 남긴다. 앞선 Step 1의 DPI 표현을 실제 배율 관측 완료로 해석하지 않는다. 현행 전체 수집기의 목록과 기존 receipt는 변경하지 않으므로 `manual_pending`을 성공으로 재분류하지 않는다. 동일 실행·case/mode·관측 주체 등 나머지 인수 증거 요건의 정리는 별도 남은 작업이다.
 
 수동 증거에는 현재 source/lock/executable hash, OS/WebView, case별 관측 시각·화면 경로·byte audit/run ID·사용자 확인을 요구한다. 화면 하나로 byte 차단/프로세스 종료를 입증하지 않는다. 코드가 바뀌면 영향받는 이전 증거를 무효화한다.
+
+2026-10-08 구현 반영: 위 10-06 문단은 당시의 상태다. 승인된 schemaVersion 2 수집기는 같은 빌드의 독립 실행을 원본 ID/시각/관측자/해시로 연결하고, IME 회수와 vi는 같은 실행의 연속성을 강제한다. 종료는 실제 lifecycle 증거로, DPI 보류는 승인 내용과 배포 전 기한으로 표현한다. 명시한 수집기 파일 외 source 변경과 exe/lock 변경은 거부한다. 새 수집기 9개와 기존 runner 7개가 통과했고 vi 연속 시험도 완료했다. 이전 입력·IME와 최신 vi의 exe 해시가 달라 빌드별로 증거를 분리했으므로 Step 4/5 및 Phase 2 완료 표시는 유지하지 않는다. 자세한 상태는 인수 기록의 최신 절을 따른다.
 
 - [ ] **Step 4:** 다음 검사를 실제 실행한다. 외부 실패 코드를 즉시 검사한다.
 
