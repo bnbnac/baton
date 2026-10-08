@@ -9,6 +9,7 @@ import {SessionViews} from './sessions/view.js';
 import {Ownership} from './sessions/ownership.js';
 import {OwnershipView} from './connections/view.js';
 import type {Connection} from './bridge.js';
+import {phase3} from './phase3-acceptance.js';
 const host=document.querySelector<HTMLElement>('#terminal')!;
 const enc=new TextEncoder();const bytes=(s:string)=>Array.from(enc.encode(s));
 const hex=(s:string)=>bytes(s).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -281,7 +282,7 @@ async function run(){const outcomes:{name:string;passed:boolean;error?:string}[]
  }
  openSshMode=suite==='openssh';openSshFingerprint=fingerprint;
  const names=single?[single]:suite==='openssh'?['interactive-openssh']:suite==='geometry'?['geometry']:suite==='all'?[...Object.keys(cases),'queue_overload','query_overload','remote_exit','remote_exit_late_view','geometry']:[...Object.keys(cases),'queue_overload','query_overload','remote_exit','remote_exit_late_view'];
- for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='ownership-ui')await ownershipUi(port);else if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.startsWith('remote_exit'))await remoteExit(port,name==='remote_exit_late_view');else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
+ for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name.startsWith('phase3-'))await phase3(name,[port,second],host,sessions,fixture,refresh=>{refreshOwnership=refresh;});else if(name==='ownership-ui')await ownershipUi(port);else if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.startsWith('remote_exit'))await remoteExit(port,name==='remote_exit_late_view');else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
  if(hold==='before-cleanup'){await fixture({action:'barrier',stage:hold});return;}
  await invoke('finish',{outcomes});
 }

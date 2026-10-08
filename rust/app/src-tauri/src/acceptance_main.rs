@@ -67,6 +67,10 @@ async fn finish(
     outcomes: serde_json::Value,
 ) -> Result<(), String> {
     state.service.shutdown().await;
+    #[cfg(windows)]
+    if let Some(server) = app.try_state::<Arc<baton_ipc::LocalServer>>() {
+        server.shutdown().await;
+    }
     let runtime = tauri::webview_version().map_err(|e| e.to_string())?;
     let result = serde_json::json!({"outcomes":outcomes,"webviewVersion":runtime});
     std::fs::write(
@@ -81,7 +85,19 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let pipe = Arc::new(Pipe(Mutex::new(None)));
-            let service = acceptance::service(pipe.clone());
+            let service = if std::env::var_os("BATON_PHASE3_ENDPOINT").is_some() {
+                AppService::with_connector(Arc::new(RealConnector), pipe.clone())
+            } else {
+                acceptance::service(pipe.clone())
+            };
+            #[cfg(windows)]
+            if let Some(path) = std::env::var_os("BATON_PHASE3_ENDPOINT") {
+                let server = tauri::async_runtime::block_on(
+                    service.start_agent_server(std::path::Path::new(&path)),
+                )
+                .map_err(|_| "phase3_ipc_start_failed")?;
+                app.manage(Arc::new(server));
+            }
             app.manage(Managed { service, pipe });
             tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
                 .data_directory(std::path::PathBuf::from(
