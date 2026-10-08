@@ -213,7 +213,7 @@ pub enum Frame {
     Hello {
         contract_version: u32,
         app_instance_id: WireId,
-        secret: String,
+        secret: crate::endpoint::Secret,
     },
     Welcome {
         contract_version: u32,
@@ -263,11 +263,6 @@ impl Frame {
             Self::Request { body, .. } => body.validate(),
             Self::Response { result, error, .. } if result.is_some() == error.is_some() => {
                 Err(WireError::new(ErrorCode::InvalidFrame))
-            }
-            Self::Hello { secret, .. }
-                if secret.len() != 64 || !secret.bytes().all(|b| b.is_ascii_hexdigit()) =>
-            {
-                Err(WireError::new(ErrorCode::AuthenticationFailed))
             }
             _ => Ok(()),
         }

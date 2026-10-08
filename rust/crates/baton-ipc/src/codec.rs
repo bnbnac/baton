@@ -1,6 +1,7 @@
 use crate::{ErrorCode, Frame, WireError};
 use std::io::{self, Write};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use zeroize::{Zeroize, Zeroizing};
 pub const MAX_FRAME_BYTES: usize = 256 * 1024;
 fn invalid() -> WireError {
     WireError::new(ErrorCode::InvalidFrame)
@@ -15,7 +16,7 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Frame, W
     if size == 0 || size > MAX_FRAME_BYTES {
         return Err(invalid());
     }
-    let mut payload = vec![0; size];
+    let mut payload = Zeroizing::new(vec![0; size]);
     reader
         .read_exact(&mut payload)
         .await
@@ -25,6 +26,11 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Frame, W
     Ok(frame)
 }
 struct Bounded(Vec<u8>);
+impl Drop for Bounded {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 impl Write for Bounded {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         if bytes.len() > MAX_FRAME_BYTES - self.0.len() {
