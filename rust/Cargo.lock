@@ -166,6 +166,7 @@ name = "baton-app"
 version = "0.1.0"
 dependencies = [
  "baton-core",
+ "baton-ipc",
  "baton-ssh",
  "getrandom 0.3.4",
  "serde",
@@ -195,6 +196,7 @@ dependencies = [
  "serde_json",
  "subtle",
  "tokio",
+ "tokio-util",
  "windows-sys 0.61.2",
  "zeroize",
 ]

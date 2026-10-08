@@ -14,6 +14,20 @@ fn dir() -> std::path::PathBuf {
     ))
 }
 #[tokio::test]
+async fn product_discovery_directories_are_private_from_creation() {
+    let base = dir();
+    std::fs::create_dir(&base).unwrap();
+    let path = prepare_endpoint_dir(&base).unwrap();
+    assert_eq!(path, base.join("BatonRust/v2"));
+    let lease = EndpointLease::publish(&path, WireId::from_u128(950)).unwrap();
+    assert_eq!(
+        load_endpoint(&path).unwrap().app_instance_id,
+        WireId::from_u128(950)
+    );
+    drop(lease);
+    assert_eq!(prepare_endpoint_dir(&base).unwrap(), path);
+}
+#[tokio::test]
 async fn discovery_is_protected_exclusive_and_removed_by_its_owner() {
     let path = dir();
     let id = WireId::from_u128(100);

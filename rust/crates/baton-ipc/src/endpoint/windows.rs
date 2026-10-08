@@ -192,7 +192,14 @@ impl Security {
             )
         };
         if handle == INVALID_HANDLE_VALUE {
-            return Err(failure());
+            let code = unsafe { GetLastError() };
+            return Err(
+                if code == ERROR_FILE_NOT_FOUND || code == ERROR_PATH_NOT_FOUND {
+                    WireError::new(ErrorCode::AppOffline)
+                } else {
+                    failure()
+                },
+            );
         }
         let file = unsafe { File::from_raw_handle(handle) };
         let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
@@ -427,6 +434,16 @@ pub fn load_endpoint(dir: &Path) -> Result<Discovery, WireError> {
         return Err(failure());
     }
     Ok(value)
+}
+/// Create only the two application-owned directories, with a protected DACL
+/// at creation. Existing directories must already satisfy the same policy.
+pub fn prepare_endpoint_dir(local_app_data: &Path) -> Result<PathBuf, WireError> {
+    let security = Security::current()?;
+    let root = local_app_data.join("BatonRust");
+    let _root_handle = security.directory(&root)?;
+    let dir = root.join("v2");
+    let _dir_handle = security.directory(&dir)?;
+    Ok(dir)
 }
 #[cfg(test)]
 mod tests {

@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["io-util", "net", "sync", "time", "rt", "ma
 getrandom = "=0.3.4"
 zeroize = "=1.9.0"
 subtle = "2"
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Memory", "Win32_System_Threading"] }

@@ -23,6 +23,51 @@ impl Runtime {
     pub fn app_id(&self) -> AppId {
         lock(&self.shared.registry).app()
     }
+    /// The callback is the response commit point, serialized with reclaim and
+    /// disconnect. It must not await or re-enter the runtime. Bytes committed
+    /// here may already be on their way to the peer when reclaim happens later.
+    pub fn commit_agent_response<T>(
+        &self,
+        connection: ConnectionId,
+        session: SessionId,
+        epoch: SafeInt,
+        stream: Option<StreamId>,
+        commit: impl FnOnce() -> T,
+    ) -> Result<T, CoreError> {
+        let registry = lock(&self.shared.registry);
+        if !registry.has_connection(connection) {
+            return Err(CoreError::NotOwner);
+        }
+        let session = registry.session(session)?;
+        session.authorize(Principal::Agent(connection), epoch)?;
+        if stream.is_some() && session.snapshot().stream != stream {
+            return Err(CoreError::StaleStream);
+        }
+        Ok(commit())
+    }
+    /// Build a filtered status response under the same ownership gate.
+    pub fn commit_agent_status<T>(
+        &self,
+        connection: ConnectionId,
+        commit: impl FnOnce(Vec<(SessionId, Snapshot, Geometry)>) -> T,
+    ) -> Result<T, CoreError> {
+        let registry = lock(&self.shared.registry);
+        let rows = registry
+            .status_for(connection)?
+            .into_iter()
+            .map(|(id, snapshot)| {
+                (
+                    id,
+                    snapshot,
+                    registry
+                        .session(id)
+                        .expect("filtered live entry")
+                        .geometry(),
+                )
+            })
+            .collect();
+        Ok(commit(rows))
+    }
 }
 impl SessionHandle {
     pub async fn request_user_control(

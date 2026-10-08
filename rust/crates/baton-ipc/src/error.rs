@@ -43,6 +43,7 @@ pub enum ErrorCode {
     StaleResize,
     InvalidGeometry,
     InvalidReason,
+    Cancelled,
     Uncertain,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

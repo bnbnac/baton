@@ -12,6 +12,15 @@ fn main() {
         .setup(|app| {
             let pipe = Arc::new(Pipe(Mutex::new(None)));
             let service = AppService::with_connector(Arc::new(RealConnector), pipe.clone());
+            #[cfg(windows)]
+            {
+                let base = std::env::var_os("LOCALAPPDATA").ok_or("local_app_data_unavailable")?;
+                let dir = baton_ipc::endpoint::prepare_endpoint_dir(std::path::Path::new(&base))
+                    .map_err(|_| "ipc_directory_unavailable")?;
+                let server = tauri::async_runtime::block_on(service.start_agent_server(&dir))
+                    .map_err(|_| "ipc_start_failed")?;
+                app.manage(Arc::new(server));
+            }
             app.manage(Managed { service, pipe });
             tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
                 .on_navigation(|url| {
@@ -68,7 +77,12 @@ fn main() {
             let service = app.state::<Managed>().service.clone();
             let handle = app.clone();
             let allow = allow_exit.clone();
+            #[cfg(windows)]
+            let ipc = app.state::<Arc<baton_ipc::LocalServer>>().inner().clone();
             tauri::async_runtime::spawn(async move {
+                #[cfg(windows)]
+                tokio::join!(ipc.shutdown(), service.shutdown());
+                #[cfg(not(windows))]
                 service.shutdown().await;
                 allow.store(true, Ordering::Release);
                 handle.exit(0);

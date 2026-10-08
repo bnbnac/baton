@@ -5,7 +5,18 @@ use zeroize::{Zeroize, Zeroizing};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{EndpointLease, load_endpoint};
+pub use windows::{EndpointLease, load_endpoint, prepare_endpoint_dir};
+pub fn default_endpoint_dir() -> Result<std::path::PathBuf, WireError> {
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("LOCALAPPDATA").ok_or(WireError::new(ErrorCode::AppOffline))?;
+        Ok(std::path::PathBuf::from(base).join("BatonRust/v2"))
+    }
+    #[cfg(not(windows))]
+    {
+        Err(WireError::new(ErrorCode::Unsupported))
+    }
+}
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret([u8; 32]);
 impl Secret {
