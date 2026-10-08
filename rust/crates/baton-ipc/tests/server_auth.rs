@@ -145,7 +145,7 @@ async fn setup() -> (std::path::PathBuf, LocalServer, Arc<Backend>) {
     let app = unique_id();
     let server = LocalServer::start(&folder, app, backend.clone())
         .await
-        .unwrap_or_else(|error| panic!("fixture endpoint {:?} app {:?}: {:?}", folder, app, error));
+        .unwrap_or_else(|error| panic!("fixture endpoint {folder:?} app {app:?}: {error:?}"));
     (folder, server, backend)
 }
 async fn raw(folder: &std::path::Path) -> NamedPipeClient {

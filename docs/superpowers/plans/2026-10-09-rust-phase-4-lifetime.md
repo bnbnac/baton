@@ -10,6 +10,8 @@
 
 **Spec:** [승인된 설계 §§9–12](../specs/2026-09-20-rust-transition-design.md), [LIFE-01/02와 검증 범위](../specs/2026-09-20-rust-verification-design.md).
 
+상태: 2026-10-09 구현·자동 검증·독립 리뷰 완료. Rust159/Node12 통과, 실제 하네스 인수 pending. [보고서](../../testing/rust-phase-4-report.md)를 따른다.
+
 ## Global Constraints
 
 - 최초 접속은 MCP 초기화와 독립적으로 시작한다. 실패 후 1, 2, 4, 최대 5초 간격; 각 단계에 ±10% 지터, 최대 단계는 4.5–5초. 접속·인증 시도는 기존 3초 제한을 유지한다.
@@ -34,9 +36,9 @@
 
 **Interfaces:** `AdapterLink::start(PathBuf) -> Self` 즉시 반환, `shutdown(&self).await`; `LocalClient::disconnected(&self).await`; `Backoff::next_delay()` 유한 지터. 기존 `call` tool interface 유지.
 
-- [ ] 기존 one-shot offline 시험을 자동 재발견 시험으로 변경하고 real stdio로 offline→online 새 ID를 기대한다. 변경 전 FAIL을 확인한다. backoff 범위/포화/reset 시험도 먼저 작성한다.
-- [ ] supervisor 구현, cancel-safe lifecycle, error 분류, compare-and-clear. 모델 검증 없이 사용자 재배정은 자동 수행하지 않는다.
-- [ ] adapter/IPC 시험과 fmt/clippy 실행. 실제 DPAPI는 사용자 security context에서 검증한다. `feat: reconnect Rust MCP adapters across app lifetime` 커밋.
+- [x] 기존 one-shot offline 시험을 자동 재발견 시험으로 변경하고 real stdio로 offline→online 새 ID를 기대한다. 변경 전 FAIL을 확인한다. backoff 범위/포화/reset 시험도 먼저 작성한다.
+- [x] supervisor 구현, cancel-safe lifecycle, error 분류, compare-and-clear. 모델 검증 없이 사용자 재배정은 자동 수행하지 않는다.
+- [x] adapter/IPC 시험과 fmt/clippy 실행. 실제 DPAPI는 사용자 security context에서 검증한다. `feat: reconnect Rust MCP adapters across app lifetime` 커밋.
 
 ## Task 2: 재시작·미완료 호출·EOF의 실제 통합 검증
 
@@ -44,14 +46,14 @@
 
 **Interfaces:** Task1 공개 lifecycle, 실제 LocalServer endpoint와 adapter 자식 프로세스. 서버 fixture는 받은 요청/접속을 독립 계수한다.
 
-- [ ] 앱 재시작 3회 새 instance/connection·빈 세션, offline 입력 미전달, pending 입력 uncertain/재전송 없음, 인증·버전 오류 후 복구, retry 중 EOF, handshake stall 중 초기화/목록/status/EOF를 시험한다. 누락 동작 RED 후 수정한다.
-- [ ] 연결 epoch race는 단위 시험으로 오래된 client가 새 slot을 지우지 못함을 고정한다. 1/2/4/5 backoff와 상한은 결정적 시간/지터 입력으로 검사하고 실시간 offline 유지도 관측한다.
-- [ ] 관련 Rust suite와 실제 Phase3 Node stdio/SSH 통합을 실행해 연결 격리·개인 출력 회귀를 확인한다. UI source는 변경하지 않으므로 Phase2 물리 시험 반복 없음. `test: verify MCP lifetime and no replay across restart` 커밋.
+- [x] 앱 재시작 3회 새 instance/connection·빈 세션, offline 입력 미전달, pending 입력 uncertain/재전송 없음, 인증·버전 오류 후 복구, retry 중 EOF, handshake stall 중 초기화/목록/status/EOF를 시험한다. 누락 동작 RED 후 수정한다.
+- [x] 연결 epoch race는 단위 시험으로 오래된 client가 새 slot을 지우지 못함을 고정한다. 1/2/4/5 backoff와 상한은 결정적 시간/지터 입력으로 검사하고 실시간 offline 유지도 관측한다.
+- [x] 관련 Rust suite와 실제 Phase3 Node stdio/SSH 통합을 실행해 연결 격리·개인 출력 회귀를 확인한다. UI source는 변경하지 않으므로 Phase2 물리 시험 반복 없음. `test: verify MCP lifetime and no replay across restart` 커밋.
 
 ## Task 3: 보고서·실행 안내와 최종 리뷰
 
 **Files:** `docs/testing/rust-phase-4-report.md`, `docs/rust-harness-setup.md`, `docs/testing/rust-phase-4-manual.md`.
 
-- [ ] 실제 실행 명령·OS/SDK·통과/실패/skip·자식 종료를 기록한다. Phase3 원본 증거를 덮어쓰지 않는다. 실제 모델/하네스, 강제 앱 종료/OpenSSH 원격 비교/출시는 미검증 범위를 명시한다.
-- [ ] 자동 재연결 안내로 업데이트한다. 실제 하네스 경고와 도구 가용성 시험은 사용자가 설정한 단일 하네스에서 별도 관측하도록 구체적 절차를 적는다.
-- [ ] 한 번의 독립 전체 변경 리뷰와 중요한 지적 RED→GREEN 수정. fmt/clippy/영향 suite 통과 뒤 로컬 커밋. push/PR/merge는 별도 요청 범위다.
+- [x] 실제 실행 명령·OS/SDK·통과/실패/skip·자식 종료를 기록한다. Phase3 원본 증거를 덮어쓰지 않는다. 실제 모델/하네스, 강제 앱 종료/OpenSSH 원격 비교/출시는 미검증 범위를 명시한다.
+- [x] 자동 재연결 안내로 업데이트한다. 실제 하네스 경고와 도구 가용성 시험은 사용자가 설정한 단일 하네스에서 별도 관측하도록 구체적 절차를 적는다.
+- [x] 한 번의 독립 전체 변경 리뷰와 중요한 지적 RED→GREEN 수정. fmt/clippy/영향 suite 통과 뒤 로컬 커밋. push/PR/merge는 별도 요청 범위다.
