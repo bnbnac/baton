@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { Adapter, data } from './stdio.mjs';
+import { deadline } from '../helpers/process.mjs';
 const missing = fileURLToPath(new URL(`../../../artifacts/phase3-missing-${process.pid}`, import.meta.url));
 test('offline adapter initializes and exposes exactly five strict v2 tools', async t => {
   const adapter = new Adapter(missing); t.after(() => adapter.cleanup());
@@ -27,4 +28,21 @@ test('invalid or missing ownership parameters are JSON-RPC invalid_params', asyn
 });
 test('EOF before initialize exits without stdout contamination', async t => {
   const adapter = new Adapter(missing); t.after(() => adapter.cleanup()); assert.equal(await adapter.eof(), 0);
+});
+for (const terminated of [false, true]) {
+  test(`oversized ${terminated ? 'terminated' : 'unterminated'} MCP line closes adapter without waiting for EOF`, async t => {
+    const adapter = new Adapter(missing); t.after(() => adapter.cleanup()); await adapter.initialize();
+    adapter.process.child.stdin.write(' '.repeat(262145) + (terminated ? '\n' : ''));
+    const exit = await deadline(adapter.process.closed, 2000, 'oversized_line_not_rejected');
+    assert.equal(exit.code, 0); assert.equal(adapter.stderr, '');
+  });
+}
+test('MCP line at the size boundary works and the next frame starts a fresh budget', async t => {
+  const adapter = new Adapter(missing); t.after(() => adapter.cleanup()); await adapter.initialize();
+  const id = 10000, result = new Promise((resolve, reject) => adapter.pending.set(id, {resolve, reject}));
+  const line = JSON.stringify({jsonrpc:'2.0',id,method:'tools/call',params:{name:'status',arguments:{}}}).padEnd(262144, ' ');
+  adapter.process.child.stdin.write(line + '\n');
+  assert.equal(data(await deadline(result, 2000, 'boundary_line_rejected')).app_state, 'offline');
+  assert.equal(data(await adapter.tool('status')).app_state, 'offline');
+  assert.equal(await adapter.eof(), 0);
 });

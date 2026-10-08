@@ -13,8 +13,13 @@ export async function runCase(name) {
   const children=[],adapters=new Map(),transcript=[],serverAudit=[];let app,gateway,report;
   async function ssh() {
     const script=name==='phase3-sudo'?'./sudo-fixture.mjs':'../phase2/desktop-fixture.mjs';
-    const child=observe(fork(fileURLToPath(new URL(script,import.meta.url)),[],{silent:true,windowsHide:true,execArgv:[]}));children.push(child);child.child.stdout.resume();child.child.stderr.resume();
-    return deadline(new Promise((resolve,reject)=>{child.child.on('message',m=>{if(m.type==='ready')resolve(m);});child.closed.then(()=>reject(Error('ssh_fixture_closed')),reject);}),5000,'ssh_fixture_timeout');
+    const child=observe(fork(fileURLToPath(new URL(script,import.meta.url)),[],{silent:true,windowsHide:true,execArgv:[]}));children.push(child);child.child.stdout.resume();
+    const diagnosticPath=join(dir,`ssh-fixture-${children.length}.json`);let diagnostic='';
+    child.child.stderr.on('data',bytes=>{diagnostic=(diagnostic+bytes.toString()).slice(0,8192);});
+    return deadline(new Promise((resolve,reject)=>{child.child.on('message',m=>{if(m.type==='ready')resolve(m);});child.closed.then(async exit=>{
+      await writeFile(diagnosticPath,JSON.stringify({...exit,stderr:diagnostic},null,2));
+      reject(Error(`ssh_fixture_closed:${exit.code??exit.signal} (see ${diagnosticPath})`));
+    }).catch(reject);}),5000,'ssh_fixture_timeout');
   }
   async function forward(port,request) {
     const socket=net.connect(port,'127.0.0.1');
