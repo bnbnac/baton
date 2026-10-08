@@ -36,7 +36,7 @@ try {
     Run-Step 'clippy' $TestCargoExecutable @('+stable','clippy','--manifest-path','rust/Cargo.toml','--locked','-p','baton-core','--all-targets','--','-D','warnings') | Out-Null
     $testArgs = @('+stable','test','--manifest-path','rust/Cargo.toml','--locked','-p','baton-core','--all-targets')
     $listing = Run-Step 'list' $TestCargoExecutable ($testArgs + @('--','--list'))
-    $required = @('numbers','ownership','input','output','races','model','control_io','geometry','lifecycle','queries')
+    $required = @('numbers','ownership','input','output','races','model','control_io','geometry','lifecycle','queries','connections','intervention')
     foreach ($suite in $required) {
         if ($listing -notmatch "Running tests[/\\]$suite\.rs") { throw "required_suite_missing:$suite" }
     }

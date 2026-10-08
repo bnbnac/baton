@@ -104,6 +104,7 @@ impl Shell {
     }
     fn snapshot(&self) -> Snapshot {
         Snapshot {
+            intervention: None,
             state: self.phase,
             epoch: safe(self.generation),
             assigned: self.owner,

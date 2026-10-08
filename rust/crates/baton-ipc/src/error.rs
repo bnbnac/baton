@@ -42,6 +42,7 @@ pub enum ErrorCode {
     QueryLimit,
     StaleResize,
     InvalidGeometry,
+    InvalidReason,
     Uncertain,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +107,7 @@ impl From<CoreError> for WireError {
             C::QueryLimit => W::QueryLimit,
             C::StaleResize => W::StaleResize,
             C::InvalidGeometry => W::InvalidGeometry,
+            C::InvalidReason => W::InvalidReason,
         })
     }
 }

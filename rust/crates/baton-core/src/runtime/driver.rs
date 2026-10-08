@@ -50,9 +50,11 @@ pub(super) fn run(
                 let s = r.session_mut(link.id).unwrap();
                 let before = s.snapshot();
                 s.tick(shared.origin.elapsed());
+                let mut cancelled = false;
                 cancellations.retain(|id, cancel| {
                     if cancel.flag.load(Ordering::Acquire) {
-                        let _ = s.cancel_input(cancel.principal, cancel.epoch, *id);
+                        cancelled |= s.cancel_input(cancel.principal, cancel.epoch, *id)
+                            == Ok(InputResult::InputInvalidated);
                         return false;
                     }
                     matches!(
@@ -95,7 +97,7 @@ pub(super) fn run(
                         started = true;
                     }
                 }
-                if before != s.snapshot() || started {
+                if before != s.snapshot() || started || cancelled {
                     link.publish(s);
                 }
                 Poll::Ready(())

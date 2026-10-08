@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 struct Entry {
     payload: Vec<u8>,
     result: InputResult,
+    intervention: bool,
 }
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum InputId {
@@ -54,7 +55,7 @@ impl Inputs {
             return Err(CoreError::InputTooLarge);
         }
         if let Some(entry) = self.entries.get(&id) {
-            return if entry.payload == payload {
+            return if !entry.intervention && entry.payload == payload {
                 Ok(entry.result)
             } else {
                 Err(CoreError::RequestIdConflict)
@@ -71,6 +72,7 @@ impl Inputs {
             Entry {
                 payload,
                 result: InputResult::Pending,
+                intervention: false,
             },
         );
         self.queued.push_back(id);
@@ -79,12 +81,21 @@ impl Inputs {
     pub fn result(&self, id: RequestId) -> Result<InputResult, CoreError> {
         self.entries
             .get(&InputId::Request(id))
-            .map(|e| e.result)
             .ok_or(CoreError::UnknownId)
+            .and_then(|e| {
+                if e.intervention {
+                    Err(CoreError::RequestIdConflict)
+                } else {
+                    Ok(e.result)
+                }
+            })
     }
     pub fn cancel(&mut self, id: RequestId) -> Result<InputResult, CoreError> {
         let id = InputId::Request(id);
         let entry = self.entries.get_mut(&id).ok_or(CoreError::UnknownId)?;
+        if entry.intervention {
+            return Err(CoreError::RequestIdConflict);
+        }
         if self.active.is_some_and(|a| a.request == id) {
             return Ok(entry.result);
         }
@@ -108,6 +119,35 @@ impl Inputs {
             id: sequence,
             payload: self.entries[&id].payload.clone(),
         }))
+    }
+    pub(crate) fn intervention_duplicate(
+        &self,
+        id: RequestId,
+        reason: &str,
+    ) -> Result<bool, CoreError> {
+        match self.entries.get(&InputId::Request(id)) {
+            Some(e) if e.intervention && e.payload == reason.as_bytes() => Ok(true),
+            Some(_) => Err(CoreError::RequestIdConflict),
+            None => Ok(false),
+        }
+    }
+    pub(crate) fn record_intervention(
+        &mut self,
+        id: RequestId,
+        reason: &str,
+    ) -> Result<(), CoreError> {
+        if self.history_len() >= limits::INPUT_HISTORY {
+            return Err(CoreError::RequestHistoryFull);
+        }
+        self.entries.insert(
+            InputId::Request(id),
+            Entry {
+                payload: reason.as_bytes().to_vec(),
+                result: InputResult::Delivered,
+                intervention: true,
+            },
+        );
+        Ok(())
     }
     pub fn finish(&mut self, id: SafeInt, result: WriteResult) -> Result<(), CoreError> {
         let active = self

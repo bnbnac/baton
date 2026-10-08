@@ -69,7 +69,7 @@ rust-version = "1.88"
             'owner' { Replace-Once $session 'if self.assigned != Some(c) {' 'if false && self.assigned != Some(c) {' }
             'epoch' { Replace-Once $session 'if self.epoch != epoch {' 'if false && self.epoch != epoch {' }
             'duplicate' {
-                Replace-Once "$copy/crates/baton-core/src/input.rs" "return if entry.payload == payload {`n                Ok(entry.result)" "return if entry.payload == payload {`n                self.queued.push_back(id);`n                Ok(entry.result)"
+                Replace-Once "$copy/crates/baton-core/src/input.rs" "return if !entry.intervention && entry.payload == payload {`n                Ok(entry.result)" "return if !entry.intervention && entry.payload == payload {`n                self.queued.push_back(id);`n                Ok(entry.result)"
             }
             'private' {
                 # Keep a private-created public buffer across handoff: a data leak,

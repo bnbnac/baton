@@ -25,6 +25,7 @@ pub struct Session {
     pub(crate) view: Option<ViewId>,
     pub(crate) queries: crate::queries::Queries,
     pub(crate) clock: Duration,
+    pub(crate) intervention: Option<Intervention>,
 }
 impl Session {
     pub(crate) fn transition_deadline(&self) -> Option<Duration> {
@@ -187,6 +188,7 @@ impl Session {
             view: None,
             queries: crate::queries::Queries::new(),
             clock: Duration::ZERO,
+            intervention: None,
         }
     }
     pub fn id(&self) -> SessionId {
@@ -198,6 +200,7 @@ impl Session {
             epoch: self.epoch,
             assigned: self.assigned,
             stream: self.stream,
+            intervention: self.intervention.clone(),
         }
     }
     pub fn close_reason(&self) -> Option<CloseReason> {
@@ -237,6 +240,7 @@ impl Session {
         Ok(())
     }
     fn begin_transition(&mut self, now: Duration) -> Result<(), CoreError> {
+        self.intervention = None;
         self.clock = self.clock.max(now);
         self.queries.invalidate();
         self.public = None;
@@ -297,6 +301,7 @@ impl Session {
             return;
         }
         self.state = State::Closed;
+        self.intervention = None;
         self.stream = None;
         self.close_reason = Some(reason);
         self.inputs.clear();

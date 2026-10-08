@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
+mod connections;
 mod driver;
 mod lifecycle;
 
@@ -189,8 +190,11 @@ impl Runtime {
         })
     }
     pub async fn disconnect(&self, id: ConnectionId) {
-        lock(&self.shared.registry).disconnect(id);
-        lock(&self.shared.budgets).remove(&id);
+        {
+            let mut registry = lock(&self.shared.registry);
+            registry.disconnect(id);
+            lock(&self.shared.budgets).remove(&id);
+        }
         self.publish_all();
     }
     fn publish_all(&self) {
@@ -343,8 +347,15 @@ impl SessionHandle {
         e: SafeInt,
         id: RequestId,
     ) -> Result<InputResult, CoreError> {
-        let _permit = self.request(p)?;
-        let result = self.with_session(|s| s.cancel_input(p, e, id));
+        // Cancellation remains available when all ordinary request slots are occupied.
+        if let Principal::Agent(c) = p {
+            self.budget(c)?;
+        }
+        let result = self.with_session(|s| {
+            let result = s.cancel_input(p, e, id);
+            self.link.publish(s);
+            result
+        });
         self.link.wake.notify_one();
         result
     }

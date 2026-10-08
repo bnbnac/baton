@@ -126,6 +126,7 @@ pub enum CoreError {
     QueryLimit,
     StaleResize,
     InvalidGeometry,
+    InvalidReason,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InputCall {
@@ -156,6 +157,7 @@ pub struct Snapshot {
     pub epoch: SafeInt,
     pub assigned: Option<ConnectionId>,
     pub stream: Option<StreamId>,
+    pub intervention: Option<crate::Intervention>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteOp {
