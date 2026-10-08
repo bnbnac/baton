@@ -199,6 +199,8 @@ impl AppService {
             epoch: SafeInt::new(0).unwrap(),
             error: None,
             has_terminal: false,
+            assigned_connection: None,
+            intervention: None,
         };
         {
             let mut state = self.state.lock().unwrap();
@@ -288,6 +290,9 @@ impl AppService {
                 {
                     info.state = state_name(snapshot.state);
                     info.epoch = snapshot.epoch;
+                    info.assigned_connection = snapshot.assigned.map(|id| Id(id.as_u128()));
+                    info.intervention =
+                        crate::agent_bridge::intervention(snapshot.intervention.clone());
                 }
                 info
             })

@@ -194,6 +194,8 @@ impl AgentBackend for AgentBridge {
                 .register_connection(core::ConnectionId::from_u128(
                     context.connection_id().as_u128(),
                 ))?;
+            drop(state);
+            self.app.publish_connections();
             Ok(())
         })
     }
@@ -205,6 +207,7 @@ impl AgentBackend for AgentBridge {
                     context.connection_id().as_u128(),
                 ))
                 .await;
+            self.app.publish_connections();
         })
     }
     fn dispatch(
@@ -333,7 +336,7 @@ fn state(value: core::State) -> SessionState {
         core::State::Closed => SessionState::Closed,
     }
 }
-fn intervention(value: Option<core::Intervention>) -> Option<Intervention> {
+pub(crate) fn intervention(value: Option<core::Intervention>) -> Option<Intervention> {
     value.map(|v| Intervention {
         request_id: WireId::from_u128(v.request_id.as_u128()),
         reason: v.reason,

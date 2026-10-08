@@ -59,6 +59,7 @@ impl AppService {
             }
         });
         self.publish();
+        self.publish_connections();
         Ok(())
     }
     pub fn heartbeat(&self) -> Result<(), AppError> {

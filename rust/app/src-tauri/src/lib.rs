@@ -6,6 +6,7 @@ pub mod dto;
 mod ids;
 mod lifecycle;
 mod output_pump;
+mod ownership;
 pub use output_pump::OutputSink;
 #[cfg(feature = "acceptance")]
 pub mod acceptance;

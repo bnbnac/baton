@@ -45,6 +45,33 @@ pub struct SessionInfo {
     pub epoch: SafeInt,
     pub error: Option<String>,
     pub has_terminal: bool,
+    pub assigned_connection: Option<Id>,
+    pub intervention: Option<baton_ipc::Intervention>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct ConnectionInfo {
+    pub id: Id,
+    pub display_name: String,
+}
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnershipRequest {
+    pub id: Id,
+    pub expected_epoch: SafeInt,
+}
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HandoffRequest {
+    pub id: Id,
+    pub expected_epoch: SafeInt,
+    pub connection_id: Id,
+}
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeclineRequest {
+    pub id: Id,
+    pub expected_epoch: SafeInt,
+    pub request_id: Id,
 }
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct AppError {
@@ -58,6 +85,7 @@ impl AppError {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiEvent {
+    Connections { connections: Vec<ConnectionInfo> },
     Sessions { sessions: Vec<SessionInfo> },
     Heartbeat { challenge: Id },
     Auth { prompt: AuthPromptDto },

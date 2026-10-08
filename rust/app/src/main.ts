@@ -3,6 +3,8 @@ import '@xterm/xterm/css/xterm.css';
 import {SessionViews} from './sessions/view.js';
 import {command,subscribe,type Session,type Prompt} from './bridge.js';
 import {AuthState} from './auth-state.js';
+import {Ownership} from './sessions/ownership.js';
+import {OwnershipView} from './connections/view.js';
 const root=document.querySelector<HTMLDivElement>('#app')!;
 function element<K extends keyof HTMLElementTagNameMap>(tag:K,text='',className=''){const el=document.createElement(tag);el.textContent=text;el.className=className;return el;}
 const header=element('header');header.append(element('strong','Baton'),element('span','내가 연결하고, 내가 제어하는 셸','muted'));
@@ -15,8 +17,10 @@ sidebar.append(element('h2','세션'),list,form);workspace.append(title,subtitle
 let sessions:Session[]=[],selected:string|null=null,shownAuth='';const prompts=new Map<string,Prompt>();const secrets=new AuthState();
 function showError(e:unknown){error.textContent=typeof e==='object'&&e!==null&&'code' in e?String(e.code):'요청을 처리하지 못했습니다.';}
 const views=new SessionViews(terminal,showError);
+const ownershipPanel=element('section','','ownership');workspace.insertBefore(ownershipPanel,auth);
+const ownership=new Ownership(),ownershipView=new OwnershipView(ownershipPanel,ownership,command,render,showError);
 const states:Record<string,string>={connecting:'연결 중',user_owned:'사용자 제어',agent_owned:'에이전트 제어',transferring:'전달 중',reclaiming:'회수 중',closed:'종료됨'};
-function render(){list.replaceChildren();for(const s of sessions){const button=element('button','','session'+(selected===s.id?' active':''));button.append(element('strong',s.label||s.host),element('small',states[s.state]??s.state));button.onclick=()=>{selected=s.id;render();};list.append(button);}const s=sessions.find(s=>s.id===selected);title.textContent=s?(s.label||s.host):'SSH 세션';subtitle.textContent=s?`${s.username}@${s.host}:${s.port} · ${states[s.state]??s.state}`:'서버를 연결하면 이곳에서 터미널을 사용할 수 있습니다.';views.update(sessions,selected);renderAuth(s);if(s?.error)error.textContent=s.error;}
+function render(){list.replaceChildren();for(const s of sessions){const button=element('button','','session'+(selected===s.id?' active':''));button.append(element('strong',s.label||s.host),element('small',states[s.state]??s.state));button.onclick=()=>{selected=s.id;render();};list.append(button);}const s=sessions.find(s=>s.id===selected);title.textContent=s?(s.label||s.host):'SSH 세션';subtitle.textContent=s?`${s.username}@${s.host}:${s.port} · ${states[s.state]??s.state}`:'서버를 연결하면 이곳에서 터미널을 사용할 수 있습니다.';views.update(sessions,selected);ownershipView.render(s);renderAuth(s);if(s?.error)error.textContent=s.error;}
 function renderAuth(session:Session|undefined){const p=session&&session.state!=='closed'?prompts.get(session.id):undefined;const key=p?`${p.session}/${p.attempt}/${p.challenge}`:session?`${session.id}/${session.state}`:'';if(key===shownAuth)return;shownAuth=key;secrets.clear();auth.replaceChildren();if(!session)return;
   const close=element('button',session.state==='closed'?'목록에서 제거':'연결 종료','secondary');close.onclick=()=>{void command(session.state==='closed'?'remove_closed_session':'close_session',{id:session.id}).catch(showError);};auth.append(close);if(!p)return;
   secrets.show(p);const panel=element('form','','challenge');panel.append(element('h2',p.kind==='host'?'서버 신원 확인':'인증'),element('pre',p.display));const inputs:HTMLInputElement[]=[];let file:HTMLInputElement|undefined;
@@ -30,4 +34,4 @@ function renderAuth(session:Session|undefined){const p=session&&session.state!==
   if(p.kind==='host'){const reject=element('button','거부','secondary');reject.type='button';reject.onclick=()=>{inputs.forEach(i=>i.value='');prompts.delete(p.session);void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:{kind:'host',accept:false}}).catch(showError);};panel.append(reject);}auth.append(panel);
 }
 form.onsubmit=async event=>{event.preventDefault();connect.disabled=true;error.textContent='';try {const s=await command<Session>('connect_session',{label:label.value,host:host.value,port:Number(port.value),username:username.value,method:method.value});selected=s.id;render();}catch(e){showError(e);}finally{connect.disabled=false;}};
-void subscribe(event=>{if(event.type==='sessions'){sessions=event.sessions;for(const s of sessions)if(s.state==='closed')prompts.delete(s.id);if(!sessions.some(s=>s.id===selected))selected=sessions[0]?.id??null;render();}else if(event.type==='auth'){prompts.set(event.prompt.session,event.prompt);render();}}).then(initial=>{sessions=initial;render();}).catch(showError);
+void subscribe(event=>{if(event.type==='sessions'){sessions=event.sessions;for(const s of sessions)if(s.state==='closed')prompts.delete(s.id);if(!sessions.some(s=>s.id===selected))selected=sessions[0]?.id??null;render();}else if(event.type==='auth'){prompts.set(event.prompt.session,event.prompt);render();}else if(event.type==='connections'){ownership.updateConnections(event.connections);render();}}).then(initial=>{sessions=initial;render();}).catch(showError);

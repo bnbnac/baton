@@ -392,3 +392,92 @@ async fn queued_input_cancellation_never_writes_and_delivery_waits_for_transport
     server.shutdown().await;
     app.shutdown().await;
 }
+
+#[tokio::test]
+async fn user_ownership_actions_validate_epoch_and_intervention_is_only_notification() {
+    let writes = Arc::new(Writes::default());
+    let app =
+        AppService::with_connector(Arc::new(ConnectorFixture(writes.clone())), Arc::new(Sink));
+    assert!(app.list_agent_connections().is_empty());
+    let path = folder();
+    let server = app.start_agent_server(&path).await.unwrap();
+    let client = LocalClient::connect(&path).await.unwrap();
+    let connection_id = Id(client.context().connection_id().as_u128());
+    assert_eq!(app.list_agent_connections()[0].id, connection_id);
+    let (id, handle) = session(&app, "ownership").await;
+    let first = handle.snapshot().await.epoch;
+    assert!(
+        app.handoff_session(HandoffRequest {
+            id,
+            expected_epoch: first,
+            connection_id: Id(0)
+        })
+        .await
+        .is_err()
+    );
+    let handed = app
+        .handoff_session(HandoffRequest {
+            id,
+            expected_epoch: first,
+            connection_id,
+        })
+        .await
+        .unwrap();
+    assert_eq!(handed.state, "agent_owned");
+    assert_eq!(handed.assigned_connection, Some(connection_id));
+    assert_eq!(
+        app.reclaim_session(OwnershipRequest {
+            id,
+            expected_epoch: first
+        })
+        .await
+        .unwrap_err()
+        .code,
+        "StaleControlEpoch"
+    );
+    client
+        .call(
+            AgentRequest::RequestUserControl {
+                session_id: WireId::from_u128(id.0),
+                control_epoch: handed.epoch,
+                request_id: WireId::from_u128(7),
+                reason: "<script>not HTML</script> 인증 필요".into(),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(handle.snapshot().await.state, State::AgentOwned);
+    assert!(writes.0.lock().unwrap().is_empty());
+    let pending = app.list().into_iter().find(|s| s.id == id).unwrap();
+    assert!(pending.intervention.is_some());
+    let declined = app
+        .decline_intervention(DeclineRequest {
+            id,
+            expected_epoch: handed.epoch,
+            request_id: Id(7),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        declined.intervention.unwrap().state,
+        baton_ipc::InterventionState::Declined
+    );
+    assert_eq!(declined.state, "agent_owned");
+    assert!(writes.0.lock().unwrap().is_empty());
+    let reclaimed = app
+        .reclaim_session(OwnershipRequest {
+            id,
+            expected_epoch: handed.epoch,
+        })
+        .await
+        .unwrap();
+    assert_eq!(reclaimed.state, "user_owned");
+    assert!(reclaimed.intervention.is_none());
+    assert_eq!(reclaimed.assigned_connection, Some(connection_id));
+    drop(client);
+    server.shutdown().await;
+    assert!(app.list_agent_connections().is_empty());
+    assert_eq!(handle.snapshot().await.state, State::UserOwned);
+    app.shutdown().await;
+}

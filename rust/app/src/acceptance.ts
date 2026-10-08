@@ -6,6 +6,9 @@ import {bindTerminal,terminalBridge} from './terminal/bridge.js';
 import type {Frame,Binding} from './terminal/types.js';
 import {manualTerminal} from './manual.js';
 import {SessionViews} from './sessions/view.js';
+import {Ownership} from './sessions/ownership.js';
+import {OwnershipView} from './connections/view.js';
+import type {Connection} from './bridge.js';
 const host=document.querySelector<HTMLElement>('#terminal')!;
 const enc=new TextEncoder();const bytes=(s:string)=>Array.from(enc.encode(s));
 const hex=(s:string)=>bytes(s).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -22,6 +25,7 @@ function equal(a:unknown,b:unknown){if(JSON.stringify(a)!==JSON.stringify(b))thr
 async function rejected(p:Promise<unknown>){try{await p;}catch{return;}throw Error('expected_rejection');}
 async function until(check:()=>boolean|Promise<boolean>,label:string){const end=Date.now()+8000;while(!await check()){if(Date.now()>end)throw Error(label);await delay(10);}}
 const sessions=new Map<string,Session>();let active:TerminalView|undefined;let number=0;
+let refreshOwnership:(()=>void)|undefined;
 let openSshMode=false,openSshFingerprint:string|undefined;
 let holdStage:string|undefined;
 const fixture=(request:unknown)=>invoke<any>('fixture',{request});
@@ -232,8 +236,37 @@ async function interactiveOpenSsh(port:number,second:number){
    for(const e of entries)if(e.failure)throw e.failure;
  }finally{active=undefined;for(const e of entries){e.view.dispose();e.host.remove();await command('close_session',{id:e.session.id});await until(async()=>{try{await command('remove_closed_session',{id:e.session.id});return true;}catch{return false;}},'close_timeout');}}
 }
+async function ownershipUi(port:number){
+ const username=`fixture-${++number}`,info=await command<Session>('connect_session',{host:'127.0.0.1',port,username,label:'ownership-ui',method:'password'});
+ await until(()=>sessions.get(info.id)?.state==='user_owned','ownership_connect_timeout');
+ const pane=document.createElement('div');pane.style.cssText='height:430px;width:950px';host.append(pane);
+ const panel=document.createElement('section');host.prepend(panel);const model=new Ownership();model.updateConnections(await command<Connection[]>('list_agent_connections',{}));
+ const failures:unknown[]=[];let view:TerminalView|undefined;const pending:Frame[]=[];
+ const accept=(frame:Frame)=>{void view!.write(frame).catch(e=>failures.push(e));};
+ const binding=await bindTerminal(info.id,frame=>view?accept(frame):pending.push(frame));
+ view=new TerminalView(binding,pane,terminalBridge(e=>failures.push(e)));active=view;view.applySnapshot(sessions.get(info.id)!);for(const frame of pending)accept(frame);
+ const render=()=>widget.render(sessions.get(info.id));const widget=new OwnershipView(panel,model,command,render,e=>failures.push(e));refreshOwnership=render;render();
+ const screen=()=>{const b=view!.term.buffer.active;return Array.from({length:b.length},(_,i)=>b.getLine(i)?.translateToString(true)??'').join('\n');};
+ const click=(text:string)=>{const button=Array.from(panel.querySelectorAll('button')).find(b=>b.textContent===text);if(!button||button.disabled)throw Error('button_unavailable:'+text);button.click();};
+ try {
+   await fixture({action:'inject',user:username,bytes:bytes('PRIVATE_SCREEN\r\n')});await until(()=>screen().includes('PRIVATE_SCREEN'),'private_screen_missing');
+   const original=view.term.element;const select=panel.querySelector('select')!;select.value=model.connections[0].id;select.dispatchEvent(new Event('change'));
+   const oldEpoch=sessions.get(info.id)!.epoch;click('에이전트에 전달');await until(()=>sessions.get(info.id)?.state==='agent_owned'&&!model.busy(info.id),'ui_handoff_timeout');
+   if(view.term.element!==original)throw Error('terminal_recreated');equal(screen().includes('PRIVATE_SCREEN'),true);
+   await fixture({action:'inject',user:username,bytes:bytes('PUBLIC_SCREEN\r\n')});await until(()=>screen().includes('PUBLIC_SCREEN'),'public_screen_missing');
+   equal(String(await invoke('public_read',{binding})).includes('PRIVATE_SCREEN'),false);equal(String(await invoke('public_read',{binding})).includes('PUBLIC_SCREEN'),true);
+   await rejected(command('reclaim_session',{id:info.id,expected_epoch:oldEpoch}));equal(sessions.get(info.id)!.state,'agent_owned');
+   view.term.input('BLOCKED');await view.input.flush();equal((await fixture({action:'audit',user:username})).hex,'');
+   widget.render({...sessions.get(info.id)!,intervention:{request_id:'1'.repeat(32),state:'requested',reason:'<img src=x onerror=alert(1)> literal only'}});
+   equal(panel.querySelector('img'),null);equal(panel.textContent!.includes('<img src=x'),true);render();
+   click('내가 제어하기');await until(()=>sessions.get(info.id)?.state==='user_owned'&&!model.busy(info.id),'ui_reclaim_timeout');
+   if(view.term.element!==original)throw Error('terminal_recreated');equal(screen().includes('PRIVATE_SCREEN'),true);equal(screen().includes('PUBLIC_SCREEN'),true);
+   view.term.input('USER_AFTER');await view.input.flush();await until(async()=> (await fixture({action:'audit',user:username})).hex===hex('USER_AFTER'),'user_input_after_reclaim_missing');
+   model.updateConnections([]);render();equal(panel.querySelector('select')!.value,'');equal(Array.from(panel.querySelectorAll('button')).find(b=>b.textContent==='에이전트에 전달')!.disabled,true);equal(failures,[]);
+ }finally{refreshOwnership=undefined;active=undefined;view.dispose();pane.remove();panel.remove();await command('close_session',{id:info.id});await until(async()=>{try{await command('remove_closed_session',{id:info.id});return true;}catch{return false;}},'ownership_close_timeout');}
+}
 async function run(){const outcomes:{name:string;passed:boolean;error?:string}[]=[];
- await subscribe(event=>{if(event.type==='sessions'){for(const s of event.sessions){sessions.set(s.id,s);if(active?.binding.session===s.id)active.applySnapshot(s);}}else if(event.type==='auth'){const p=event.prompt;if(holdStage==='auth-wait'&&p.kind==='password'){void fixture({action:'barrier',stage:holdStage});return;}void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:p.kind==='host'?{kind:'host',accept:!openSshMode||!!openSshFingerprint&&p.display.endsWith(openSshFingerprint)}:{kind:'password',password:openSshMode?'baton-fixture-only':'fixture-only'}});}});
+ await subscribe(event=>{if(event.type==='sessions'){for(const s of event.sessions){sessions.set(s.id,s);if(active?.binding.session===s.id)active.applySnapshot(s);}refreshOwnership?.();}else if(event.type==='auth'){const p=event.prompt;if(holdStage==='auth-wait'&&p.kind==='password'){void fixture({action:'barrier',stage:holdStage});return;}void command('answer_auth',{session:p.session,attempt:p.attempt,challenge:p.challenge,answer:p.kind==='host'?{kind:'host',accept:!openSshMode||!!openSshFingerprint&&p.display.endsWith(openSshFingerprint)}:{kind:'password',password:openSshMode?'baton-fixture-only':'fixture-only'}});}});
  const {port,second,single,suite,openssh,otherOpenSsh,fingerprint,hold}=await invoke<{port:number;second:number;single?:string;suite:string;openssh?:string;otherOpenSsh?:string;fingerprint?:string;hold?:string}>('fixture_config');
  holdStage=hold;
  if(suite==='manual'||suite==='manual-smoke'){await manualTerminal(port,host,sessions,view=>{active=view;},suite==='manual-smoke');return;}
@@ -248,7 +281,7 @@ async function run(){const outcomes:{name:string;passed:boolean;error?:string}[]
  }
  openSshMode=suite==='openssh';openSshFingerprint=fingerprint;
  const names=single?[single]:suite==='openssh'?['interactive-openssh']:suite==='geometry'?['geometry']:suite==='all'?[...Object.keys(cases),'queue_overload','query_overload','remote_exit','remote_exit_late_view','geometry']:[...Object.keys(cases),'queue_overload','query_overload','remote_exit','remote_exit_late_view'];
- for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.startsWith('remote_exit'))await remoteExit(port,name==='remote_exit_late_view');else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
+ for(const name of names){host.hidden=false;await fixture({action:'progress',name});try{if(name==='ownership-ui')await ownershipUi(port);else if(name==='interactive-openssh')await interactiveOpenSsh(Number(openssh),Number(otherOpenSsh));else if(name==='geometry')await geometry(port,second);else if(name.startsWith('remote_exit'))await remoteExit(port,name==='remote_exit_late_view');else if(name.endsWith('_overload'))await overload(name,port);else await scenario(name,port);outcomes.push({name,passed:true});}catch(e){outcomes.push({name,passed:false,error:JSON.stringify(e instanceof Error?e.message:e)});}}
  if(hold==='before-cleanup'){await fixture({action:'barrier',stage:hold});return;}
  await invoke('finish',{outcomes});
 }

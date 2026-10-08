@@ -2,6 +2,34 @@ use baton_core::*;
 mod support;
 use support::transport::*;
 #[tokio::test(start_paused = true)]
+async fn stale_ui_ownership_actions_have_no_effect() {
+    let f = RaceFixture::agent().await;
+    let before = f.handle.snapshot().await;
+    assert_eq!(
+        f.handle
+            .reclaim_expected(before.epoch.checked_next().unwrap())
+            .await,
+        Err(CoreError::StaleControlEpoch)
+    );
+    assert_eq!(f.handle.snapshot().await, before);
+    f.handle.reclaim_expected(before.epoch).await.unwrap();
+    let user = f.handle.snapshot().await;
+    assert_eq!(user.state, State::UserOwned);
+    assert_eq!(
+        f.handle
+            .handoff_expected(f.connection, StreamId::from_u128(900), before.epoch)
+            .await,
+        Err(CoreError::StaleControlEpoch)
+    );
+    assert_eq!(f.handle.snapshot().await, user);
+    f.handle
+        .handoff_expected(f.connection, StreamId::from_u128(900), user.epoch)
+        .await
+        .unwrap();
+    assert_eq!(f.handle.snapshot().await.state, State::AgentOwned);
+    f.runtime.shutdown().await;
+}
+#[tokio::test(start_paused = true)]
 async fn dropped_submit_notifies_completion_waiter_while_another_write_is_active() {
     let f = RaceFixture::agent().await;
     f.handle.submit(f.call(1, b"FIRST")).await.unwrap();

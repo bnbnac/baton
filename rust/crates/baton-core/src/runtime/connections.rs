@@ -23,6 +23,9 @@ impl Runtime {
     pub fn app_id(&self) -> AppId {
         lock(&self.shared.registry).app()
     }
+    pub fn connection_ids(&self) -> Vec<ConnectionId> {
+        lock(&self.shared.registry).connection_ids()
+    }
     /// The callback is the response commit point, serialized with reclaim and
     /// disconnect. It must not await or re-enter the runtime. Bytes committed
     /// here may already be on their way to the peer when reclaim happens later.

@@ -33,6 +33,41 @@ fn local(window: &WebviewWindow) -> Result<(), AppError> {
     }
 }
 #[tauri::command]
+pub fn list_agent_connections(
+    window: WebviewWindow,
+    state: State<'_, Managed>,
+) -> Result<Vec<ConnectionInfo>, AppError> {
+    local(&window)?;
+    Ok(state.service.list_agent_connections())
+}
+#[tauri::command]
+pub async fn handoff_session(
+    window: WebviewWindow,
+    state: State<'_, Managed>,
+    request: HandoffRequest,
+) -> Result<SessionInfo, AppError> {
+    local(&window)?;
+    state.service.handoff_session(request).await
+}
+#[tauri::command]
+pub async fn reclaim_session(
+    window: WebviewWindow,
+    state: State<'_, Managed>,
+    request: OwnershipRequest,
+) -> Result<SessionInfo, AppError> {
+    local(&window)?;
+    state.service.reclaim_session(request).await
+}
+#[tauri::command]
+pub async fn decline_intervention(
+    window: WebviewWindow,
+    state: State<'_, Managed>,
+    request: DeclineRequest,
+) -> Result<SessionInfo, AppError> {
+    local(&window)?;
+    state.service.decline_intervention(request).await
+}
+#[tauri::command]
 pub async fn connect_session(
     window: WebviewWindow,
     state: State<'_, Managed>,

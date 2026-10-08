@@ -371,13 +371,43 @@ impl SessionHandle {
     pub async fn reclaim(&self) -> Result<(), CoreError> {
         self.with_session(|s| s.reclaim(self.shared.origin.elapsed()))
     }
+    pub async fn reclaim_expected(&self, epoch: SafeInt) -> Result<(), CoreError> {
+        self.with_session(|s| {
+            if s.snapshot().epoch != epoch {
+                return Err(CoreError::StaleControlEpoch);
+            }
+            s.reclaim(self.shared.origin.elapsed())
+        })
+    }
+    pub async fn handoff_expected(
+        &self,
+        to: ConnectionId,
+        stream: StreamId,
+        epoch: SafeInt,
+    ) -> Result<(), CoreError> {
+        self.handoff_checked(to, stream, Some(epoch))
+    }
     pub async fn handoff(&self, to: ConnectionId, stream: StreamId) -> Result<(), CoreError> {
+        self.handoff_checked(to, stream, None)
+    }
+    fn handoff_checked(
+        &self,
+        to: ConnectionId,
+        stream: StreamId,
+        epoch: Option<SafeInt>,
+    ) -> Result<(), CoreError> {
         let mut r = lock(&self.shared.registry);
         if self.link.retired.load(Ordering::Acquire) {
             return Err(CoreError::SessionClosed);
         }
         r.session_mut(self.link.id)?
             .tick(self.shared.origin.elapsed());
+        if epoch.is_some_and(|expected| {
+            r.session(self.link.id)
+                .is_ok_and(|s| s.snapshot().epoch != expected)
+        }) {
+            return Err(CoreError::StaleControlEpoch);
+        }
         let result = r.handoff(self.link.id, to, stream, self.shared.origin.elapsed());
         self.link.publish(r.session(self.link.id)?);
         result
