@@ -10,7 +10,7 @@
 
 **Spec:** [구조 설계](../specs/2026-09-20-rust-transition-design.md), [검증 기준](../specs/2026-09-20-rust-verification-design.md), [단계 0 보고서](../../testing/rust-phase-0-report.md), [단계 1 보고서](../../testing/rust-phase-1-report.md).
 
-상태: 2026-09-29. Tasks 1–7 구현 완료. Task 8 자동 검사 통과, 필수 Windows 물리 관측과 최종 리뷰는 진행 중이다. 실행 방식은 기존 **Native**를 유지한다. 기준 코드 `d62b85a`의 코어 55개/workspace 64개 결과는 단계 1 증거이며 이 계획의 시험 결과로 합산하지 않는다.
+상태: 2026-10-08. Tasks 1–8 및 Phase 2 완료(기존 증거 인정, DPI는 Windows 배포 전 보류). 사용자는 제품 변경 없이 exe 해시만 달라진 경우의 반복 시험을 생략하도록 요청했다. 제품·입력 harness·lock 무변경과 두 collection의 10개 항목을 재검증해 단계 종료를 결정했다. 동일 바이너리 전체 통과는 아니며 strict runner의 원본 `manual_pending / exit 2`는 유지한다. 상세 근거와 남는 제한은 [인수 기록](../../testing/rust-phase-2-report.md)의 최종 결정을 따른다. 아래 기존 gate 요구는 구현 당시 기준으로 보존하며 이번 단계 종료에는 이 승인된 예외를 적용한다. 실행 방식은 기존 **Native**를 유지한다. 기준 코드 `d62b85a`의 코어 55개/workspace 64개 결과는 단계 1 증거이며 이 계획의 시험 결과로 합산하지 않는다.
 
 ## Global Constraints
 
@@ -280,7 +280,7 @@ frame은 seq 순서로 xterm.write callback까지 완료한 뒤 ack한다. callb
 
 2026-10-08 구현 반영: 위 10-06 문단은 당시의 상태다. 승인된 schemaVersion 2 수집기는 같은 빌드의 독립 실행을 원본 ID/시각/관측자/해시로 연결하고, IME 회수와 vi는 같은 실행의 연속성을 강제한다. 종료는 실제 lifecycle 증거로, DPI 보류는 승인 내용과 배포 전 기한으로 표현한다. 명시한 수집기 파일 외 source 변경과 exe/lock 변경은 거부한다. 새 수집기 9개와 기존 runner 7개가 통과했고 vi 연속 시험도 완료했다. 이전 입력·IME와 최신 vi의 exe 해시가 달라 빌드별로 증거를 분리했으므로 Step 4/5 및 Phase 2 완료 표시는 유지하지 않는다. 자세한 상태는 인수 기록의 최신 절을 따른다.
 
-- [ ] **Step 4:** 다음 검사를 실제 실행한다. 외부 실패 코드를 즉시 검사한다.
+- [x] **Step 4:** 자동 검사 및 실제 Windows 관측을 수행했다. 2026-10-08 소스 검토에 따른 기존 증거 인정으로 완료; strict runner exit 0을 얻었다는 뜻은 아니다. 아래는 원래 검증 명령이다. 외부 실패 코드를 즉시 검사한다.
 
 ```powershell
 cargo +stable fmt --manifest-path rust/Cargo.toml --all -- --check
@@ -294,7 +294,7 @@ pwsh -NoProfile -File rust/scripts/verify-phase-2.ps1 -ManualEvidence <actual-re
 
 Expected: 자동 suite PASS/0 ignored, source 동일, 제품 Debug/acceptance 대상 구분, 실제 Windows 필수 case 모두 관측 시만 최종 exit0. 단계0 API probe 전부를 매번 재실행하지 않는다. 공유 dependency pin을 바꿨다면 영향받는 probe 시험을 추가한다. 단계1 verify/mutation 스크립트의 고정 suite 목록과 치환 anchor가 달라졌으면 유지보수 후 여전히 누락/컴파일실패를 성공으로 오인하지 않는지 확인한다.
 
-- [ ] **Step 5:** `rust-phase-2-report.md`에 ID→시험→관측 효과→명령→source→결과→제한 표를 채운다. 미실행을 완료로 쓰지 않는다. 전체 mandatory gate 충족 뒤 Task 파일만 stage하고 `git commit -m "test: gate Windows SSH terminal acceptance"`. 자동 부분 완료·수동 pending이면 그 상태를 기록하는 별도 커밋은 가능하나 Task8/Phase2는 미완료다. Native 전체 변경 리뷰는 한 번 수행하고 Important/Critical은 재현 시험→수정→전체 관련 suite로 확인한다.
+- [x] **Step 5:** `rust-phase-2-report.md`에 실제 관측·제한 및 2026-10-08 사용자 승인 종료 결정을 기록했다. 기존 최종 리뷰의 Important 2건 수정·검증은 보고서에 남겼다. 미실시 DPI와 과거 exe 직접 비교 부재는 한계로 유지한다. 추가 반복 시험이나 새 커밋·병합을 단계 종료 조건으로 두지 않는다.
 
 ## 완료 판정과 다음 단계
 
