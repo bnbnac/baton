@@ -130,26 +130,22 @@ fn folder() -> std::path::PathBuf {
     let root =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../artifacts/phase3-ipc");
     std::fs::create_dir_all(&root).unwrap();
-    root.canonicalize().unwrap().join(format!(
-        "auth-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ))
+    root.canonicalize()
+        .unwrap()
+        .join(format!("auth-{:032x}", unique_id().as_u128()))
+}
+fn unique_id() -> WireId {
+    let mut bytes = [0; 16];
+    getrandom::fill(&mut bytes).unwrap();
+    WireId::from_u128(u128::from_le_bytes(bytes))
 }
 async fn setup() -> (std::path::PathBuf, LocalServer, Arc<Backend>) {
     let folder = folder();
     let backend = Arc::new(Backend::default());
-    let app = WireId::from_u128(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
-    );
+    let app = unique_id();
     let server = LocalServer::start(&folder, app, backend.clone())
         .await
-        .unwrap();
+        .unwrap_or_else(|error| panic!("fixture endpoint {:?} app {:?}: {:?}", folder, app, error));
     (folder, server, backend)
 }
 async fn raw(folder: &std::path::Path) -> NamedPipeClient {

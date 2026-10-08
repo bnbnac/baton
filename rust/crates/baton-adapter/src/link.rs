@@ -174,3 +174,73 @@ async fn supervise(path: PathBuf, state: Arc<Mutex<State>>, stop: CancellationTo
         client.close();
     }
 }
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    struct Backend;
+    impl AgentBackend for Backend {
+        fn connected(&self, _: ConnectionContext) -> IpcFuture<'_, Result<(), WireError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn disconnected(&self, _: ConnectionContext) -> IpcFuture<'_, ()> {
+            Box::pin(async {})
+        }
+        fn dispatch(
+            &self,
+            c: ConnectionContext,
+            _: AgentRequest,
+            _: CancellationToken,
+        ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
+            Box::pin(async move {
+                Ok(AgentResponse::Status(StatusResult {
+                    contract_version: 2,
+                    app_state: AppState::Online,
+                    app_instance_id: Some(c.app_instance_id()),
+                    connection_id: Some(c.connection_id()),
+                    sessions: vec![],
+                }))
+            })
+        }
+    }
+    #[tokio::test]
+    async fn late_retirement_of_old_client_preserves_replacement_connection() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../artifacts/phase4-race");
+        std::fs::create_dir_all(&root).unwrap();
+        let id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = root.canonicalize().unwrap().join(id.to_string());
+        let server = LocalServer::start(&path, WireId::from_u128(id), Arc::new(Backend))
+            .await
+            .unwrap();
+        let old = Arc::new(LocalClient::connect(&path).await.unwrap());
+        let new = Arc::new(LocalClient::connect(&path).await.unwrap());
+        let state = Mutex::new(State {
+            client: Some(new.clone()),
+            failure: None,
+        });
+        old.close();
+        retire(&state, &old);
+        let current = state
+            .lock()
+            .unwrap()
+            .client
+            .clone()
+            .expect("old error removed replacement");
+        let response = current
+            .call(AgentRequest::Status {}, CancellationToken::new())
+            .await
+            .unwrap();
+        let AgentResponse::Status(status) = response else {
+            panic!("wrong response")
+        };
+        assert_eq!(status.connection_id, Some(new.context().connection_id()));
+        retire(&state, &new);
+        assert!(state.lock().unwrap().client.is_none());
+        new.close();
+        server.shutdown().await;
+    }
+}

@@ -15,7 +15,7 @@ export const REQUIRED_RUST=[
  'response_queue_overflow_closes_connection_with_bounded_memory','stalled_writer_still_processes_cancel_and_expires_without_harming_other_clients',
  'concurrent_calls_preserve_request_order_on_the_wire','stdio_online_output_errors_then_offline_has_no_cached_identity',
  'stdio_cancellation_and_eof_release_pending_reads_and_ipc','authentication_and_version_failures_are_not_reported_as_offline',
- 'offline_start_does_not_silently_attach_when_an_app_appears','all_tool_parameters_are_checked_before_dispatch',
+ 'offline_start_rediscovers_a_new_app_without_restarting_stdio','all_tool_parameters_are_checked_before_dispatch',
 ];
 export const REQUIRED_NODE_FILES=['integration.test.mjs','ownership.test.mjs','sudo.test.mjs','stdio.test.mjs','receipt.test.mjs'];
 const REQUIRED_CASES=['phase3-integration','phase3-ownership','phase3-sudo'];

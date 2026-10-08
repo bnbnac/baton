@@ -32,7 +32,15 @@ export async function runCase(name) {
       const request=JSON.parse(line);let result;
       if(request.action==='mcp-start') {
         for(const owner of ['a','b']) {const adapter=new Adapter(endpoint);adapters.set(owner,adapter);await adapter.initialize();}
-        result={};for(const [owner,adapter] of adapters){const status=await adapter.tool('status');transcript.push(status);result[owner]=JSON.parse(status.content[0].text);}
+        result={};for(const [owner,adapter] of adapters){
+          const status=await deadline((async()=>{for(;;){
+            const status=await adapter.tool('status');
+            if(status.isError)throw Error('adapter_authentication_failed');
+            if(JSON.parse(status.content[0].text).app_state==='online')return status;
+            await new Promise(resolve=>setTimeout(resolve,25));
+          }})(),8000,'adapter_did_not_connect');
+          transcript.push(status);result[owner]=JSON.parse(status.content[0].text);
+        }
       } else if(request.action==='mcp-call') {
         result=await adapters.get(request.owner).tool(request.name,request.arguments);transcript.push(result);
       } else if(request.action==='mcp-eof') {
