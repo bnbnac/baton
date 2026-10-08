@@ -56,6 +56,12 @@ impl LocalClient {
     pub fn is_connected(&self) -> bool {
         !self.inner.cancel.is_cancelled()
     }
+    pub fn close(&self) {
+        self.inner.cancel.cancel();
+    }
+    pub async fn disconnected(&self) {
+        self.inner.cancel.cancelled().await;
+    }
     pub async fn connect(dir: &Path) -> Result<Self, WireError> {
         let result=tokio::time::timeout(Duration::from_secs(3),async{
             let discovery=endpoint::load_endpoint(dir)?;

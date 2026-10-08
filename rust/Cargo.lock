@@ -166,6 +166,7 @@ name = "baton-adapter"
 version = "0.1.0"
 dependencies = [
  "baton-ipc",
+ "getrandom 0.3.4",
  "rmcp",
  "serde_json",
  "tokio",

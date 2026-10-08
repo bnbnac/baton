@@ -42,7 +42,7 @@ async fn main() {
         .map(Ok)
         .unwrap_or_else(baton_ipc::endpoint::default_endpoint_dir);
     let link = Arc::new(match endpoint {
-        Ok(path) => AdapterLink::connect(&path).await,
+        Ok(path) => AdapterLink::start(path),
         Err(error) => AdapterLink::unavailable(error),
     });
     let eof = CancellationToken::new();
@@ -53,7 +53,7 @@ async fn main() {
         signal.cancel();
     });
     if let Ok(service) = (Adapter {
-        link,
+        link: link.clone(),
         eof: eof.clone(),
     })
     .serve((reader, tokio::io::stdout()))
@@ -63,4 +63,5 @@ async fn main() {
         tokio::select! {_=eof.cancelled()=>cancel.cancel(),_=service.waiting()=>{}}
     }
     input.abort();
+    link.shutdown().await;
 }

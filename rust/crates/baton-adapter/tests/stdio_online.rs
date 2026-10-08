@@ -174,6 +174,19 @@ impl Process {
             .unwrap();
         assert!(stderr.is_empty());
     }
+    async fn wait_status(&mut self, key: &str, expected: Value) -> Value {
+        tokio::time::timeout(Duration::from_secs(12), async {
+            loop {
+                let result = self.call(1000, "status", json!({})).await;
+                if data(&result)[key] == expected {
+                    break result;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("expected adapter state not observed")
+    }
 }
 fn data(response: &Value) -> Value {
     serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
@@ -185,7 +198,7 @@ fn read(wait: u32) -> Value {
 async fn stdio_online_output_errors_then_offline_has_no_cached_identity() {
     let (path, server, _) = setup(None).await;
     let mut process = Process::start(&path).await;
-    let status = data(&process.call(2, "status", json!({})).await);
+    let status = data(&process.wait_status("app_state", json!("online")).await);
     assert_eq!(status["app_state"], "online");
     assert_eq!(status["sessions"], json!([]));
     assert!(status["connection_id"].is_string());
@@ -216,6 +229,7 @@ async fn stdio_online_output_errors_then_offline_has_no_cached_identity() {
 async fn stdio_cancellation_and_eof_release_pending_reads_and_ipc() {
     let (path, server, fixture) = setup(None).await;
     let mut process = Process::start(&path).await;
+    process.wait_status("app_state", json!("online")).await;
     process.send(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_output","arguments":read(10000)}})).await;
     tokio::time::timeout(Duration::from_secs(2), fixture.entered.notified())
         .await
@@ -241,7 +255,9 @@ async fn authentication_and_version_failures_are_not_reported_as_offline() {
     for code in [ErrorCode::AuthenticationFailed, ErrorCode::ProtocolMismatch] {
         let (path, server, _) = setup(Some(code)).await;
         let mut process = Process::start(&path).await;
-        let result = process.call(2, "status", json!({})).await;
+        let result = process
+            .wait_status("code", serde_json::to_value(code).unwrap())
+            .await;
         assert_eq!(result["result"]["isError"], true);
         assert_eq!(data(&result)["code"], serde_json::to_value(code).unwrap());
         process.eof().await;
@@ -249,7 +265,7 @@ async fn authentication_and_version_failures_are_not_reported_as_offline() {
     }
 }
 #[tokio::test]
-async fn offline_start_does_not_silently_attach_when_an_app_appears() {
+async fn offline_start_rediscovers_a_new_app_without_restarting_stdio() {
     let path = folder();
     let mut process = Process::start(&path).await;
     assert_eq!(
@@ -265,10 +281,20 @@ async fn offline_start_does_not_silently_attach_when_an_app_appears() {
     let server = LocalServer::start(&path, WireId::from_u128(89123), fixture)
         .await
         .unwrap();
-    assert_eq!(
-        data(&process.call(3, "status", json!({})).await)["app_state"],
-        "offline"
-    );
+    let status = tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let status = data(&process.call(3, "status", json!({})).await);
+            if status["app_state"] == "online" {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("adapter never rediscovered the app");
+    assert_eq!(status["app_instance_id"], format!("{:032x}", 89123));
+    assert_eq!(status["sessions"], json!([]));
+    assert!(status["connection_id"].is_string());
     process.eof().await;
     server.shutdown().await;
 }
