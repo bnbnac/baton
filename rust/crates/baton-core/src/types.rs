@@ -7,6 +7,7 @@ macro_rules! identity {
         impl $name {
             /// Trusted application assembly only; possession is not authentication.
             pub const fn from_u128(value: u128) -> Self { Self(value) }
+            pub const fn as_u128(self) -> u128 { self.0 }
         }
     )+};
 }

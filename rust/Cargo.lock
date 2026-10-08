@@ -186,6 +186,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "baton-ipc"
+version = "0.1.0"
+dependencies = [
+ "baton-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "baton-mcp-probe"
 version = "0.1.0"
 dependencies = [
