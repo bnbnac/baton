@@ -14,7 +14,7 @@ use windows_sys::Win32::{
     Foundation::*,
     Security::{Authorization::*, Cryptography::*, *},
     Storage::FileSystem::*,
-    System::Threading::*,
+    System::{Threading::*, WindowsProgramming::*},
 };
 
 fn failure() -> WireError {
@@ -342,19 +342,16 @@ impl EndpointLease {
             file.write_all(&encrypted).map_err(|_| failure())?;
             file.sync_all().map_err(|_| failure())?;
             drop(file);
-            let from = wide(&temporary)?;
-            let to = wide(&target)?;
-            if unsafe {
-                MoveFileExW(
-                    from.as_ptr(),
-                    to.as_ptr(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-                )
-            } == 0
-            {
-                return Err(failure());
-            }
-            Ok(())
+            // Reopen without write access so readers can open the published
+            // name immediately, even before this rename handle is dropped.
+            let file = security.open(
+                &temporary,
+                DELETE,
+                FILE_SHARE_READ | FILE_SHARE_DELETE,
+                OPEN_EXISTING,
+                false,
+            )?;
+            replace_discovery(&file, &target)
         })();
         if result.is_err() {
             let _ = std::fs::remove_file(temporary);
@@ -370,6 +367,42 @@ impl EndpointLease {
     pub fn next_pipe(&self) -> Result<NamedPipeServer, WireError> {
         pipe(&self.discovery.pipe_name, false)
     }
+}
+fn replace_discovery(file: &File, target: &Path) -> Result<(), WireError> {
+    let name = wide(target)?;
+    let name_bytes = (name.len() - 1).checked_mul(2).ok_or_else(failure)?;
+    let length = size_of::<FILE_RENAME_INFO>()
+        .checked_add(name.len().checked_mul(2).ok_or_else(failure)?)
+        .ok_or_else(failure)?;
+    let length_u32 = u32::try_from(length).map_err(|_| failure())?;
+    // Typed storage supplies the ABI alignment and room for the variable
+    // length UTF-16 name (including its terminator). No references into the
+    // trailing one-element FileName field are used for the extended copy.
+    let mut storage =
+        vec![FILE_RENAME_INFO::default(); length.div_ceil(size_of::<FILE_RENAME_INFO>())];
+    let info = storage.as_mut_ptr();
+    unsafe {
+        (*info).Anonymous.Flags =
+            FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS;
+        (*info).FileNameLength = u32::try_from(name_bytes).map_err(|_| failure())?;
+        let destination = info
+            .cast::<u8>()
+            .add(std::mem::offset_of!(FILE_RENAME_INFO, FileName))
+            .cast::<u16>();
+        std::ptr::copy_nonoverlapping(name.as_ptr(), destination, name.len());
+        // POSIX replacement keeps existing read handles on their old snapshot.
+        // Unsupported filesystems/OS versions fail closed; no delete-then-move.
+        if SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileRenameInfoEx,
+            info.cast(),
+            length_u32,
+        ) == 0
+        {
+            return Err(failure());
+        }
+    }
+    Ok(())
 }
 impl Drop for EndpointLease {
     fn drop(&mut self) {
@@ -394,6 +427,17 @@ fn pipe(name: &str, first: bool) -> Result<NamedPipeServer, WireError> {
     }
     .map_err(|_| failure())
 }
+fn open_discovery(security: &Security, dir: &Path) -> Result<File, WireError> {
+    // Readers hold an immutable snapshot. Permit atomic replacement/removal of
+    // its directory entry while still denying writes to the opened file.
+    security.open(
+        &dir.join("endpoint.bin"),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_DELETE,
+        OPEN_EXISTING,
+        false,
+    )
+}
 pub fn load_endpoint(dir: &Path) -> Result<Discovery, WireError> {
     let security = Security::current()?;
     let _directory = security.open(
@@ -403,13 +447,7 @@ pub fn load_endpoint(dir: &Path) -> Result<Discovery, WireError> {
         OPEN_EXISTING,
         true,
     )?;
-    let file = security.open(
-        &dir.join("endpoint.bin"),
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        OPEN_EXISTING,
-        false,
-    )?;
+    let file = open_discovery(&security, dir)?;
     if file.metadata().map_err(|_| failure())?.len() > 16384 {
         return Err(failure());
     }
@@ -448,6 +486,109 @@ pub fn prepare_endpoint_dir(local_app_data: &Path) -> Result<PathBuf, WireError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn random_app() -> WireId {
+        let mut bytes = [0; 16];
+        getrandom::fill(&mut bytes).unwrap();
+        WireId::from_u128(u128::from_le_bytes(bytes))
+    }
+    #[tokio::test]
+    async fn discovery_reader_allows_atomic_replacement_and_keeps_its_snapshot() {
+        let dir = test_dir();
+        let mut lease = EndpointLease::publish(&dir, random_app()).unwrap();
+        let security = Security::current().unwrap();
+        let mut reader = open_discovery(&security, &dir).unwrap();
+        let original = lease.discovery.secret.clone();
+        lease.discovery.secret = Secret::generate().unwrap();
+        lease
+            .publish_file(&security)
+            .expect("active discovery reader must not block atomic publication");
+        let mut encrypted = Zeroizing::new(Vec::new());
+        reader.read_to_end(&mut encrypted).unwrap();
+        let snapshot: Discovery =
+            serde_json::from_slice(&crypt(&encrypted, false).unwrap()).unwrap();
+        assert!(snapshot.secret.matches(&original));
+        assert!(
+            load_endpoint(&dir)
+                .unwrap()
+                .secret
+                .matches(&lease.discovery.secret)
+        );
+    }
+    #[tokio::test]
+    async fn discovery_reader_allows_owned_endpoint_cleanup_but_not_in_place_write() {
+        let dir = test_dir();
+        let lease = EndpointLease::publish(&dir, random_app()).unwrap();
+        let security = Security::current().unwrap();
+        let _reader = open_discovery(&security, &dir).unwrap();
+        assert!(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(dir.join("endpoint.bin"))
+                .is_err()
+        );
+        drop(lease);
+        assert!(
+            !dir.join("endpoint.bin").exists(),
+            "reader left a stale endpoint after normal shutdown"
+        );
+    }
+    #[tokio::test]
+    async fn discovery_reader_survives_100_restarts_in_unicode_directory() {
+        let dir = test_dir().with_extension("한글-😀");
+        let security = Security::current().unwrap();
+        let mut lease = EndpointLease::publish(&dir, random_app()).unwrap();
+        for cycle in 0..100 {
+            let mut reader = open_discovery(&security, &dir).unwrap();
+            let original = lease.discovery.app_instance_id;
+            drop(lease);
+            lease = EndpointLease::publish(&dir, random_app())
+                .unwrap_or_else(|error| panic!("restart {cycle}: {error:?}"));
+            let mut encrypted = Zeroizing::new(Vec::new());
+            reader.read_to_end(&mut encrypted).unwrap();
+            let snapshot: Discovery =
+                serde_json::from_slice(&crypt(&encrypted, false).unwrap()).unwrap();
+            assert_eq!(snapshot.app_instance_id, original);
+            assert_eq!(
+                load_endpoint(&dir).unwrap().app_instance_id,
+                lease.discovery.app_instance_id
+            );
+        }
+        drop(lease);
+        assert!(!dir.join("endpoint.bin").exists());
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            1,
+            "only app.lock may remain"
+        );
+    }
+    #[tokio::test]
+    async fn failed_replacement_preserves_discovery_and_removes_temporary_file() {
+        let dir = test_dir();
+        let security = Security::current().unwrap();
+        let mut lease = EndpointLease::publish(&dir, random_app()).unwrap();
+        let original = lease.discovery.secret.clone();
+        let reader = security
+            .open(
+                &dir.join("endpoint.bin"),
+                GENERIC_READ,
+                FILE_SHARE_READ,
+                OPEN_EXISTING,
+                false,
+            )
+            .unwrap();
+        lease.discovery.secret = Secret::generate().unwrap();
+        assert_eq!(
+            lease.publish_file(&security).unwrap_err().code,
+            ErrorCode::AuthenticationFailed
+        );
+        assert!(load_endpoint(&dir).unwrap().secret.matches(&original));
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            2,
+            "failed publication must remove its temporary file"
+        );
+        drop(reader);
+    }
     fn test_dir() -> PathBuf {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../artifacts/phase3-endpoint");
         std::fs::create_dir_all(&root).unwrap();
