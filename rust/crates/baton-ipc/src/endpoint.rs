@@ -2,6 +2,8 @@ use crate::{ErrorCode, WireError, WireId};
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
+#[cfg(all(windows, any(test, feature = "endpoint-diagnostics")))]
+pub mod diagnostics;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]

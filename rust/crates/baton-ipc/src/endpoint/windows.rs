@@ -17,7 +17,10 @@ use windows_sys::Win32::{
     System::{Threading::*, WindowsProgramming::*},
 };
 
+#[cfg_attr(any(test, feature = "endpoint-diagnostics"), track_caller)]
 fn failure() -> WireError {
+    #[cfg(any(test, feature = "endpoint-diagnostics"))]
+    diagnostics::record_startup_failure("validation_or_unclassified", None);
     WireError::new(ErrorCode::AuthenticationFailed)
 }
 fn wide(s: impl AsRef<std::ffi::OsStr>) -> Result<Vec<u16>, WireError> {
@@ -193,6 +196,8 @@ impl Security {
         };
         if handle == INVALID_HANDLE_VALUE {
             let code = unsafe { GetLastError() };
+            #[cfg(any(test, feature = "endpoint-diagnostics"))]
+            diagnostics::record_startup_failure("CreateFileW", Some(code as i32));
             return Err(
                 if code == ERROR_FILE_NOT_FOUND || code == ERROR_PATH_NOT_FOUND {
                     WireError::new(ErrorCode::AppOffline)
@@ -300,6 +305,13 @@ pub struct EndpointLease {
 }
 impl EndpointLease {
     pub fn publish(dir: &Path, app: WireId) -> Result<Self, WireError> {
+        Self::publish_with_secret(dir, app, Secret::generate)
+    }
+    fn publish_with_secret(
+        dir: &Path,
+        app: WireId,
+        generate: impl FnOnce() -> Result<Secret, WireError>,
+    ) -> Result<Self, WireError> {
         let security = Security::current()?;
         let directory = security.directory(dir)?;
         let lock = security.open(
@@ -313,7 +325,10 @@ impl EndpointLease {
             contract_version: 2,
             app_instance_id: app,
             pipe_name: format!("\\\\.\\pipe\\baton-rust-v2-{:032x}", app.as_u128()),
-            secret: Secret::generate()?,
+            secret: generate().inspect_err(|_error| {
+                #[cfg(any(test, feature = "endpoint-diagnostics"))]
+                diagnostics::record_startup_failure("secret.generate", None);
+            })?,
         };
         let first = pipe(&discovery.pipe_name, true)?;
         let mut lease = Self {
@@ -425,7 +440,12 @@ fn pipe(name: &str, first: bool) -> Result<NamedPipeServer, WireError> {
                 (&mut attrs as *mut SECURITY_ATTRIBUTES).cast(),
             )
     }
-    .map_err(|_| failure())
+    .map_err(|error| {
+        #[cfg(any(test, feature = "endpoint-diagnostics"))]
+        diagnostics::record_startup_failure("named_pipe.create", error.raw_os_error());
+        let _ = error;
+        failure()
+    })
 }
 fn open_discovery(security: &Security, dir: &Path) -> Result<File, WireError> {
     // Readers hold an immutable snapshot. Permit atomic replacement/removal of
@@ -486,6 +506,103 @@ pub fn prepare_endpoint_dir(local_app_data: &Path) -> Result<PathBuf, WireError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diagnostics::take_startup_failure;
+    #[tokio::test]
+    async fn startup_diagnostics_capture_entropy_failure_before_publication() {
+        let dir = test_dir();
+        take_startup_failure();
+        let result = EndpointLease::publish_with_secret(&dir, random_app(), || {
+            Err(WireError::new(ErrorCode::AuthenticationFailed))
+        });
+        assert!(matches!(
+            result,
+            Err(WireError {
+                code: ErrorCode::AuthenticationFailed,
+                ..
+            })
+        ));
+        let diagnostic = take_startup_failure().expect("missing entropy failure diagnostic");
+        assert_eq!(diagnostic.operation, "secret.generate");
+        assert_eq!(diagnostic.os_error, None);
+        assert!(dir.join("app.lock").exists());
+        assert!(!dir.join("endpoint.bin").exists());
+        // Failed startup released its lock, so a later independent attempt works.
+        let lease = EndpointLease::publish(&dir, random_app()).unwrap();
+        drop(lease);
+    }
+    #[tokio::test]
+    async fn startup_diagnostics_distinguish_directory_lock_from_pipe_collision() {
+        let dir = test_dir();
+        let app = random_app();
+        let lease = EndpointLease::publish(&dir, app).unwrap();
+        take_startup_failure();
+        assert!(EndpointLease::publish(&dir, random_app()).is_err());
+        let lock = take_startup_failure().expect("missing lock failure diagnostic");
+        assert_eq!(lock.operation, "CreateFileW");
+        assert_eq!(lock.os_error, Some(ERROR_SHARING_VIOLATION as i32));
+        assert!(lock.line > 0);
+        assert!(
+            take_startup_failure().is_none(),
+            "diagnostic must be consumed"
+        );
+
+        let other_dir = test_dir();
+        assert!(EndpointLease::publish(&other_dir, app).is_err());
+        let pipe = take_startup_failure().expect("missing pipe failure diagnostic");
+        assert_eq!(pipe.operation, "named_pipe.create");
+        assert_eq!(pipe.os_error, Some(ERROR_ACCESS_DENIED as i32));
+        assert!(pipe.line > 0);
+        assert!(!other_dir.join("endpoint.bin").exists());
+        drop(lease);
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn fresh_endpoint_startup_in_parallel_bursts() {
+        const WORKERS: usize = 9;
+        const ROUNDS: usize = 12;
+        for round in 0..ROUNDS {
+            // Complete fallible setup before any worker enters the barrier:
+            // a fixture/RNG failure must not strand already-started workers.
+            let inputs: Vec<_> = (0..WORKERS)
+                .map(|worker| {
+                    let dir = test_dir().with_extension(format!("{:032x}", random_app().as_u128()));
+                    (worker, dir, random_app())
+                })
+                .collect();
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(WORKERS));
+            let mut workers = Vec::new();
+            for (worker, dir, app) in inputs {
+                let barrier = barrier.clone();
+                workers.push(tokio::task::spawn_blocking(move || {
+                    barrier.wait();
+                    take_startup_failure();
+                    let lease = EndpointLease::publish(&dir, app).unwrap_or_else(|error| {
+                        panic!(
+                            "startup round={round} worker={worker} error={error:?} diagnostic={:?}",
+                            take_startup_failure()
+                        );
+                    });
+                    assert_eq!(load_endpoint(&dir).unwrap().app_instance_id, app);
+                    drop(lease);
+                    assert!(!dir.join("endpoint.bin").exists());
+                    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+                    assert!(
+                        take_startup_failure().is_none(),
+                        "successful startup/cleanup recorded a failure"
+                    );
+                }));
+            }
+            let mut failures = Vec::new();
+            for worker in workers {
+                if let Err(error) = worker.await {
+                    failures.push(error);
+                }
+            }
+            assert!(
+                failures.is_empty(),
+                "parallel startup failures: {failures:?}"
+            );
+        }
+    }
     fn random_app() -> WireId {
         let mut bytes = [0; 16];
         getrandom::fill(&mut bytes).unwrap();

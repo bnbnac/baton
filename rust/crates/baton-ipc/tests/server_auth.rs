@@ -143,9 +143,19 @@ async fn setup() -> (std::path::PathBuf, LocalServer, Arc<Backend>) {
     let folder = folder();
     let backend = Arc::new(Backend::default());
     let app = unique_id();
+    #[cfg(feature = "endpoint-diagnostics")]
+    endpoint::diagnostics::take_startup_failure();
+    // start currently completes publication synchronously in its first poll;
+    // collect immediately here before any operation can overwrite the trace.
     let server = LocalServer::start(&folder, app, backend.clone())
         .await
-        .unwrap_or_else(|error| panic!("fixture endpoint {folder:?} app {app:?}: {error:?}"));
+        .unwrap_or_else(|error| {
+            #[cfg(feature = "endpoint-diagnostics")]
+            let diagnostic = endpoint::diagnostics::take_startup_failure();
+            #[cfg(not(feature = "endpoint-diagnostics"))]
+            let diagnostic = "enable endpoint-diagnostics for native failure details";
+            panic!("fixture endpoint {folder:?} app {app:?}: {error:?}; {diagnostic:?}");
+        });
     (folder, server, backend)
 }
 async fn raw(folder: &std::path::Path) -> NamedPipeClient {

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# Explicit test/investigation builds only; no output is emitted automatically.
+endpoint-diagnostics = []
+
 [dependencies]
 baton-core = { path = "../baton-core" }
 serde = { version = "1", features = ["derive"] }
