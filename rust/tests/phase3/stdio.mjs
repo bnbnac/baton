@@ -2,9 +2,9 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { observe, deadline, stop } from '../helpers/process.mjs';
 export class Adapter {
-  constructor(endpoint) {
-    this.process = observe(spawn(fileURLToPath(new URL('../../target/debug/baton-adapter.exe', import.meta.url)), [], {
-      windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, BATON_RUST_ENDPOINT_DIR: endpoint },
+  constructor(endpoint, options = {}) {
+    this.process = observe(spawn(options.executable ?? fileURLToPath(new URL('../../target/debug/baton-adapter.exe', import.meta.url)), [], {
+      windowsHide: true, cwd: options.cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...options.env, BATON_RUST_ENDPOINT_DIR: endpoint },
     }));
     this.next = 1; this.pending = new Map(); this.failure = null; this.stderr = '';
     let buffer = '';
