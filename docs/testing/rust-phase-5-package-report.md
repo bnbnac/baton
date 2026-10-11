@@ -45,6 +45,6 @@ smoke는 압축 해제된 어댑터의 절대 경로를 실행했고 작업 디�
 
 ## 남은 인수
 
-패키지 생성 시점에는 실제 UI 조작이 미검증이었다. 후속 [제품 UI 기능 smoke](rust-phase-5-product-ui-report.md)에서 같은 바이너리의 로컬 SSH 비밀번호 인증·호스트키·전달·회수·정상 종료를 확인했다. 키/MFA, 한글/붙여넣기/물리 IME·DPI100/150/200, vi/top, 실제 Claude/Codex 단일 하네스 및 sudo, 깨끗한 Windows/다른 사용자 경계, LIFE-04 장애, release용 property·race·4면 fuzz·2시간 soak·전체 프로세스 수명100회가 남아 있다. 과거 초기화 flakiness도 원인 미확정이며 출시 차단을 유지한다. 보류된 Desktop/CLI 동시 연결은 재개하지 않았다.
+패키지 생성 시점에는 실제 UI 조작이 미검증이었다. 후속 [제품 UI 기능 smoke](rust-phase-5-product-ui-report.md)에서 같은 바이너리의 로컬 SSH 비밀번호 인증·호스트키·전달·회수·정상 종료를 확인했다. 키/MFA, 한글/붙여넣기/물리 IME·DPI100/150/200, vi/top, 실제 Claude/Codex 단일 하네스 및 sudo, 깨끗한 Windows/다른 사용자 경계, release용 property·race·4면 fuzz·2시간 soak·전체 프로세스 수명100회가 남아 있다. 과거 초기화 flakiness도 원인 미확정이며 출시 차단을 유지한다. 보류된 Desktop/CLI 동시 연결은 재개하지 않았다.
 
-후속 [화면 캡처 진단](rust-capture-diagnostics-report.md)은 직접 WebView 캡처와 창 캡처를 비교해 제품 변경 없이 의심을 해소했다. [LIFE-03 원격 종료 비교](rust-phase-5-lifetime-report.md)는 시험한 OpenSSH/bash 프로필에서 정상·강제 종료 네 경우를 확인했다. 다음 작업은 LIFE-04 장애 검증 등 나머지 Phase 5 항목이다. 패키징 단계의 18개 자동 시험 및 어댑터 smoke를 전체 Rust/GUI/출시 통과 수로 확대하지 않는다. 원래 패키지 receipt의 `gui_pending`은 생성 당시 기록으로 보존하며, 후속 결과는 별도 보고서에 둔다.
+후속 [화면 캡처 진단](rust-capture-diagnostics-report.md)은 직접 WebView 캡처와 창 캡처를 비교해 제품 변경 없이 의심을 해소했다. [LIFE-03 원격 종료 비교](rust-phase-5-lifetime-report.md)는 시험한 OpenSSH/bash 프로필에서 정상·강제 종료 네 경우를 확인했다. 2026-10-12까지 수행한 [LIFE-04 연결 장애](rust-phase-5-network-fault-report.md)는 TCP close·서버 kill·패킷 blackhole을 구분해 관측했다. blackhole 복구의 제한 대기 실패와 이후 재전송 없는 실행 1회는 함께 보존하며, 즉시 단절 탐지나 제한 시간 내 복구를 주장하지 않는다. 다음 작업은 키/MFA 등 나머지 Phase 5 인수다. 패키징 단계의 18개 자동 시험 및 어댑터 smoke를 전체 Rust/GUI/출시 통과 수로 확대하지 않는다. 원래 패키지 receipt의 `gui_pending`은 생성 당시 기록으로 보존하며, 후속 결과는 별도 보고서에 둔다.
