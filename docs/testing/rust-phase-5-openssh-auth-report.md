@@ -6,7 +6,7 @@
 
 [기존 Windows ZIP](rust-phase-5-package-report.md)의 압축 해제본을 실제 UI로 조작했다. 작업 기준 HEAD는 `97fa270`이다. 종료 후 검사한 UI·어댑터 SHA256은 기존 후보와 동일하다. 내부 acceptance hook은 사용하지 않았다.
 
-서버는 프로젝트 `tests/linux-ssh/Dockerfile`로 만든 localhost 전용 컨테이너이며 OpenSSH 10.3p1 / OpenSSL 3.5.7, `UsePAM no`다. 인스턴스 명령에 `-E /tmp/baton-auth.log -o LogLevel=DEBUG3`를 지정했다. 인증 종류와 PTY·shell 요청을 독립적으로 확인하기 위한 서버 로그이며 실제 사용자의 서버나 자격 증명은 사용하지 않았다.
+서버는 프로젝트 `tests/linux-ssh/Dockerfile`로 만든 localhost 전용 컨테이너이며 OpenSSH 10.3p1 / OpenSSL 3.5.7이다. 설정에는 `UsePAM no`가 있지만 실제 서버 로그는 `Unsupported option UsePAM`을 기록했다. 2026-10-13 원본 로그 재확인으로 이 설명을 정정하며, PAM 지원·정책 검증으로 해석하지 않는다. 인스턴스 명령에 `-E /tmp/baton-auth.log -o LogLevel=DEBUG3`를 지정했다. 인증 종류와 PTY·shell 요청을 독립적으로 확인하기 위한 서버 로그이며 실제 사용자의 서버나 자격 증명은 사용하지 않았다.
 
 시험마다 `begin` 시점의 로그 길이를 저장하고 `capture`에서 이후 구간을 수집했다. 앞 사례의 종료 기록을 확인한 뒤 다음 사례를 시작했다. 각 판정 구간에는 해당 연결 1개가 있으며, 거부 사례에서 관측되지 않은 PTY·shell 로그가 성공 사례에서는 생성되는 것을 확인했다.
 
