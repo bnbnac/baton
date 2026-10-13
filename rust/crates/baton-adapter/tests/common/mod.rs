@@ -131,10 +131,26 @@ pub async fn setup(reject: Option<ErrorCode>) -> (std::path::PathBuf, LocalServe
             .unwrap()
             .as_nanos(),
     );
-    let server = LocalServer::start(&path, app, fixture.clone())
-        .await
-        .unwrap();
+    let server = start_server(&path, app, fixture.clone()).await;
     (path, server, fixture)
+}
+pub async fn start_server(path: &Path, app: WireId, fixture: Arc<Fixture>) -> LocalServer {
+    endpoint::diagnostics::take_startup_failure();
+    // start currently publishes synchronously in its first poll. Consume the
+    // thread-local evidence immediately, before another operation or await.
+    let result = LocalServer::start(path, app, fixture).await;
+    let diagnostic = endpoint::diagnostics::take_startup_failure();
+    eprintln!(
+        "fixture_start path={} app={app:?} result={:?} diagnostic={diagnostic:?}",
+        path.display(),
+        result.as_ref().map(|_| ())
+    );
+    result.unwrap_or_else(|error| {
+        panic!(
+            "fixture_start path={} app={app:?}: {error:?}; {diagnostic:?}",
+            path.display()
+        )
+    })
 }
 pub struct Process {
     pub child: Child,

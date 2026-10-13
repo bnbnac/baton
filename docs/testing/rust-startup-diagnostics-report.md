@@ -45,4 +45,6 @@ cargo +stable clippy --offline --locked --manifest-path rust/Cargo.toml -p baton
 
 ## 다음 작업
 
+2026-10-13 [후속 조사](rust-startup-followup-report.md)에서 어댑터 공통 fixture가 이 진단을 활성화·소비하지 않던 누락을 보완했다. 제한된 재현 조사에서는 실패가 관측되지 않았고, 관련 시험 56개가 통과했다. 과거 간헐 실패의 원인 확정이나 출시 차단 해제는 아니다.
+
 이 변경으로 미해결 flakiness 출시 차단 조건을 해제하지 않는다. 동일 성공 시험의 무한 반복 대신, 향후 IPC 실패가 발생하면 진단 feature로 위 명령을 실행해 첫 operation/줄/native 오류를 보존한다. Phase 5의 배포본 생성·인수 자동화 준비는 병행할 수 있지만 실제 하네스·패키지·원격 종료·부하·퍼징 인수와 이 실패 원인 검토가 끝나기 전 출시 완료로 표시하지 않는다.
