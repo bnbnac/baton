@@ -5,6 +5,37 @@ use common::*;
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
 #[tokio::test]
+async fn request_id_diagnostics_precede_dispatch_even_when_offline() {
+    let (path, server, fixture) = setup(None).await;
+    let mut process = Process::start(&path).await;
+    process.wait_status("app_state", json!("online")).await;
+    let mut args = json!({"session_id":"1".repeat(32),"control_epoch":1,"request_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9","text":"MUST_NOT_REACH_BACKEND"});
+    let rejected = process.call(2, "send_text", args.clone()).await;
+    assert_eq!(rejected["error"]["code"], -32602);
+    assert_eq!(rejected["error"]["data"]["actual_length"], 31);
+    assert_eq!(rejected["error"]["data"]["dispatched"], false);
+    assert!(fixture.inputs.lock().unwrap().is_empty());
+    args["request_id"] = json!("22222222222222222222222222222222");
+    assert_eq!(
+        data(&process.call(3, "send_text", args.clone()).await)["result"],
+        "delivered"
+    );
+    assert_eq!(fixture.inputs.lock().unwrap().len(), 1);
+    server.shutdown().await;
+    process.wait_status("app_state", json!("offline")).await;
+    args["request_id"] = json!("short");
+    let rejected = process.call(4, "send_text", args.clone()).await;
+    assert_eq!(rejected["error"]["data"]["actual_length"], 5);
+    assert_eq!(rejected["error"]["data"]["dispatched"], false);
+    args["request_id"] = json!("33333333333333333333333333333333");
+    assert_eq!(
+        data(&process.call(5, "send_text", args).await)["code"],
+        "app_offline"
+    );
+    assert_eq!(fixture.inputs.lock().unwrap().len(), 1);
+    process.eof().await;
+}
+#[tokio::test]
 async fn stdio_online_output_errors_then_offline_has_no_cached_identity() {
     let (path, server, _) = setup(None).await;
     let mut process = Process::start(&path).await;
