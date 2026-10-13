@@ -149,13 +149,21 @@ fn mismatch(events: &[Event]) -> bool {
 }
 #[test]
 fn model_1000_seeds_200_events() {
+    check_model(1000, 200);
+}
+#[cfg(feature = "release-verification")]
+#[test]
+fn model_release_10000_seeds_500_events() {
+    check_model(10000, 500);
+}
+fn check_model(seeds: u64, events_per_seed: usize) {
     let mut coverage = BTreeMap::<String, usize>::new();
     let mut accepted = 0;
     let mut rejected = 0;
     let mut transitioning = 0;
-    for seed in 0..1000 {
-        let events = generate(seed, 200);
-        assert_eq!(events.len(), 200);
+    for seed in 0..seeds {
+        let events = generate(seed, events_per_seed);
+        assert_eq!(events.len(), events_per_seed);
         let (mut expected, mut actual) = (Reference::new(), System::new());
         for (index, event) in events.iter().enumerate() {
             let want = expected.apply(event);
@@ -250,7 +258,8 @@ fn model_1000_seeds_200_events() {
         "stale_stream_reads must be exercised"
     );
     println!(
-        "MODEL seeds=1000 events=200000 accepted={accepted} rejected={rejected} transition_observations={transitioning} coverage={coverage:?}"
+        "MODEL seeds={seeds} events={} accepted={accepted} rejected={rejected} transition_observations={transitioning} coverage={coverage:?}",
+        seeds * events_per_seed as u64
     );
 }
 #[test]
