@@ -45,6 +45,8 @@ smoke는 압축 해제된 어댑터의 절대 경로를 실행했고 작업 디�
 
 ## 남은 인수
 
+2026-10-13 [단일 하네스 준비 기록](rust-phase-5-harness-report.md)에서 어댑터의 MCP 안내가 자동 재연결 구현과 다름을 발견해 수정했다. 새 어댑터의 실제 초기화 응답과 기존 어댑터 시험 14개를 검증했다. 기존 ZIP은 수정 전 산출물로 보존하며, 새 어댑터와 기존 UI를 조합한 별도 시험 폴더를 준비했다. 실제 Claude 호출은 외부 시험 데이터 전송 승인 대기 상태이며 인수 통과로 세지 않는다.
+
 패키지 생성 시점에는 실제 UI 조작이 미검증이었다. 후속 [제품 UI 기능 smoke](rust-phase-5-product-ui-report.md)에서 같은 바이너리의 로컬 SSH 비밀번호 인증·호스트키·전달·회수·정상 종료를 확인했다. [키·다중 인증 UI 시험](rust-phase-5-auth-report.md)은 합성 SSH 서버를 사용한 성공·거부·취소 6개 사례를 확인했다. 이어 [OpenSSH 인증 시험](rust-phase-5-openssh-auth-report.md)에서 실제 OpenSSH의 암호화 Ed25519 키 로그인·MCP 명령 실행 및 호스트키 거절·비밀번호 입력 전 취소·오답의 4개 사례를 확인했다. 다른 키 형식과 운영 MFA 정책으로 일반화하지 않는다.
 
 2026-10-13 [배포본 터미널 시험](rust-phase-5-terminal-report.md)에서 대화형 top·Vim, Ctrl+C, 한글·이모지 출력, 사용자 붙여넣기·키의 실제 서버 수신과 소유 전환에 따른 차단, 창 최대화·복원의 PTY 크기 일치를 확인했다. 네이티브 주입 키는 물리 IME 인수가 아니며, 창 크기 변경은 DPI 인수가 아니다. 물리 IME·DPI100/150/200, 실제 Claude/Codex 단일 하네스 및 sudo, 깨끗한 Windows/다른 사용자 경계, release용 property·race·4면 fuzz·2시간 soak·전체 프로세스 수명100회가 남아 있다. 과거 초기화 flakiness도 원인 미확정이며 출시 차단을 유지한다. 보류된 Desktop/CLI 동시 연결은 재개하지 않았다.
