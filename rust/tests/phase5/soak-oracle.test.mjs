@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {LogOracle,memoryWindows} from './soak-oracle.mjs';
+const line=(id,n)=>`SOAK:${id}:${String(n).padStart(8,'0')}:${'x'.repeat(1008)}\n`;
+test('fragmented log and stream-boundary prefix',()=>{const o=new LogOracle(3);o.push('old tail\n'+line(3,12).slice(0,15));o.push(line(3,12).slice(15)+line(3,13));assert.equal(o.count,2);o.reset();o.push('tail\n'+line(3,18));assert.equal(o.count,3);});
+test('foreign session is rejected',()=>assert.throws(()=>new LogOracle(3).push(line(4,1)),/foreign/));
+for(const [name,n] of [['duplicate',10],['missing',12],['reverse',9]])test(name,()=>{const o=new LogOracle(3);o.push(line(3,10));assert.throws(()=>o.push(line(3,n)),/sequence/);});
+test('non-log shell response allowed; damaged record rejected',()=>{const o=new LogOracle(3);o.push('prompt\n'+line(3,1));assert.throws(()=>o.push('SOAK:3:00000002:broken\n'),/payload/);});
+test('unterminated payload bounded',()=>assert.throws(()=>new LogOracle(3).push('x'.repeat(65537)),/buffer/));
+const samples=ratio=>Array.from({length:240},(_,i)=>({elapsed:i*30,privateBytes:i>=200?100*ratio:100,workingSetBytes:100}));
+test('warmup excluded and five stable windows measured',()=>{const s=samples(1.2);s[0].privateBytes=10000;const r=memoryWindows(s,7200);assert.equal(r.windows.length,5);assert.equal(r.privateRatio,1.2);});
+test('greater than twenty percent growth rejected',()=>assert.throws(()=>memoryWindows(samples(1.21),7200),/growth/));
+test('short duration and insufficient samples rejected',()=>{assert.throws(()=>memoryWindows(samples(1),60),/duration/);assert.throws(()=>memoryWindows(samples(1).filter(s=>s.elapsed<6000),7200),/samples/);});
