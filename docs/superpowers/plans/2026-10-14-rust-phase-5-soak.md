@@ -25,6 +25,8 @@
 - [x] Task 2: `rust/tests/phase5/soak.mjs`, `rust/scripts/sample-test-memory.ps1`, `rust/tests/phase5/soak-stream.sh`: 실제 UI/서버/MCP 운전, 메모리 측정, 감사 로그 대조와 정리. smoke3 60.167초·20회 전환 통과, 독립 검토 지적 수정 및 최종 재검토 완료.
 - [ ] Task 3: 7,200초 실행, 중단/진행 상태 보존, 정상 부하와 과부하 분리, 결과·해시·프로세스 정리 검증. `docs/testing/rust-phase-5-soak-report.md` 보고 및 로컬 커밋.
 
+Task 3 실행·결과 보고는 수행했지만 인수 조건은 실패다. 7,200.016초 동안 audit 1,920건, resize/handoff 각 120회 후 private +39.87% / working set +25.77%로 메모리 기준을 넘었다. 본 실행 과부하·정상 종료 판정은 도달하지 않았다. `final-analysis.json`과 `final-cleanup.json`에 소스/바이너리 일치 및 최종 소유 자원 잔존 0을 확인했다. 자동 재실행하지 않으며 WebView 메모리 증가 원인 분석을 다음 작업으로 남긴다. 실패를 통과로 표시하지 않기 위해 Task 3 체크는 유지한다.
+
 2026-10-14 13:58 KST 본 실행 시작. `artifacts/phase5-soak-20261014/run7200/summary.json`에서 32연결·16세션과 running 확인. 독립 프로세스 PID 39336, 본 실행 중 소스 수정 금지. 이 대화의 후속 점검 `baton-2`가 10분 간격으로 완료/실패를 확인하고 최종 보고 후 스스로 PAUSED로 전환한다. 정상 진행 중 상태 알림은 생략한다.
 
 ## 검토 초점
