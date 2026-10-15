@@ -76,6 +76,8 @@ UI 전환 묶음에는 탭·geometry·소유권뿐 아니라 원격 `stty size` 
 
 ## Task 3: 비교 실행 및 보고
 
+2026-10-15 20:45:27 KST에 `4a1cb3a` 고정 소스로 A 본 부하를 시작했다. `run-a-launch.json` PID 42532, `run-a/summary.json`에서 baseline/running·32연결·16세션을 확인했다. 후속 점검 `baton-2`를 이 비교 작업으로 갱신했다. A 유효성·정리 확인 후에만 B를 시작하며 자동 재실행하지 않는다. 아래 체크박스는 실행 시작이 아닌 결과 검증까지 마쳐야 완료한다.
+
 **Files:** Artifacts under `artifacts/phase5-memory-comparison-20261014/`; update `docs/testing/rust-phase-5-memory-investigation.md`.
 
 - [ ] 고정한 실행기로 A `baseline diagnostic`을 새 디렉터리에 시작하고 launch 기록을 남긴다. 실제 3600초·관측 유효성·정상 종료·소유 정리를 확인한다.
