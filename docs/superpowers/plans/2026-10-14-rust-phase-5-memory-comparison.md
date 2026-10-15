@@ -81,11 +81,13 @@ UI 전환 묶음에는 탭·geometry·소유권뿐 아니라 원격 `stty size` 
 **Files:** Artifacts under `artifacts/phase5-memory-comparison-20261014/`; update `docs/testing/rust-phase-5-memory-investigation.md`.
 
 - [x] 고정한 실행기로 A `baseline diagnostic`을 새 디렉터리에 시작하고 launch 기록을 남긴다. 실제 3600초·관측 유효성·정상 종료·소유 정리를 확인한다. 2026-10-15: 3600.2853031초, analyzeArm valid, JSONL·해시·정리 재검증 완료.
-- [ ] A 유효성 확인 후 동일 입력의 B `transitions diagnostic`을 새 디렉터리에서 실행한다. 같은 검증과 source/binary hash 일치를 확인한다.
-- [ ] `analyzeComparison` 결과를 원시 JSONL과 대조한다. 두 실행의 조건별 중앙값·GC 후 보유량·차이·시간대/환경 한계를 보고서에 기록한다. 기존 2시간 실패는 유지한다.
-- [ ] 소유 자원 정리를 검증하고, 이번 이미지 태그는 기록된 ID와 일치할 때만 제거한다. 관련 문서만 로컬 커밋하고 완료한 후속 점검은 PAUSED로 전환한다.
+- [x] A 유효성 확인 후 동일 입력의 B `transitions diagnostic`을 새 디렉터리에서 실행한다. 같은 검증과 source/binary hash 일치를 확인한다. B 3600.1847715초, audit 960건, resize/handoff 각각 60회.
+- [x] `analyzeComparison` 결과를 원시 JSONL과 대조한다. 두 실행의 조건별 중앙값·GC 후 보유량·차이·시간대/환경 한계를 보고서에 기록한다. 기존 2시간 실패는 유지한다. comparison.valid=true, 두 실행의 13개 소스·2개 바이너리 및 런타임/이미지 동일성 확인.
+- [x] 소유 자원 정리를 검증하고, 이번 이미지 태그는 기록된 ID와 일치할 때만 제거한다. 관련 문서만 로컬 커밋하고 완료한 후속 점검은 PAUSED로 전환한다.
 
 2026-10-15 21:47:17 KST: A 검증 후 B를 한 번 시작했다. `run-b-launch.json` PID 14360. B 완료·최종 비교는 대기 중이며 소스 수정이나 자동 재실행 없이 후속 점검을 유지한다.
+
+2026-10-15 22:57 KST 최종 확인: B 완료 및 비교 자료 유효성·정리를 검증했다. 합산 private 증가 A +9.17% / B +9.11%, GC 후 renderer private A349.89 / B351.34MiB. UI 전환만을 원인으로 특정하지 못했으며 공통 경로 조사를 다음 작업으로 남긴다. 이 계획의 비교 진단은 완료지만 원래 2시간 soak와 Phase 5 출시 인수는 미완료다. 상세 수치/한계/정리는 조사 보고서 최종 절과 comparison.json·final-cleanup.json에 기록했다.
 
 ## 검토 초점
 
