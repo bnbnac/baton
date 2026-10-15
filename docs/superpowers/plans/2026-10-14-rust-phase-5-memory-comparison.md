@@ -57,10 +57,10 @@ UI 전환 묶음에는 탭·geometry·소유권뿐 아니라 원격 `stty size` 
 
 **Interface:** `analyzeComparison(a, b)` returns `{valid, reasons, arms}`. 각 arm은 `{condition, elapsedSeconds, samples, diagnostics, sources, binaries, checks, cleanup}`를 제공한다. `samples`는 `{elapsed, processes:[{pid, startedTicks, role, privateBytes, workingSetBytes}]}`이고 `diagnostics`는 `{elapsed, phase:'natural'|'pre_gc'|'post_gc', heap, dom, state}`다. `checks`에 출력률/audit/health/transition 검증 결과, `cleanup`에 정상 종료/소유 자원 잔존 확인을 담는다.
 
-- [ ] 합성 자료로 1200/2400/3600초 경계, 누락 구간, 45초 초과 간격, PID 재사용/renderer 교체, GC 표본 혼입, 조건/해시 불일치, 실패한 부하·정리의 비교 거부 시험을 작성한다. GC 전후 값은 자연 구간 중앙값에 포함되지 않아야 한다.
-- [ ] `node --test rust/tests/phase5/memory-comparison-analysis.test.mjs`의 기대 실패를 확인한다.
-- [ ] 메모리 집계와 비교 유효성 분석을 구현한다. 메모리 증가 자체는 진단 결과이지 실행 실패나 제품 통과 판정으로 변환하지 않는다.
-- [ ] 동일 시험의 통과와 `node --check rust/tests/phase5/memory-comparison-analysis.mjs`를 확인한다.
+- [x] 합성 자료로 1200/2400/3600초 경계, 누락 구간, 45초 초과 간격, PID 재사용/renderer 교체, GC 표본 혼입, 조건/해시 불일치, 실패한 부하·정리의 비교 거부 시험을 작성한다. GC 전후 값은 자연 구간 중앙값에 포함되지 않아야 한다.
+- [x] `node --test rust/tests/phase5/memory-comparison-analysis.test.mjs`의 기대 실패를 확인한다.
+- [x] 메모리 집계와 비교 유효성 분석을 구현한다. 메모리 증가 자체는 진단 결과이지 실행 실패나 제품 통과 판정으로 변환하지 않는다.
+- [x] 동일 시험의 통과와 `node --check rust/tests/phase5/memory-comparison-analysis.mjs`를 확인한다.
 
 ## Task 2: 진단 실행기와 짧은 사전 시험
 
@@ -68,11 +68,11 @@ UI 전환 묶음에는 탭·geometry·소유권뿐 아니라 원격 `stty size` 
 
 **CLI:** `node rust/tests/phase5/memory-comparison.mjs <fresh-directory> baseline|transitions smoke|diagnostic`. `diagnostic`은 3600초·분당 동작, `smoke`는 60초·3초마다 동작이다. smoke는 준비/안정 구간 비교를 충족하지 못한 것으로 명시한다.
 
-- [ ] 기존 soak의 준비·출력 파서·audit·transition·종료/정리 패턴을 적용한 별도 실행기를 작성한다. 8분 probe의 문자열 치환 생성 방식은 사용하지 않는다. 새 역할 sampler와 분석기까지 소스 해시 목록에 포함한다.
-- [ ] 역할 sampler는 감독기 receipt와 Adapter PID+시작 시각을 입력받아 소유 관계·시작 시각을 검증한 역할 목록만 반환한다. 명령행 전체·비밀값은 저장하지 않는다.
-- [ ] 측정/진단 스케줄과 정상 종료를 구현하고, summary에 상태·현재 condition·실제 시간·checks·해시를 기록한다. 메모리 크기와 무관하게 정상 종료 경로에 도달하되, 계측/부하 오류를 숨기지 않는다.
-- [ ] fixture 이미지 `baton-memory-comparison-20261014`를 기존 `tests/linux-ssh/Dockerfile`로 생성한다. 두 smoke를 순차 1회씩 실행해 A의 전환 0회/B의 최소 17회·탭 재방문, audit 대조, 16 terminal, 역할 식별, GC 전후 분리와 정상 정리를 확인한다. 실패 증거는 보존하고 원인 수정 없이 반복하지 않는다.
-- [ ] 소스·바이너리 해시와 diff를 검토하고 관련 파일만 로컬 커밋해 장시간 실행 입력을 고정한다.
+- [x] 기존 soak의 준비·출력 파서·audit·transition·종료/정리 패턴을 적용한 별도 실행기를 작성한다. 8분 probe의 문자열 치환 생성 방식은 사용하지 않는다. 새 역할 sampler와 분석기까지 소스 해시 목록에 포함한다.
+- [x] 역할 sampler는 감독기 receipt와 Adapter PID+시작 시각을 입력받아 소유 관계·시작 시각을 검증한 역할 목록만 반환한다. 명령행 전체·비밀값은 저장하지 않는다.
+- [x] 측정/진단 스케줄과 정상 종료를 구현하고, summary에 상태·현재 condition·실제 시간·checks·해시를 기록한다. 메모리 크기와 무관하게 정상 종료 경로에 도달하되, 계측/부하 오류를 숨기지 않는다.
+- [x] fixture 이미지 `baton-memory-comparison-20261014`를 기존 `tests/linux-ssh/Dockerfile`로 생성한다. 두 smoke를 순차 1회씩 실행해 A의 전환 0회/B의 최소 17회·탭 재방문, audit 대조, 16 terminal, 역할 식별, GC 전후 분리와 정상 정리를 확인한다. 실패 증거는 보존하고 원인 수정 없이 반복하지 않는다.
+- [x] 소스·바이너리 해시와 diff를 검토하고 관련 파일만 로컬 커밋해 장시간 실행 입력을 고정한다.
 
 ## Task 3: 비교 실행 및 보고
 
@@ -97,4 +97,4 @@ UI 전환 묶음에는 탭·geometry·소유권뿐 아니라 원격 `stty size` 
 - [x] 기존 UI/adapter SHA256 재대조 일치. Node·PowerShell 7·Playwright·Dockerfile 경로 확인.
 - [x] Docker 서버 29.2.0 응답, `baton.soak` label의 잔존 컨테이너 없음 확인. C 드라이브 여유 약 956GB.
 - [x] 계획 자체 검토: 과거 8분 진단의 초기 할당/순차 CDP 비교 한계를 반영했고, 2시간 인수 판정과 분리했다.
-- [ ] Task 1~2 구현·사전 시험. 현재 장시간 시험이나 새 자동화를 시작하지 않았다.
+- [x] Task 1~2 구현·사전 시험 완료(2026-10-15). 분석기 35개·oracle 10개·역할 수집 1개 통과. A 60.008초/B 62.236초 정상 종료 및 정리. 본 실행은 Task 3에서 별도 추적한다.
