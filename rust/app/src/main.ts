@@ -20,7 +20,16 @@ const views=new SessionViews(terminal,showError);
 const ownershipPanel=element('section','','ownership');workspace.insertBefore(ownershipPanel,auth);
 const ownership=new Ownership(),ownershipView=new OwnershipView(ownershipPanel,ownership,command,render,showError);
 const states:Record<string,string>={connecting:'연결 중',user_owned:'사용자 제어',agent_owned:'에이전트 제어',transferring:'전달 중',reclaiming:'회수 중',closed:'종료됨'};
-function render(){list.replaceChildren();for(const s of sessions){const button=element('button','','session'+(selected===s.id?' active':''));button.append(element('strong',s.label||s.host),element('small',states[s.state]??s.state));button.onclick=()=>{selected=s.id;render();};list.append(button);}const s=sessions.find(s=>s.id===selected);title.textContent=s?(s.label||s.host):'SSH 세션';subtitle.textContent=s?`${s.username}@${s.host}:${s.port} · ${states[s.state]??s.state}`:'서버를 연결하면 이곳에서 터미널을 사용할 수 있습니다.';views.update(sessions,selected);ownershipView.render(s);renderAuth(s);if(s?.error)error.textContent=s.error;}
+let renderedListKey:string|undefined;
+function render(){
+  // Output notifications do not change tab labels; preserve keyboard/UIA targets.
+  const listKey=JSON.stringify([selected,sessions.map(s=>[s.id,s.label||s.host,s.state])]);
+  if(listKey!==renderedListKey){
+    renderedListKey=listKey;list.replaceChildren();
+    for(const s of sessions){const button=element('button','','session'+(selected===s.id?' active':''));button.append(element('strong',s.label||s.host),element('small',states[s.state]??s.state));button.onclick=()=>{selected=s.id;render();};list.append(button);}
+  }
+  const s=sessions.find(s=>s.id===selected);title.textContent=s?(s.label||s.host):'SSH 세션';subtitle.textContent=s?`${s.username}@${s.host}:${s.port} · ${states[s.state]??s.state}`:'서버를 연결하면 이곳에서 터미널을 사용할 수 있습니다.';views.update(sessions,selected);ownershipView.render(s);renderAuth(s);if(s?.error)error.textContent=s.error;
+}
 function renderAuth(session:Session|undefined){const p=session&&session.state!=='closed'?prompts.get(session.id):undefined;const key=p?`${p.session}/${p.attempt}/${p.challenge}`:session?`${session.id}/${session.state}`:'';if(key===shownAuth)return;shownAuth=key;secrets.clear();auth.replaceChildren();if(!session)return;
   const close=element('button',session.state==='closed'?'목록에서 제거':'연결 종료','secondary');close.onclick=()=>{void command(session.state==='closed'?'remove_closed_session':'close_session',{id:session.id}).catch(showError);};auth.append(close);if(!p)return;
   secrets.show(p);const panel=element('form','','challenge');panel.append(element('h2',p.kind==='host'?'서버 신원 확인':'인증'),element('pre',p.display));const inputs:HTMLInputElement[]=[];let file:HTMLInputElement|undefined;

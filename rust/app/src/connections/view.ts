@@ -3,8 +3,14 @@ import {Ownership} from '../sessions/ownership.js';
 type Send=(name:string,request:unknown)=>Promise<unknown>;
 function element<K extends keyof HTMLElementTagNameMap>(tag:K,text=''){const el=document.createElement(tag);el.textContent=text;return el;}
 export class OwnershipView {
+  private renderedKey:string|undefined;
   constructor(private root:HTMLElement,private model:Ownership,private send:Send,private refresh:()=>void,private error:(error:unknown)=>void){}
   render(session:Session|undefined){
+    // Keep live controls (and their focus) on output-only session notifications.
+    // Include request identity and pending state so handlers never retain an old epoch.
+    const key=JSON.stringify([session&&[session.id,session.state,session.epoch,session.has_terminal,session.assigned_connection,session.intervention],this.model.connections,this.model.selectedConnection,session?this.model.busy(session.id):false]);
+    if(key===this.renderedKey)return;
+    this.renderedKey=key;
     this.root.replaceChildren();if(!session)return;
     const ids=element('div');ids.className='ownership-ids';ids.append(element('span',`세션 ${session.id.slice(0,12)}`));
     const copy=(text:string,id:string)=>{const button=element('button',text);button.className='secondary';button.title=id;button.onclick=()=>{void navigator.clipboard.writeText(id).catch(this.error);};return button;};
