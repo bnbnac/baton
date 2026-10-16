@@ -10,7 +10,7 @@ import {release as osRelease} from 'node:os';
 import {observe,deadline,stop} from '../helpers/process.mjs';
 import {Adapter,data} from '../phase3/stdio.mjs';
 import {LogOracle} from './soak-oracle.mjs';
-import {NativeMailbox,runPhases,memoryVerdict} from './native-soak-control.mjs';
+import {NativeMailbox,awaitNativeReady,runPhases,memoryVerdict} from './native-soak-control.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
 if(!process.argv[2]||!process.argv[3]||!['smoke','release'].includes(process.argv[4]))throw Error('usage: native-soak.mjs fresh-directory config.json smoke|release');
@@ -112,6 +112,9 @@ async function transition(round){
  summary.actions.push({type:'handoff',round,index:s.index,previous,adapter:targetIndex,session:s.id,...assigned,utc:new Date().toISOString()});
 }
 async function normal(){
+ summary.status='awaiting_native_ready';await save();
+ const ready=await awaitNativeReady(mailbox,{session:sessions[0].id,label:'soak-00',appExecutable:appExe},async()=>{await checkStop();await pump();});
+ summary.nativeReady={requestId:ready.request.id,verifiedAt:ready.verifiedAt};
  summary.status='running';summary.loadStartedUtc=new Date().toISOString();for(const s of sessions)s.startCount=s.oracle.count;
  loadStart=performance.now();let round=0;await save();
  try{
@@ -200,6 +203,9 @@ try{
  summary.environment={platform:process.platform,arch:process.arch,osRelease:osRelease(),node:process.version,webview:browser.version(),playwright:JSON.parse(await readFile(join(dirname(playwrightPath),'package.json'),'utf8')).version};
  if(mode==='release'){const smoke=JSON.parse((await readFile(resolve(root,config.smokeEvidence),'utf8')).replace(/^\uFEFF/,''));assert.deepEqual(summary.environment,smoke.environment,'environment_changed_after_smoke');}
  for(let i=0;i<16;i++){await createSession(i);for(const s of sessions)s.lastLog=Date.now();await pump();await save();}
+ // Setup may use Playwright; leave the first timed target selected and visible.
+ await page.getByRole('button',{name:'soak-00 에이전트 제어',exact:true}).click();
+ await page.getByRole('heading',{name:'soak-00',exact:true}).waitFor();
  await wait(async()=>{await pump();return sessions.every(s=>s.oracle.count>0);},'all_streams');
  const r0=await receipt();await writeFile(join(out,'initial-memory-input.json'),JSON.stringify(r0));
  const initial=JSON.parse((await execute(pwsh,['-NoProfile','-File',join(root,'rust/scripts/sample-test-memory.ps1'),'-Evidence',join(out,'initial-memory-input.json'),'-AdapterPids',adapters.map(a=>a.process.child.pid).join(',')],{windowsHide:true,timeout:15000})).stdout);

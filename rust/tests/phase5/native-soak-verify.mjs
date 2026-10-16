@@ -24,7 +24,14 @@ export function verifyNativeEvidence(s,raw,boundary,receipts,audits){
   for(const key of ['privateBytes','workingSetBytes'])assert.equal(row[key],row.processes.reduce((n,p)=>n+p[key],0),'role_total');
  }
  assert.ok(duration-previous<=45,'sample_gap');
- assert.equal(receipts.length,rounds*4);assert.equal(new Set(receipts.map(r=>r.request.id)).size,receipts.length);
+ assert.equal(receipts.length,rounds*4+1);assert.equal(new Set(receipts.map(r=>r.request.id)).size,receipts.length);
+ const preparations=receipts.filter(r=>r.request.action==='ready');assert.equal(preparations.length,1,'native_readiness_missing');
+ const ready=preparations[0];assert.equal(ready.request.owner,s.owner);assert.equal(ready.observation.verified,true);
+ assert.equal(ready.observation.selectionEvidence,'operator_ack');assert.equal(ready.request.session,s.sessions.find(x=>x.index===0).id);
+ assert.equal(ready.observation.selectedSession,ready.request.session);assert.deepEqual(s.nativeReady,{requestId:ready.request.id,verifiedAt:ready.verifiedAt});
+ assert.ok(ready.request.issuedAt>=Date.parse(s.playwrightDisconnectedUtc),'readiness_before_disconnect');
+ assert.ok(ready.verifiedAt>=ready.request.issuedAt&&ready.verifiedAt<=ready.request.expiresAt,'native_ready_deadline');
+ assert.ok(ready.verifiedAt<=Date.parse(s.loadStartedUtc),'measurement_before_native_ready');
  for(let round=0;round<rounds;round++)for(const action of ['select','resize','reclaim','handoff']){
   const matches=receipts.filter(r=>r.request.round===round&&r.request.action===action);assert.equal(matches.length,1,'native_receipt_missing');
   const r=matches[0];assert.equal(r.request.owner,s.owner);assert.equal(r.observation.verified,true);assert.ok(r.verifiedAt>=r.request.issuedAt&&r.verifiedAt<=r.request.expiresAt,'native_deadline');

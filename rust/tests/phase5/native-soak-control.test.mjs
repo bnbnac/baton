@@ -4,6 +4,7 @@ import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {NativeMailbox,acknowledge,readRequest,runPhases,memoryVerdict} from './native-soak-control.mjs';
+import * as control from './native-soak-control.mjs';
 
 test('native acknowledgement is bound to owner/request and is not a state verification',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'baton-native-mailbox-'));
@@ -54,6 +55,41 @@ test('verification cannot finish after a timely receipt has expired',async()=>{
   let now=0;const box=new NativeMailbox(dir,'owner',()=>now);await box.init();const r=await box.issue({action:'resize'},1000);
   await acknowledge(dir,r.id,'performed',()=>now);assert.equal(await box.completed(r),true);now=1001;
   await assert.rejects(box.finish(r,{verified:true}),/timeout/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('native readiness blocks measurement until the matching session receipt is published',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'baton-native-ready-'));
+ try{
+  const box=new NativeMailbox(dir,'owner');await box.init();let measuring=false;
+  const ready=control.awaitNativeReady(box,{session:'session-a'},async()=>{},1000).then(r=>{measuring=true;return r;});
+  let request;while(!(request=await readRequest(dir)))await new Promise(r=>setTimeout(r,5));
+  assert.equal(request.action,'ready');assert.equal(measuring,false);
+  await assert.rejects(acknowledge(dir,request.id,'performed',Date.now,'wrong-session'),/selected_session/);
+  assert.equal(measuring,false);await acknowledge(dir,request.id,'performed',Date.now,'session-a');
+  const result=await ready;assert.equal(measuring,true);assert.equal(result.request.id,request.id);assert.equal(result.observation.selectedSession,'session-a');
+  assert.equal(await readRequest(dir),null);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('recording an action returns the next request without exposing the old pending action',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'baton-native-next-'));
+ try{
+  const box=new NativeMailbox(dir,'owner');await box.init();const first=await box.issue({action:'select',session:'session-a'},2000);
+  const response=control.acknowledgeAndWait(dir,first.id,'performed','session-a',1000);
+  while(!await box.completed(first))await new Promise(r=>setTimeout(r,5));
+  await box.finish(first,{verified:true});const second=await box.issue({action:'resize',session:'session-a'},2000);
+  const result=await response;assert.equal(result.receipt,'recorded');assert.equal(result.nextRequest.id,second.id);assert.equal(result.waitTimedOut,false);
+  assert.equal(await box.completed(second),false);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('next-request wait ends without repeating a completed UI action',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'baton-native-no-next-'));
+ try{
+  const box=new NativeMailbox(dir,'owner');await box.init();const first=await box.issue({action:'resize'},2000);
+  const result=await control.acknowledgeAndWait(dir,first.id,'performed',undefined,25);
+  assert.equal(result.receipt,'recorded');assert.equal(result.nextRequest,null);assert.equal(result.waitTimedOut,true);assert.equal(await box.completed(first),true);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('memory failure does not skip overload or normal shutdown, nor turn into pass',async()=>{

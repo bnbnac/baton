@@ -19,23 +19,47 @@ export class NativeMailbox {
   assert.equal(this.pending,request.id,'request_id');assert.ok(this.now()<=request.expiresAt,'native_action_timeout');
   const response=await optional(join(this.dir,'responses',request.id+'.json'));if(!response)return false;
   assert.equal(response.owner,this.owner,'response_owner');assert.equal(response.id,request.id,'response_id');assert.equal(response.status,'performed','native_action_failed');
-  if(request.action==='select')assert.equal(response.selectedSession,request.session,'selected_session');
+  if(['select','ready'].includes(request.action))assert.equal(response.selectedSession,request.session,'selected_session');
   return true; // The coordinator must separately observe MCP / server state.
  }
  async finish(request,observation){
   assert.equal(this.pending,request.id,'request_id');assert.equal(observation.verified,true,'observation_unverified');
   assert.ok(this.now()<=request.expiresAt,'native_action_timeout');
-  await writeFile(join(this.dir,'results',request.id+'.json'),JSON.stringify({request,observation,verifiedAt:this.now()},null,2),{flag:'wx'});
-  await unlink(join(this.dir,'pending.json'));this.pending=null;
+  const result={request,observation,verifiedAt:this.now()};
+  await writeFile(join(this.dir,'results',request.id+'.json'),JSON.stringify(result,null,2),{flag:'wx'});
+  await unlink(join(this.dir,'pending.json'));this.pending=null;return result;
  }
 }
 export async function acknowledge(dir,id,status,now=Date.now,selectedSession){
  const request=await readRequest(dir);assert.ok(request&&request.id===id,'request_id');assert.ok(now()<=request.expiresAt,'request_expired');assert.ok(['performed','failed'].includes(status),'response_status');
- if(request.action==='select'&&status==='performed')assert.equal(selectedSession,request.session,'selected_session');
+ if(['select','ready'].includes(request.action)&&status==='performed')assert.equal(selectedSession,request.session,'selected_session');
  const path=join(dir,'responses',id+'.json'),tmp=path+'.'+randomUUID()+'.tmp';
  await writeFile(tmp,JSON.stringify({id,owner:request.owner,status,observedAt:now(),selectedSession}),{flag:'wx'});
  // Publish a complete file without overwriting a competing receipt.
  try{await link(tmp,path);}finally{await unlink(tmp);}
+ return {id,owner:request.owner};
+}
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+export async function acknowledgeAndWait(dir,id,status,selectedSession,waitMs=5000){
+ assert.ok(Number.isFinite(waitMs)&&waitMs>=0&&waitMs<=10000,'invalid_next_wait');
+ const receipt=await acknowledge(dir,id,status,Date.now,selectedSession),end=performance.now()+waitMs;
+ while(status==='performed'){
+  const next=await readRequest(dir);
+  if(next&&next.id!==id){
+   assert.equal(next.owner,receipt.owner,'next_request_owner');assert.ok(Date.now()<=next.expiresAt,'next_request_expired');
+   return {...receipt,receipt:'recorded',nextRequest:next,waitTimedOut:false};
+  }
+  const remaining=end-performance.now();if(remaining<=0)break;await pause(Math.min(50,remaining));
+ }
+ return {...receipt,receipt:'recorded',nextRequest:null,waitTimedOut:status==='performed'};
+}
+export async function awaitNativeReady(mailbox,action,service,timeoutMs=120000){
+ const request=await mailbox.issue({...action,action:'ready'},timeoutMs);
+ while(true){
+  await service();
+  if(await mailbox.completed(request))return mailbox.finish(request,{verified:true,selectionEvidence:'operator_ack',selectedSession:request.session});
+  await pause(100);
+ }
 }
 export async function runPhases(operations){
  const results={};let normalCompleted=false;

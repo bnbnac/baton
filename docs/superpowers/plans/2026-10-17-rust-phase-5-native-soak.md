@@ -34,3 +34,15 @@ Executed once on user instruction at `2026-10-16T21:02:06.142Z`, commit `20bc104
 Actual timed load 55.0138236 seconds, complete rounds 0; normal workload failed with `native_action_timeout`, overload skipped as invalid workload, shutdown passed with 32 EOFs and verified descendant exit. Forced cleanup false, owned processes/containers 0 on independent recheck, source 18/binary 2 hashes unchanged, two raw OS samples match summary and show zero established debugger connections. Audit was issued but not server-verified; the verifier exits nonzero because audit-observations.json is absent. No successful verified.json exists.
 
 The first remaining step above was attempted and failed; do not execute it again automatically. Review native-consumer latency, initial UI positioning and receipt permission readiness before proposing a new run. Preserve this failure, keep the two-hour gate blocked and retain the matching fixture image for that review. No product/runner/fuzz edits or automatic rerun in this execution turn.
+
+## Bounded preparation correction — 2026-10-17
+
+After the user's agreement to reduce UI/receipt overhead, select the first tab during the existing Playwright setup and add a native `ready` acknowledgement after disconnect and before starting the measured clock. It uses the same mailbox publication path and requires the observed session ID. Keep output pumping and stop checks alive while waiting; preparation timeout is 120 seconds and enters the existing failed-normal/shutdown path. Timed round/request limits remain 55/45 seconds.
+
+The receipt CLI now returns the next distinct, same-owner, unexpired request after at most five seconds. It never repeats UI input or acknowledges the next action automatically. A null next request means poll later, not repeat the completed action. Use the approved escalated file-write path consistently, including preparation; no sandbox/security setting changes.
+
+Verifier requires readiness after browser disconnect and before load start, with matching request/session/owner and deadline. Unit tests cover readiness gating and next-request delivery using the real filesystem mailbox. This removes avoidable preparation and polling overhead; it does not establish actual native throughput. A future smoke must use fresh evidence (`smoke2`, `config-smoke2.json`). The failed original evidence remains immutable. No new live run has been started.
+
+Validation: all seven Phase 5 unit-test files pass 90 tests (32 native, 58 existing); native runner/CLI syntax checks pass. Live preparation/throughput validation remains pending.
+
+Independent read-only review of the bounded diff against `a8d7991` found no blockers; reviewer did not execute tests or a live workload.

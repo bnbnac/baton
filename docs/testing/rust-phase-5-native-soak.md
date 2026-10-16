@@ -36,7 +36,7 @@ smoke와 본 시험 사이에는 실행기 관련 소스 18개, 앱/어댑터 �
 1. Codex computer-use를 사용할 수 있는 활성 세션과 잠기지 않은 Windows 데스크톱을 확보한다. 실행기만 띄우고 대화를 끝내면 안 된다.
 2. 현재 smoke/release 출력 디렉터리와 `.launch.json`이 없음을 확인한다. 기존 증거는 삭제하거나 덮어쓰지 않는다.
 3. 설정의 두 바이너리 해시와 이미지 ID를 확인한다. 시험과 관계없는 앱/컨테이너를 종료하지 않는다.
-4. 먼저 smoke를 한 번 수행한다. 네이티브 조작 네 단계가 매 분의 55초 안에 완료되는지 확인한다. 단위 테스트는 이 시간 조건이나 실제 창 조작의 성공을 증명하지 않는다.
+4. 다음 smoke를 실행할 때는 `awaiting_native_ready`에서 먼저 화면 관측과 응답 기록을 확인한다. 준비 완료 응답 뒤에만 측정이 시작된다. 네이티브 조작 네 단계가 매 분의 55초 안에 완료되는지 확인한다. 단위 테스트는 이 시간 조건이나 실제 창 조작의 성공을 증명하지 않는다.
 
 PowerShell에서 사용할 명령이다. `pwsh`가 PATH에 없어도 아래 명령은 기존 Windows PowerShell에서 실행할 수 있다. 실행기는 설정된 PS7 절대 경로를 사용한다.
 
@@ -44,23 +44,26 @@ PowerShell에서 사용할 명령이다. `pwsh`가 PATH에 없어도 아래 명�
 Set-Location 'C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0'
 $nodeExe = 'C:\Program Files\nodejs\node.exe'
 $evidenceRoot = 'artifacts/phase5-native-soak-preparation-20261016'
-& $nodeExe rust/tests/phase5/native-soak-launch.mjs "$evidenceRoot/smoke" "$evidenceRoot/config.json" smoke
+$run = "$evidenceRoot/smoke2"
+$configuration = "$evidenceRoot/config-smoke2.json"
+& $nodeExe rust/tests/phase5/native-soak-launch.mjs $run $configuration smoke
 ```
 
-위 smoke 명령은 아래 실행 기록에서 한 번 사용했다. 현재 `smoke` 경로는 실패 증거이므로 다시 실행하거나 비우지 않는다. launcher가 출력하는 PID/시각과 `.launch.json`, `.log`를 보존한다. 재시도나 자동 재실행은 하지 않는다.
+현재 `smoke` 경로는 실패 증거이므로 다시 실행하거나 비우지 않는다. 위 명령은 개선 후 다음 실행을 위한 별도 경로이며 아직 실행하지 않았다. 새 설정은 같은 바이너리·이미지를 쓰고 검증 대상만 `smoke2/summary.json`으로 지정한다. launcher가 출력하는 PID/시각과 `.launch.json`, `.log`를 보존한다. 재시도나 자동 재실행은 하지 않는다.
 
 ## 네이티브 UI 요청 처리
 
-준비 단계에서만 Playwright로 16개 SSH 세션을 만들고 전달한다. timed load 직전에 연결을 끊는다. 본 측정 중에는 Playwright/CDP를 연결하거나 JS/DOM 조회·강제 GC를 실행하지 않는다. Windows 관측·조작은 computer-use의 `@oai/sky`를 사용한다. 직접 UIA/Win32 입력 스크립트나 관측 없는 클릭 반복문으로 대체하지 않는다.
+준비 단계에서만 Playwright로 16개 SSH 세션을 만들고 전달한 뒤 soak-00 탭을 선택해 화면에 표시한다. Playwright를 끊은 다음 `ready` 요청을 발행하고, 네이티브 화면 확인 및 같은 파일 경로의 응답 기록이 끝나야 timed load를 시작한다. 준비 확인의 제한 시간은 120초이고 측정 시간에 포함하지 않는다. 본 측정 중에는 Playwright/CDP를 연결하거나 JS/DOM 조회·강제 GC를 실행하지 않는다. Windows 관측·조작은 computer-use의 `@oai/sky`를 사용한다. 직접 UIA/Win32 입력 스크립트나 관측 없는 클릭 반복문으로 대체하지 않는다.
 
 ```powershell
-& $nodeExe rust/tests/phase5/native-soak-ui.mjs peek "$evidenceRoot/smoke"
+& $nodeExe rust/tests/phase5/native-soak-ui.mjs peek $run
 ```
 
 `null`이면 처리할 요청이 없다. 요청에는 owner, 일회성 id, 세션/연결 ID, 앱 실행 파일, issuedAt/expiresAt가 있다. 매 요청마다 새 화면을 관측하고 대상 창과 상태를 확인한다. 한 번 조작한 뒤 다시 관측한다. 이전 화면의 좌표/요소 번호를 다음 요청에 재사용하지 않는다.
 
 | 요청 | 네이티브 조작 및 확인 | 실행기의 별도 검증 |
 |---|---|---|
+| `ready` | 시험 창, soak-00 제목, 전체 세션 ID, 창이 복원 상태임을 관측한다. 동일한 응답 CLI로 준비 완료를 기록한다. | 응답 owner/id/세션·제한 시간 검증. 선택 증거는 operator ack다. 완료 전에는 측정하지 않는다. |
 | `select` | `soak-NN` 탭을 선택하고 제목·표시된 세션 ID를 요청과 대조한다. | 선택 자체는 operator ack로 명시한다. 이후 MCP geometry가 750ms 이상 유지된 값을 기준으로 채택한다. |
 | `resize` | 요청의 maximized/restored 창 상태로 바꾼다. 이미 해당 상태여서 크기가 바뀌지 않으면 완료로 보고하지 않는다. | 선택 후 기준값과 다른 MCP geometry 및 서버 `stty size` 일치. |
 | `reclaim` | 선택된 세션에서 `내가 제어하기` 실행 후 화면 확인. | user_owned, 증가한 epoch, 공개 stream 없음. |
@@ -68,17 +71,19 @@ $evidenceRoot = 'artifacts/phase5-native-soak-preparation-20261016'
 
 연결 목록의 네이티브 팝업 좌표 클릭과 select `set_value`는 앞선 조사에서 신뢰할 수 없었다. 목록을 관측하고 키보드 Home/End/방향키/Enter로 선택하되, 실제 보인 연결 ID를 대조한다. 옵션 순서가 adapter 인덱스와 같다고 가정하지 않는다. 화면의 ID 접두어가 모호하면 추측하지 않는다.
 
-조작을 실제 관측한 뒤에만 해당 요청 ID로 응답한다. `select`에는 확인한 세션 ID도 필요하다.
+조작을 실제 관측한 뒤에만 해당 요청 ID로 응답한다. `ready`와 `select`에는 확인한 세션 ID도 필요하다. 이 환경에서는 hard-link 기반 원자적 응답 쓰기가 샌드박스에서 EPERM으로 거부됐다. Codex는 기존에 허용된 `require_escalated` 실행 경로로 이 CLI를 호출하며, 준비 단계에서 성공한 동일 경로를 측정 중에도 사용한다. 원자적 기록·중복 차단을 없애거나 권한 설정을 바꾸지 않는다.
 
 ```powershell
-& $nodeExe rust/tests/phase5/native-soak-ui.mjs done "$evidenceRoot/smoke" '<request-id>' '<selected-session-id>'
+& $nodeExe rust/tests/phase5/native-soak-ui.mjs done $run '<request-id>' '<selected-session-id>'
 # resize/reclaim/handoff는 마지막 session 인수를 생략한다.
-& $nodeExe rust/tests/phase5/native-soak-ui.mjs done "$evidenceRoot/smoke" '<request-id>'
+& $nodeExe rust/tests/phase5/native-soak-ui.mjs done $run '<request-id>'
 # 조작 불가 또는 확인 실패
-& $nodeExe rust/tests/phase5/native-soak-ui.mjs failed "$evidenceRoot/smoke" '<request-id>'
+& $nodeExe rust/tests/phase5/native-soak-ui.mjs failed $run '<request-id>'
 ```
 
 응답은 UI 조작을 했다는 기록이다. resize/reclaim/handoff는 MCP/서버 관측까지 일치해야 다음 단계로 넘어간다. 선택 단계는 독립적인 MCP 선택 검증이 아니며 결과에도 `selectionEvidence: operator_ack`로 기록한다. 숨겨진 세션의 오래된 geometry를 resize 기준값으로 사용하지 않는다.
+
+`done`은 기록 후 최대 5초 기다려 `nextRequest`를 같은 JSON 응답에 반환한다. 반환된 다음 요청이 있으면 별도 `peek` 없이 새 화면 관측부터 진행한다. `receipt: recorded`, `nextRequest: null`, `waitTimedOut: true`는 응답 기록은 성공했지만 다음 요청을 아직 받지 못했다는 뜻이다. UI 조작이나 `done`을 반복하지 말고 이후 `peek`로 확인한다. 실패 응답은 다음 요청을 기다리지 않는다. 다음 요청의 owner와 만료도 확인하며, 이 대기는 요청/회차 제한 시간을 늘리지 않는다.
 
 요청당 최대 45초, 각 분의 UI 작업 전체는 55초까지다. 제한 시간을 넘긴 조작, 다른 owner/id의 응답, 중복 응답, 상태 불일치는 실패다. 한도를 늘려 기존 실패를 성공으로 바꾸지 않는다. 실제 조작 시간이 부족하면 원인을 기록하고 실행 방식부터 다시 검토한다.
 
@@ -94,15 +99,15 @@ $evidenceRoot = 'artifacts/phase5-native-soak-preparation-20261016'
 
 ```powershell
 # 종료 요청: 현재 실행의 경로를 확인한 뒤 생성한다.
-New-Item -ItemType File -Path "$evidenceRoot/smoke/stop"
+New-Item -ItemType File -Path "$run/stop"
 # finishedUtc가 생긴 뒤 검증
-& $nodeExe rust/tests/phase5/native-soak-verify.mjs "$evidenceRoot/smoke"
+& $nodeExe rust/tests/phase5/native-soak-verify.mjs $run
 ```
 
 smoke가 `smoke_passed`, 검증기가 `valid: true, releaseAcceptance: false`이고 정상 정리가 확인된 뒤에만 같은 설정으로 본 시험을 시작할 수 있다. 본 시험은 별도 `release` 디렉터리를 쓰며 같은 UI 소비자가 계속 필요하다. **smoke가 통과해도 자동으로 본 시험을 시작하지 않는다.**
 
 ```powershell
-& $nodeExe rust/tests/phase5/native-soak-launch.mjs "$evidenceRoot/release" "$evidenceRoot/config.json" release
+& $nodeExe rust/tests/phase5/native-soak-launch.mjs "$evidenceRoot/release" $configuration release
 & $nodeExe rust/tests/phase5/native-soak-verify.mjs "$evidenceRoot/release"
 ```
 
@@ -132,3 +137,13 @@ smoke가 `smoke_passed`, 검증기가 `valid: true, releaseAcceptance: false`이
 정상 종료 단계는 통과했다: 앱 종료 코드 0, adapter 32개 EOF, 자손 종료 감사 verified, 강제 정리 없음. 별도 PID/시작 시각 및 owner label 재확인에서 소유 프로세스와 컨테이너 모두 0이었다. 소스 18개와 바이너리 2개 해시가 일치했고 원시 memory JSONL과 summary의 두 표본이 일치했다. 두 표본의 debugger established는 0이지만 이 길이로 메모리 증가율을 평가하지 않는다.
 
 2시간 시험이나 새 smoke는 시작하지 않았다. 시험 이미지는 동일 조건의 향후 검토를 위해 보존했고 ID 일치를 확인했다. 기존 실패와 출시 차단은 유지한다. 다음 검토 대상은 시작 전 UI 목록 위치 준비, 응답 파일 기록의 실행 권한 확정, 관측과 조작의 실제 시간 예산이다. 제한 시간을 늘리거나 이 실패 기록을 통과로 바꾸지 않는다. 단위 테스트 83개 통과는 이 실제 UI 처리 속도를 증명하지 못했다.
+
+## 준비 순서와 왕복 호출 개선 — 2026-10-17
+
+사용자의 진행 동의 후 실행기 준비 경로만 수정했다. 첫 탭 표시 → Playwright 분리 → 실제 네이티브 준비 응답 → 측정 시작 순서이며, 준비 응답까지 출력 읽기와 중단 확인은 계속한다. 준비 실패도 기존 단계 실행기를 통해 과부하 생략과 정상 종료 시도로 이어진다. 실제 분당 select/resize/reclaim/handoff와 55초 회차 제한, 45초 요청 상한, 메모리 조건은 유지했다.
+
+같은 응답 기록 호출에서 다음 요청까지 반환해 별도의 조회 왕복을 줄였다. 테스트는 준비 응답 누락/다른 세션, 측정 시작 이후 또는 브라우저 분리 이전 준비 기록, 이전 요청의 재반환, 다음 요청 대기 상한을 검사한다. 이 변경은 초기 준비 지연과 조회 호출 수를 줄이기 위한 것이며 실제 55초 조작 성공을 증명하지 않는다. 사용자 상호작용을 무관측 반복문으로 자동화하지 않았다. 첫 실패 증거와 기존 이미지/바이너리는 보존했고 새 smoke와 2시간 시험은 실행하지 않았다.
+
+개선 후 Phase 5의 동일한 7개 단위 테스트 파일에서 **90개 통과**(native 32개, 기존 58개), 실행기 관련 JavaScript 구문 검사 통과. 준비 차단/다음 요청 반환의 새 함수가 없을 때 세 테스트가 실패했고 구현 후 통과했다. 준비 증거 없는 실행을 기존 검증기가 허용하던 회귀 테스트도 실패를 확인한 뒤 수정했다. 실제 앱의 변경된 준비 순서와 네이티브 조작 처리 시간은 다음 live smoke에서 확인할 항목이다.
+
+이번 변경분(`a8d7991` 이후)에 대한 독립 읽기 전용 코드 검토는 차단 사항 없음으로 완료됐다. 검토자는 테스트나 실제 부하를 실행하지 않았으며, 검토 결과를 live smoke 통과로 해석하지 않는다.
