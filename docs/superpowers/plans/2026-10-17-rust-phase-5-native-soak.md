@@ -1,6 +1,6 @@
 # Phase 5 native UI soak preparation
 
-Status: runner prepared; first live smoke failed on native resize deadline after 55.014 seconds. Two-hour acceptance not started.
+Status: two live smokes failed. The second verified readiness, selection and resize, then timed out on reclaim after 55.052 seconds. Two-hour acceptance not started.
 
 The user approved preparing the next test after the focused UI fix and short native handoff check. Reuse the existing verified app/adapter binaries and fixture recipe. Do not change product behavior or unfinished fuzz files. Preserve the original two-hour memory failure and Phase 5 release block.
 
@@ -46,3 +46,13 @@ Verifier requires readiness after browser disconnect and before load start, with
 Validation: all seven Phase 5 unit-test files pass 90 tests (32 native, 58 existing); native runner/CLI syntax checks pass. Live preparation/throughput validation remains pending.
 
 Independent read-only review of the bounded diff against `a8d7991` found no blockers; reviewer did not execute tests or a live workload.
+
+## Second smoke — 2026-10-17
+
+Executed once with user authorization at `2026-10-16T21:38:33.377Z`, commit `ccd716f`, PID 37948, owner `225be3a2-de11-4208-8472-6b042dfc60c5`, fresh evidence `artifacts/phase5-native-soak-preparation-20261016/smoke2`. Prepared 32 connections/16 sessions/two servers. Browser disconnected at 21:38:49.024Z; native ready verified at 21:39:03.995Z; measured load started at 21:39:03.996Z. Receipt publication succeeded before starting the clock.
+
+Selection took 7.334 seconds from request to verification (operator-observed full session ID). Resize took 22.744 seconds, changing MCP geometry from 102x17 to 274x52 with matching remote stty `52 274`. These durations include observer/tool round trips, not just product latency. Reclaim was issued with approximately 20.664 seconds left. One accessibility-element click returned, but subsequent UI observations remained agent-owned. No success receipt was submitted. A possible post-maximize click-coordinate mismatch remains unproven; do not classify this as a confirmed product defect.
+
+Normal workload failed with `native_action_timeout` after 55.0519023 seconds; zero completed rounds, no handoff, overload skipped. Audit was issued once but not server-verified. Verifier exits 1 for absent audit-observations.json and produces no verified.json. Shutdown passed: exit code 0, 32 adapter EOFs, verified descendant exit, no forced cleanup. Independent process identity and actual baton.soak owner label plus fixture name/ID checks found no leftovers. Source 18/binary 2 hashes unchanged; both raw memory samples equal summary, debugger established 0. Matching image tag retained for review.
+
+Do not rerun automatically or launch the two-hour acceptance. Next investigate native click targeting/observation refresh after maximizing in a focused check, before another timed smoke. No product, runner or unfinished fuzz edits in this execution. Original memory failure and Phase 5 release block remain.
