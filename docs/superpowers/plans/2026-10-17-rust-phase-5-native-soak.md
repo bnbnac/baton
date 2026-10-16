@@ -1,6 +1,6 @@
 # Phase 5 native UI soak preparation
 
-Status: runner preparation complete; live smoke and two-hour acceptance not started.
+Status: runner prepared; first live smoke failed on native resize deadline after 55.014 seconds. Two-hour acceptance not started.
 
 The user approved preparing the next test after the focused UI fix and short native handoff check. Reuse the existing verified app/adapter binaries and fixture recipe. Do not change product behavior or unfinished fuzz files. Preserve the original two-hour memory failure and Phase 5 release block.
 
@@ -26,3 +26,11 @@ Evidence/config: `artifacts/phase5-native-soak-preparation-20261016/`. Image tag
 1. Perform one live 180-second smoke with active native UI handling; verify cadence, all four stages, overload and shutdown. Record failure without rerunning if the deadlines cannot be met.
 2. If valid and normally cleaned, review readiness for the single two-hour run using unchanged inputs. Keep active UI handling available for its full duration.
 3. Verify raw evidence, record the memory windows and limitations, remove only matching owned resources/image tag when no longer needed. A soak pass covers this gate, not all Phase 5 requirements.
+
+## First smoke — 2026-10-17
+
+Executed once on user instruction at `2026-10-16T21:02:06.142Z`, commit `20bc104`, PID 40600, evidence `artifacts/phase5-native-soak-preparation-20261016/smoke`. Prepared 32/16/2. Native select succeeded, but observing the initially scrolled list, selecting/verifying the session, and publishing the receipt took 43.956 seconds from request to verification. Initial receipt publication hit sandbox EPERM on the hard link; the same receipt was then recorded outside the sandbox without repeating the UI action. Resize had only 5.175 seconds left and expired; a fresh window observation returned `foreground window did not report a process id` around shutdown. No resize input was issued.
+
+Actual timed load 55.0138236 seconds, complete rounds 0; normal workload failed with `native_action_timeout`, overload skipped as invalid workload, shutdown passed with 32 EOFs and verified descendant exit. Forced cleanup false, owned processes/containers 0 on independent recheck, source 18/binary 2 hashes unchanged, two raw OS samples match summary and show zero established debugger connections. Audit was issued but not server-verified; the verifier exits nonzero because audit-observations.json is absent. No successful verified.json exists.
+
+The first remaining step above was attempted and failed; do not execute it again automatically. Review native-consumer latency, initial UI positioning and receipt permission readiness before proposing a new run. Preserve this failure, keep the two-hour gate blocked and retain the matching fixture image for that review. No product/runner/fuzz edits or automatic rerun in this execution turn.
