@@ -1,6 +1,6 @@
 # Phase 5 native UI soak preparation
 
-Status: two live smokes failed. Focused follow-up reproduced maximized accessibility-click mis-targeting; observed main-screenshot coordinate input succeeded. Native operating procedure updated; timed smoke and two-hour acceptance remain unproven.
+Status: three live smokes failed. Corrected main-screenshot input verified reclaim in smoke3, but the conversational native consumer exhausted the round budget before handoff. Reassess test execution design before any fourth run; two-hour acceptance remains blocked.
 
 The user approved preparing the next test after the focused UI fix and short native handoff check. Reuse the existing verified app/adapter binaries and fixture recipe. Do not change product behavior or unfinished fuzz files. Preserve the original two-hour memory failure and Phase 5 release block.
 
@@ -68,3 +68,13 @@ The returned screenshot array contained a 15x15 region before the actual 2560x13
 This isolates a maximized accessibility-targeting problem in this environment, not a demonstrated ownership-handler defect. Provider/tool internals and other DPI/layouts remain undetermined. No product fix is justified by these results. Normal exit code 0, 32 adapter EOFs and verified descendant exit; no forced cleanup or owned leftovers. Independent assertions passed for raw MCP epoch/stream sequence, source 15/binary 2 hashes and 10 raw OS samples matching summary (debugger established 0). Image retained with matching ID. See click-verification.json and post-run-cleanup.json.
 
 Completed this focused check and amended operating documentation only. No new smoke/release run, no product/unfinished fuzz changes. Next step, subject to a new execution decision, is one fresh 180-second smoke using the corrected native observation procedure; it still must fit unchanged 55/45-second limits. Original memory failure and Phase 5 release block remain.
+
+## Third smoke — 2026-10-18
+
+Executed once with user authorization from `0bcdb19` at `2026-10-17T22:53:10.479Z`, PID 43012, owner `4fc7348a-9712-4962-84c9-0d5ac4f51f26`, config-smoke3.json and fresh smoke3 evidence under the native-soak preparation root. Same binaries/image and 32/16/2 topology. Timed load began 22:53:43.976Z after readiness; ended at 55.0879289 seconds with native_action_timeout, finished 22:54:43.503Z.
+
+First-round request-to-verification times: select 9.062 seconds, resize 15.334 seconds, reclaim 18.311 seconds. Selection was operator-observed; resize matched MCP 274x52 and remote `52 274`; corrected main-screenshot coordinate reclaim reached user_owned, epoch 2, no stream. Handoff to adapter 16 had only 7.794966 seconds left. The dropdown was opened/observed, but the target was not selected and no handoff input or receipt was submitted before expiration. No stale input followed. These are end-to-end observer/tool timings, not product latency.
+
+Zero complete rounds; audit final comparison and overload not performed. Verifier exits 1 for absent audit-observations.json. Independent failed-evidence assertions confirm source 18/binary 2 hashes, stage records and two raw memory samples equal summary with debugger established 0. Normal app exit code 0, 32 adapter EOFs, verified descendant exit, no forced cleanup; independent PID/start-time and owner-label checks found zero leftovers. Image retained. Only result documentation changed; no product/runner/fuzz changes, automatic rerun or two-hour launch.
+
+The corrected click path works, but this consumer has still not met the 55-second round budget in three live attempts. Do not initiate a fourth identical attempt. Discuss separating automatically driven long-duration workload from focused native UI verification, or another execution method that preserves the required native transition workload. This is a proposal, not an approved replacement acceptance contract. Existing limits, failed evidence and release block remain unchanged.
