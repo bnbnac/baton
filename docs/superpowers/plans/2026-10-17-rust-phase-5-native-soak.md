@@ -1,6 +1,6 @@
 # Phase 5 native UI soak preparation
 
-Status: two live smokes failed. The second verified readiness, selection and resize, then timed out on reclaim after 55.052 seconds. Two-hour acceptance not started.
+Status: two live smokes failed. Focused follow-up reproduced maximized accessibility-click mis-targeting; observed main-screenshot coordinate input succeeded. Native operating procedure updated; timed smoke and two-hour acceptance remain unproven.
 
 The user approved preparing the next test after the focused UI fix and short native handoff check. Reuse the existing verified app/adapter binaries and fixture recipe. Do not change product behavior or unfinished fuzz files. Preserve the original two-hour memory failure and Phase 5 release block.
 
@@ -56,3 +56,15 @@ Selection took 7.334 seconds from request to verification (operator-observed ful
 Normal workload failed with `native_action_timeout` after 55.0519023 seconds; zero completed rounds, no handoff, overload skipped. Audit was issued once but not server-verified. Verifier exits 1 for absent audit-observations.json and produces no verified.json. Shutdown passed: exit code 0, 32 adapter EOFs, verified descendant exit, no forced cleanup. Independent process identity and actual baton.soak owner label plus fixture name/ID checks found no leftovers. Source 18/binary 2 hashes unchanged; both raw memory samples equal summary, debugger established 0. Matching image tag retained for review.
 
 Do not rerun automatically or launch the two-hour acceptance. Next investigate native click targeting/observation refresh after maximizing in a focused check, before another timed smoke. No product, runner or unfinished fuzz edits in this execution. Original memory failure and Phase 5 release block remain.
+
+## Focused native click comparison — 2026-10-18
+
+On user authorization, launched one isolated diagnostic copy of the earlier probe at `2026-10-17T22:35:52.805Z`, PID 14200, owner `f5ce7290-68c6-4c35-bd98-650e2852eb3e`. Evidence: `artifacts/phase5-ui-stability-20261016/click-run1/`. Same app/adapter/image, 32 connections, 16 sessions, two servers; Playwright disconnected before native actions. Actual diagnostic duration 275.8099746 seconds, no per-minute cadence assertion.
+
+After stable maximization and fresh observation, accessibility-element reclaim left epoch 1 agent-owned and the visible cursor outside the button. Explicit main-screenshot coordinate input reclaimed to epoch 2 user-owned and a subsequent handoff reached epoch 3 with a new stream and previous owner unassigned. Accessibility-element restore also missed the native title-bar button; main-screenshot coordinates restored it. In the restored window, accessibility-element reclaim succeeded (epoch 4), followed by coordinate handoff (epoch 5/new stream), MCP 102x17 and remote stty `17 102` agreement.
+
+The returned screenshot array contained a 15x15 region before the actual 2560x1392 maximized window. An initial diagnostic coordinate attempt selected that first region and failed bounds validation; this operator mistake is separate from the earlier smoke2 failure. Procedure now requires inspecting returned regions, selecting the actual main capture, observing completed window transitions and deriving coordinates afresh. Immediate accessibility text can lag the screenshot; independent MCP checks remain mandatory.
+
+This isolates a maximized accessibility-targeting problem in this environment, not a demonstrated ownership-handler defect. Provider/tool internals and other DPI/layouts remain undetermined. No product fix is justified by these results. Normal exit code 0, 32 adapter EOFs and verified descendant exit; no forced cleanup or owned leftovers. Independent assertions passed for raw MCP epoch/stream sequence, source 15/binary 2 hashes and 10 raw OS samples matching summary (debugger established 0). Image retained with matching ID. See click-verification.json and post-run-cleanup.json.
+
+Completed this focused check and amended operating documentation only. No new smoke/release run, no product/unfinished fuzz changes. Next step, subject to a new execution decision, is one fresh 180-second smoke using the corrected native observation procedure; it still must fit unchanged 55/45-second limits. Original memory failure and Phase 5 release block remain.
