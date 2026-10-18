@@ -75,12 +75,14 @@ class Runtime {
   assert.ok(this.sessions.includes(s),'unknown_session');assert.ok(!this.transition||this.transition.session===s,'concurrent_transition');
   assert.ok(['reclaiming','reclaimed'].includes(stage),'transition_stage');
   if(stage==='reclaiming')await this.read(s);
+  if(!this.transition&&this.loadStart!==undefined)s.privateStart=this.now();
   this.transition={session:s,stage};await this.event('transition_boundary',{session:s.id,stage,epoch:s.epoch,stream:s.stream,cursor:s.cursor});
  }
  async adoptBinding(s,b){
   assert.ok(this.transition?.session===s&&this.transition.stage==='reclaimed','transition_required');
   assert.ok(Number.isInteger(b.adapter)&&b.adapter>=0&&b.adapter<32&&b.adapter!==s.adapter,'new_adapter');assert.ok(b.epoch>s.epoch&&b.stream&&b.stream!==s.stream,'new_binding');
   await this.event('binding',{session:s.id,before:{adapter:s.adapter,epoch:s.epoch,stream:s.stream,cursor:s.cursor},after:b});
+  if(s.privateStart!==undefined){s.privateMs=(s.privateMs??0)+this.now()-s.privateStart;s.privateStart=undefined;}
   Object.assign(s,{adapter:b.adapter,epoch:b.epoch,stream:b.stream,cursor:0,lastLog:this.now()});s.oracle.reset();this.transition=null;
  }
  async health(){const values=[];for(let i=0;i<32;i++){const p=await this.status(i);assert.equal(p.app_state,'online');assert.equal(p.connection_id,this.connections[i]);values.push(p);}await this.event('health',{values});return values;}
@@ -100,7 +102,9 @@ class Runtime {
   if(this.contract.scope==='M'&&sample.elapsed>=this.contract.seconds)return;
   await this.append('memory.jsonl',sample);this.summary.samples.push(sample);return sample;
  }
- async startMeasurement(){this.loadStart=this.now();this.summary.loadStartedUtc=new Date().toISOString();this.summary.status='running';await this.event('measurement_start');await this.save();}
+ async startMeasurement(){this.loadStart=this.now();for(const s of this.sessions){s.startCount=s.oracle.count;s.privateMs=0;}this.summary.loadStartedUtc=new Date().toISOString();this.summary.status='running';await this.event('measurement_start');await this.save();}
+ outputRates(){return this.sessions.map(s=>{const seconds=this.elapsed()-(s.privateMs??0)/1000;const records=s.oracle.count-s.startCount;return {index:s.index,records,publicSeconds:seconds,bytesPerSecond:records*(1024+String(s.index).length)/seconds};});}
+ async overload(){return (await import('./memory.mjs')).runOverload(this);}
  async freeze(){this.measurementFrozen=true;this.summary.elapsedSeconds=this.elapsed();this.summary.loadFinishedUtc=new Date().toISOString();const row=await this.event('measurement_end');await this.json('normal-boundary.json',{elapsedSeconds:this.summary.elapsedSeconds,finishedUtc:this.summary.loadFinishedUtc,eventSeq:row.seq,samples:this.summary.samples.length});await this.save();}
  async disconnectBrowser(){await this.browser?.close();assert.ok(!this.browser?.isConnected());this.browser=undefined;this.page=undefined;this.summary.playwrightDisconnectedUtc=new Date().toISOString();await this.event('browser_disconnected');}
  async attachBrowser(){const {chromium}=await import(pathToFileURL(this.config.playwrightPath).href);this.browser=await chromium.connectOverCDP(`http://127.0.0.1:${this.port}`);this.page=await this.waitFor(async()=>this.browser.contexts().flatMap(c=>c.pages()).find(p=>p.url()==='http://tauri.localhost/'),'product_page',15000,{service:false});this.page.setDefaultTimeout(45000);await this.event('browser_attached');}
