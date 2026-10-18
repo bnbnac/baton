@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태: 독립 검토 수정 및 사용자 승인 범위 변경 후 관련 검사 114개를 마쳤다. 회수 경계 완전성을 미검증으로 명시하는 F/N 부분 시험을 승인받았다. 실제 실행 이력은 아래에 기록한다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태: 사용자 승인 범위 변경 후 첫 M 사전 시험이 준비 단계에서 실패했다. 실행기 누락을 수정한 관련 검사 115개는 통과했으나 실제 재실행은 하지 않았다. 회수 경계 완전성을 미검증으로 명시하는 F/N 부분 시험을 승인받았다. 실제 실행 이력은 아래에 기록한다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -115,3 +115,18 @@ node rust/tests/phase5/separated/verify.mjs artifacts/phase5-separated-20261018/
 후속 결정: 사용자가 2026-10-19에 (1)을 승인했다. 위 보류는 이 범위 변경으로 해소했다. 예상된 stale read는 실제 reclaiming/user_owned 상태·증가한 epoch·null stream이 함께 확인될 때만 원시 경계 사건으로 보관한다. 앱 offline/통신 오류나 내부 sequence gap은 계속 실패한다. 최종 관련 검사 114/114 (`artifacts/separated-scope-suite.log`). 실제 Linux fixture에서 sleep을 대체한 90 tick/102 record 점검을 setup 중 수행하며, 이는 실제 1초 간격의 증거는 아니다.
 
 검토에서 실행하지 않은 항목: 실제 Docker/Windows 정리, 실제 네이티브 화면/좌표/DPI는 사전 시험/N에서 확인할 예정이다. N의 OS 표본 최대 45초 공백 검사는 짧은 관측 유효성 조건으로 유지하며 장기 메모리 통과를 뜻하지 않는다. 이전 Phase와 제품/fuzz는 이번 검토 밖이다.
+
+### 2026-10-19 M 사전 시험 1회 — 준비 실패
+
+- 증거: `artifacts/phase5-separated-20261018/m-preflight/`, sibling `m-preflight.log`, `m-preflight.launch.json`. 고정 커밋 `96853f08fb5538d7c14c5afe3752f2e615e3256a`.
+- 시작/종료: `2026-10-18T22:52:46.235Z` / `2026-10-18T22:53:08.079Z`. 실행기 PID 21536, 시작 ticks `639279607661805322`; owner `e26d2593-ea23-4746-80bd-ff8757847d69`.
+- 180초 정상 부하는 **시작하지 못했다**. sessions/connections 0, OS 표본/audit 없음. 실행기 오류는 `webview_ready_timeout`이며 `process.log`의 직접 원인은 앱 setup의 `ipc_directory_unavailable` panic, exit 101이다. 메모리 기준 실패나 제품 전환 실패로 분류하지 않는다.
+- 실제 Linux fixture의 발생기 점검: 90 tick, burst tick `[30,60,90]`, 누적 `[34,68,102]`, 총 102 record. 원시 파일 `generator-ticks.txt`.
+- 원인: 새 실행기가 격리 `LOCALAPPDATA=<out>/local` 부모 폴더를 만들지 않았다. `Test-Path`는 false였고, 앱의 `prepare_endpoint_dir()`는 기존 부모 아래 `BatonRust/v2`만 만든다. 기존 native-soak에는 부모 mkdir이 있었다.
+- 종료 판정: 정상 종료 실패, `forcedCleanup:true`; adapter 정리를 포함해 최종 소유 process/container 0. 앱은 먼저 비정상 종료했으므로 WebView descendant audit는 unverified다. 자원 정리 성공을 정상 종료 통과로 바꾸지 않는다.
+- `post-failure-check.json`: 수정 전 소스 23개/바이너리 2개 해시 모두 일치. 실제 owner label 컨테이너 0, 해당 후보 실행 경로의 프로세스 0을 별도로 확인했다. 이미지 태그는 후속 비교를 위해 보존한다.
+- 독립 판정 `verification.json`: 필수 `audit-observations.json`이 없어 `evidenceValid:false`, `preflightPassed:false`. `verified.json`을 만들지 않았다. 준비 실패 때문에 이후 부하 조건도 검증하지 못했다.
+
+후속 수정: 새 runtime에 부모 디렉터리 생성만 추가했다. 보안 DACL이 필요한 `BatonRust/v2` 자식은 계속 앱이 생성한다. 누락 회귀 테스트 RED→GREEN, 관련 suite **115/115** (`artifacts/separated-local-root-suite.log`). 제품·기존 실행기·fuzz·Cargo는 변경하지 않았다. 실패 당시 해시 대조는 수정 전 `post-failure-check.json`으로 보존하며, 현재 소스는 수정 때문에 해당 실패 실행과 다르다.
+
+자동 재실행하지 않았다. F 사전 시험과 N은 시작하지 않았다. 재실행 결정 시 새 증거 경로를 사용하고 F/N 및 정식 비교 설정의 baseline/preflight 경로도 새 성공 증거에 맞춰야 한다. 이번 실패 디렉터리를 덮어쓰지 않는다.

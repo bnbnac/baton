@@ -14,6 +14,8 @@
 
 **2026-10-19 후속 승인:** 사용자가 권장 범위 제한을 승인했다. Task 2의 최종 공개 cursor 완전성 요구는 F/N 부분 시험에서 제외하고 `publicBoundaryCompleteness: unverified`를 강제한다. 회수 의도부터 임의로 시간을 제외하지 않으며 실제 비공개 확인 이후만 분모에서 제외한다. 예상된 stale read도 epoch/state 원시 증거가 없으면 실패다. 제품 변경 없이 이 범위로 사전 시험을 진행한다. 수정 후 관련 unit 114/114. 정식 F/M 실행은 여전히 별도 결정 대상이다.
 
+**2026-10-19 실제 결과:** `96853f0`의 M preflight 1회는 준비 중 실패했다(`webview_ready_timeout`, 앱 로그 `ipc_directory_unavailable`, exit 101). 정상 부하 미시작, Linux 90 tick 점검만 통과. 원인은 실행기의 격리 LOCALAPPDATA 부모 mkdir 누락이며 수정 후 관련 unit 115/115. 실패 원시 증거와 수정 전 23 source/2 binary hash 대조를 보존했다. 정상 종료 실패/강제 정리 발생, 잔류 owner container 및 후보 process 0. 자동 재실행 및 F/N 후속 실행 없음. [상세 결과](../../testing/rust-phase-5-separated-validation.md#2026-10-19-m-사전-시험-1회--준비-실패). Task 7은 부분 진행이며 완료가 아니다.
+
 ## Global Constraints
 
 - 32개 고유 MCP 연결, 16개 SSH 세션, 별도 localhost 서버 두 개에 8개씩 배치한다.

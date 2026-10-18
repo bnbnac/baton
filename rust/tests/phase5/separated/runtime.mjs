@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {open,readFile,writeFile,appendFile,access,rename,readdir} from 'node:fs/promises';
+import {open,readFile,writeFile,appendFile,access,rename,readdir,mkdir} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {randomUUID,createHash} from 'node:crypto';
@@ -130,7 +130,9 @@ class Runtime {
   this.summary.binaries={};for(const key of ['app','adapter']){const path=resolve(this.root,this.config[key].path);this.summary.binaries[key]={path,sha256:await sha256(path)};assert.equal(this.summary.binaries[key].sha256,this.config[key].sha256,'binary_hash');}
  }
  async checkHashes(){for(const [p,hash] of Object.entries(this.summary.sources))assert.equal(await sha256(join(this.root,p)),hash,'source_changed_'+p);for(const b of Object.values(this.summary.binaries))assert.equal(await sha256(b.path),b.sha256,'binary_changed');}
+ async prepareLocalRoot(){await mkdir(join(this.out,'local'));}
  async setup(){
+  await this.prepareLocalRoot();
   await this.manifest();this.summary.imageId=await this.docker('image','inspect',this.config.imageId,'--format','{{.Id}}');assert.equal(this.summary.imageId,this.config.imageId);
   for(let i=0;i<2;i++){
    const f={name:`baton-separated-${this.owner.slice(0,8)}-${i}`};this.fixtures.push(f);await this.save();

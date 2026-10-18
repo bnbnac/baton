@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createRuntime,cleanupFixture,validateShutdown,assertProcessIdentity,verifyStreamTicks} from './runtime.mjs';
@@ -8,6 +8,10 @@ import {LogOracle} from '../soak-oracle.mjs';
 const line=(n,id=0)=>`SOAK:${id}:${String(n).padStart(8,'0')}:${'x'.repeat(1008)}\n`;
 async function local(t){const out=await mkdtemp(join(tmpdir(),'baton-separated-'));t.after(()=>rm(out,{recursive:true,force:true}));const r=createRuntime({root:out,out,config:{},contract:{scope:'F',profile:'preflight'}});await r.init();return r;}
 const session=()=>({index:0,id:'s0',adapter:0,epoch:1,stream:'one',cursor:0,oracle:new LogOracle(0)});
+test('isolated launch creates the LOCALAPPDATA parent while leaving protected IPC children to the app',async t=>{
+ const r=await local(t);await assert.rejects(stat(join(r.out,'local')),/ENOENT/);await r.prepareLocalRoot();
+ assert.equal((await stat(join(r.out,'local'))).isDirectory(),true);await assert.rejects(stat(join(r.out,'local','BatonRust')),/ENOENT/);
+});
 test('Linux generator preflight needs 90 ticks with exactly the three specified bursts',()=>{
  let n=0;const raw=Array.from({length:90},(_,i)=>'TICK\n'+Array.from({length:(i+1)%30===0?5:1},()=>line(++n,99)).join('')).join('');
  assert.deepEqual(verifyStreamTicks(raw),{ticks:90,burstTicks:[30,60,90],cumulative:[34,68,102],records:102});assert.throws(()=>verifyStreamTicks(raw.replace('TICK\n','')));
