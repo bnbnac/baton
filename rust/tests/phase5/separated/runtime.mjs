@@ -33,7 +33,7 @@ class Runtime {
   Object.assign(this,{root,out,config,contract});this.deps=deps;this.now=deps.now??(()=>performance.now());this.sleep=deps.sleep??pause;this.born=this.now();this.owner=randomUUID();
   this.execute=deps.execute??promisify(execFile);this.docker=deps.docker??(async(...args)=>(await this.execute('docker',args,{windowsHide:true,timeout:20000,maxBuffer:4*1024*1024})).stdout.trim());
   this.sessions=[];this.adapters=[];this.fixtures=[];this.connections=[];this.writes=new Map();this.sequence=0;this.transition=null;this.nextSave=0;this.interrupted=false;this.serviceQueue=Promise.resolve();
-  this.summary={schema:1,scope:contract.scope,profile:contract.profile,contract,owner:this.owner,runnerPid:process.pid,status:'preparing',startedUtc:new Date().toISOString(),phase5Acceptance:false,combinedTransitionMemory:'unverified',samples:[],instrumentation:{forcedGcCalls:0,jsProbes:0,rawCdpSessions:0,debugListenerEnabled:true}};
+  this.summary={schema:1,scope:contract.scope,profile:contract.profile,contract,owner:this.owner,runnerPid:process.pid,clockOrigin:this.born,status:'preparing',startedUtc:new Date().toISOString(),phase5Acceptance:false,combinedTransitionMemory:'unverified',samples:[],instrumentation:{forcedGcCalls:0,jsProbes:0,rawCdpSessions:0,debugListenerEnabled:true}};
  }
  async init(){for(const f of ['events.jsonl','output.jsonl','memory.jsonl']){const handle=await open(join(this.out,f),'wx');await handle.close();}await this.save();}
  elapsed(){return this.loadStart===undefined?0:(this.now()-this.loadStart)/1000;}
@@ -44,7 +44,7 @@ class Runtime {
  async checkStop(){if(this.interrupted)throw Error('interrupted');try{await access(join(this.out,'stop'));throw Error('stop_requested');}catch(e){if(e.code!=='ENOENT')throw e;}}
  async waitFor(check,label,timeoutMs=45000,{service=true,honorStop=true}={}){
   const end=this.now()+timeoutMs;
-  while(this.now()<end){if(honorStop)await this.checkStop();if(service)await this.service();const result=await check();if(result)return result;await this.sleep(100);}throw Error(label+'_timeout');
+  while(this.now()<end){if(honorStop)await this.checkStop();if(service)await this.service();if(this.now()>end)break;const result=await check();if(this.now()>end)break;if(result)return result;await this.sleep(100);}throw Error(label+'_timeout');
  }
  async tool(index,name,args={}){const response=data(await this.adapters[index].tool(name,args));await this.event('mcp',{index,name,args,response});return response;}
  async status(index){return this.tool(index,'status');}
@@ -64,7 +64,7 @@ class Runtime {
  service(){const task=this.serviceQueue.then(()=>this.consume());this.serviceQueue=task;return task;}
  async consume(){
   await this.checkStop();
-  for(const s of this.sessions){if(this.transition?.session===s)continue;await this.read(s);if(s.lastLog!==undefined)assert.ok(this.now()-s.lastLog<15000,'stalled_session_'+s.index);}
+  for(const s of this.sessions){if(this.transition?.session===s&&this.transition.stage==='reclaimed')continue;await this.read(s);if(s.lastLog!==undefined)assert.ok(this.now()-s.lastLog<15000,'stalled_session_'+s.index);}
   if(this.now()>=this.nextSave){this.summary.elapsedSeconds=this.elapsed();await this.save();this.nextSave=this.now()+10000;}
  }
  async during(operation){
@@ -74,8 +74,8 @@ class Runtime {
  async setTransition(s,stage){
   assert.ok(this.sessions.includes(s),'unknown_session');assert.ok(!this.transition||this.transition.session===s,'concurrent_transition');
   assert.ok(['reclaiming','reclaimed'].includes(stage),'transition_stage');
-  if(stage==='reclaiming')await this.read(s);
-  if(!this.transition&&this.loadStart!==undefined)s.privateStart=this.now();
+  if(stage==='reclaiming')await this.waitFor(async()=>{const cursor=s.cursor;await this.read(s);return s.cursor===cursor;},'public_drain',45000,{service:false});
+  if(stage==='reclaimed'&&this.loadStart!==undefined)s.privateStart=this.now();
   this.transition={session:s,stage};await this.event('transition_boundary',{session:s.id,stage,epoch:s.epoch,stream:s.stream,cursor:s.cursor});
  }
  async adoptBinding(s,b){
@@ -98,7 +98,8 @@ class Runtime {
   if(this.identities)assert.deepEqual(identities,this.identities,'process_identity_changed');else this.identities=identities;
   const debugPort=JSON.parse(await this.ps('check-test-debug-port.ps1',['-Port',String(this.port)]));
   if(this.contract.scope!=='F'){assert.equal(debugPort.established,0,'debugger_connection');assert.ok(debugPort.listening>=1);}
-  const sample={elapsed:this.elapsed(),phase:this.contract.scope==='F'?'attached':'natural',processes,debugPort,privateBytes:processes.reduce((n,p)=>n+p.privateBytes,0),workingSetBytes:processes.reduce((n,p)=>n+p.workingSetBytes,0)};
+  const ownership={pid:receipt.pid,startedTicks:receipt.startedTicks,descendants:receipt.descendants.filter(p=>!p.exited),adapters:this.adapterIdentities};
+  const sample={elapsed:this.elapsed(),phase:this.contract.scope==='F'?'attached':'natural',ownership,processes,debugPort,privateBytes:processes.reduce((n,p)=>n+p.privateBytes,0),workingSetBytes:processes.reduce((n,p)=>n+p.workingSetBytes,0)};
   if(this.contract.scope==='M'&&sample.elapsed>=this.contract.seconds)return;
   await this.append('memory.jsonl',sample);this.summary.samples.push(sample);return sample;
  }

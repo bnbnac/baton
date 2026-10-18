@@ -65,7 +65,7 @@ export async function runNative(r,mailbox){
    const adapter=(before.adapter+16)%32,targetConnection=r.connections[adapter];
    await action({action:'choose_connection',round,session:s.id,targetConnection},async o=>({targetConnection:o.targetConnection}));
    const assigned=await action({action:'handoff',round,session:s.id,targetConnection},async()=>{const p=await r.status(adapter),s0=p.sessions.find(p=>p.session_id===s.id);return s0?.state==='agent_owned'?{connection_id:p.connection_id,session:s0}:false;});
-   const record={round,index:s.index,before,selected,resized,remote,reclaimed,assigned,oldOwner:await r.status(before.adapter),targetConnection,adapter,windowMode};verifyTransition(record);await r.event('transition',record);await r.adoptBinding(s,{adapter,epoch:assigned.session.control_epoch,stream:assigned.session.stream_id});await r.audit(round);await r.health();
+   const record={round,index:s.index,before,selected,resized,remote,reclaimed,assigned,oldOwner:await r.status(before.adapter),targetConnection,adapter,windowMode};verifyTransition(record);await r.adoptBinding(s,{adapter,epoch:assigned.session.control_epoch,stream:assigned.session.stream_id});await r.event('transition',record);await r.audit(round);await r.health();
   }
  }finally{await r.freeze();}
  await r.verifyAudits();r.summary.normalWorkloadPassed=true;r.summary.completedCases=2;return {workloadPassed:true,cases:2};

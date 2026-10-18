@@ -8,7 +8,9 @@
 
 **Tech Stack:** Node.js ES modules / node:test, Playwright, Windows PowerShell 프로세스 감독기, Docker localhost OpenSSH fixture, Codex computer-use. 제품 Rust/Cargo 빌드는 하지 않는다.
 
-**Spec:** [승인된 설계](../specs/2026-10-18-rust-phase-5-separated-validation-design.md). 사용자 문서 승인: 2026-10-18. 이 구현 계획은 검토 대기이며 아직 구현·실행하지 않았다.
+**Spec:** [승인된 설계](../specs/2026-10-18-rust-phase-5-separated-validation-design.md). 사용자 설계·계획 및 inline 실행 승인: 2026-10-18.
+
+**2026-10-19 진행:** Task 1–6 구현 커밋 `fd97ae7`부터 `4fcb095`까지 완료 후 독립 검토를 수행했다. 검토 수정 후 관련 unit 111/111. Task 7 문서/config 준비 완료, 실제 시험 미실행. 회수 시 이전 공개 버퍼가 폐기되어 최종 cursor를 확인할 수 없는 설계 문제가 남아 있다. 이 문제는 Task 2 경계 요구를 아직 충족하지 못하며 사용자 범위 결정 전 사전 시험을 시작하지 않는다. [수정 및 남은 한계](../../testing/rust-phase-5-separated-validation.md#2026-10-19-독립-검토-후-수정). 아래 체크리스트는 원래 계획이며 완료 이력은 이 진행 기록과 작업 ledger에 보존한다.
 
 ## Global Constraints
 

@@ -30,12 +30,14 @@ export async function runOverload(r){
  assert.equal(r.measurementFrozen,true,'measurement_not_frozen');await r.checkStop();await r.attachBrowser();
  r.summary.playwrightReconnectedUtc=new Date().toISOString();
  const victim=r.sessions[0],burst="for j in $(seq 1 40); do head -c 32768 /dev/zero | tr '\\000' Z; sleep 0.1; done";
+ await r.event('overload_control_start',{victim:victim.id,adapter:victim.adapter,epoch:victim.epoch,stream:victim.stream,cursor:victim.cursor});
  await r.command(victim,burst+"; printf '\\nCONTROL_DONE\\n'");let tail='';
  await r.waitFor(async()=>{const p=await r.tool(victim.adapter,'read_output',{session_id:victim.id,control_epoch:victim.epoch,stream_id:victim.stream,cursor:victim.cursor,limit:32768,wait_ms:100});assert.ok(p.oldest_cursor<=victim.cursor);victim.cursor=p.next_cursor;tail=(tail+(p.text??'')).slice(-65536);return tail.includes('CONTROL_DONE');},'overload_control',20000,{service:false});
  assert.equal((await r.sessionStatus(victim)).state,'agent_owned');
+ await r.event('overload_control_end',{victim:victim.id,cursor:victim.cursor});
  await r.page.evaluate(id=>{const original=window.fetch;window.__separatedDroppedAcks=0;window.fetch=function(url,init){if(String(url).endsWith('/ack_output')&&JSON.parse(init.body).request.binding.session===id){window.__separatedDroppedAcks++;return new Promise(()=>{});}return original.call(this,url,init);};},victim.id);
  await r.waitFor(async()=>await r.page.evaluate(()=>window.__separatedDroppedAcks>0),'ack_block',20000,{service:false});
- assert.equal((await r.sessionStatus(victim)).state,'agent_owned');await r.command(victim,burst);
+ assert.equal((await r.sessionStatus(victim)).state,'agent_owned');await r.event('overload_ack_blocked',{victim:victim.id,droppedAcks:await r.page.evaluate(()=>window.__separatedDroppedAcks)});await r.command(victim,burst);
  const closed=await r.waitFor(async()=>{const p=await r.sessionStatus(victim);return p.state==='closed'?p:false;},'overload_closed',20000,{service:false});
  const droppedAcks=await r.page.evaluate(()=>window.__separatedDroppedAcks);assert.ok(droppedAcks>0);
  for(const s of r.sessions.slice(1))assert.equal((await r.sessionStatus(s)).state,'agent_owned','other_session_closed');

@@ -61,3 +61,14 @@ test('concurrent service waits serialize reads instead of consuming the same cur
  r.adapters.push({tool:async()=>{active++;max=Math.max(max,active);await new Promise(done=>setTimeout(done,5));active--;return {content:[{text:JSON.stringify({oldest_cursor:0,next_cursor:++cursor,text:line(cursor)})}]};}});
  await Promise.all([r.service(),r.service()]);assert.equal(max,1);assert.equal(s.oracle.count,2);
 });
+test('waitFor rejects success after service or check exceeds the deadline',async t=>{
+ const r=await local(t);let time=0;r.now=()=>time;r.service=async()=>{time=46000;};
+ await assert.rejects(r.waitFor(async()=>true,'late',45000),/late_timeout/);
+ time=0;r.service=async()=>{};await assert.rejects(r.waitFor(async()=>{time=46000;return true;},'late',45000),/late_timeout/);
+});
+test('reclaim intent drains backlog and continues public reads until confirmed private',async t=>{
+ const r=await local(t),s=session();r.sessions.push(s);let n=0;
+ r.read=async()=>{n++;if(n<=3)await r.acceptOutput(s,{oldest_cursor:0,next_cursor:n,text:line(n)});};
+ await r.startMeasurement();await r.setTransition(s,'reclaiming');assert.equal(n,4,'drain through an empty read');assert.equal(s.privateStart,undefined);
+ await r.service();assert.equal(n,5,'intent is still public');
+});
