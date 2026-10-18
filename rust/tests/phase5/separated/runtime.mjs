@@ -14,6 +14,11 @@ import {compareIdentity} from './contract.mjs';
 
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 export const sha256=async path=>createHash('sha256').update(await readFile(path)).digest('hex');
+export function verifyStreamTicks(raw){
+ const groups=raw.split('TICK\n');assert.equal(groups.shift(),'');assert.equal(groups.length,90,'generator_ticks');const oracle=new LogOracle(99),cumulative=[],burstTicks=[];
+ groups.forEach((group,i)=>{const before=oracle.count;oracle.push(group);const count=oracle.count-before;assert.equal(count,(i+1)%30===0?5:1,'generator_burst');if(count===5){burstTicks.push(i+1);cumulative.push(oracle.count);}});
+ assert.equal(oracle.buffer,'');assert.deepEqual(cumulative,[34,68,102]);return {ticks:90,burstTicks,cumulative,records:oracle.count};
+}
 export function assertProcessIdentity(expected,actual){assert.equal(actual.pid,expected.pid,'process_pid');assert.equal(String(actual.startedTicks),String(expected.startedTicks),'process_start');}
 export function validateShutdown(process,eofs){
  assert.equal(process.normalExit,true,'normal_exit');assert.equal(process.forcedCleanup,false,'forced_cleanup');assert.equal(process.descendantAudit,'verified','descendant_audit');
@@ -33,7 +38,7 @@ class Runtime {
   Object.assign(this,{root,out,config,contract});this.deps=deps;this.now=deps.now??(()=>performance.now());this.sleep=deps.sleep??pause;this.born=this.now();this.owner=randomUUID();
   this.execute=deps.execute??promisify(execFile);this.docker=deps.docker??(async(...args)=>(await this.execute('docker',args,{windowsHide:true,timeout:20000,maxBuffer:4*1024*1024})).stdout.trim());
   this.sessions=[];this.adapters=[];this.fixtures=[];this.connections=[];this.writes=new Map();this.sequence=0;this.transition=null;this.nextSave=0;this.interrupted=false;this.serviceQueue=Promise.resolve();
-  this.summary={schema:1,scope:contract.scope,profile:contract.profile,contract,owner:this.owner,runnerPid:process.pid,clockOrigin:this.born,status:'preparing',startedUtc:new Date().toISOString(),phase5Acceptance:false,combinedTransitionMemory:'unverified',samples:[],instrumentation:{forcedGcCalls:0,jsProbes:0,rawCdpSessions:0,debugListenerEnabled:true}};
+  this.summary={schema:1,scope:contract.scope,profile:contract.profile,contract,owner:this.owner,runnerPid:process.pid,clockOrigin:this.born,status:'preparing',startedUtc:new Date().toISOString(),phase5Acceptance:false,combinedTransitionMemory:'unverified',publicBoundaryCompleteness:contract.scope==='M'?'not_exercised':'unverified',samples:[],instrumentation:{forcedGcCalls:0,jsProbes:0,rawCdpSessions:0,debugListenerEnabled:true}};
  }
  async init(){for(const f of ['events.jsonl','output.jsonl','memory.jsonl']){const handle=await open(join(this.out,f),'wx');await handle.close();}await this.save();}
  elapsed(){return this.loadStart===undefined?0:(this.now()-this.loadStart)/1000;}
@@ -60,11 +65,20 @@ class Runtime {
   assert.ok(Number.isSafeInteger(p.next_cursor)&&p.next_cursor>=s.cursor,'bad_cursor');assert.ok(Number.isSafeInteger(p.oldest_cursor)&&p.oldest_cursor<=s.cursor,'output_gap');
   const before=s.oracle.count;s.oracle.push(p.text??'');s.cursor=p.next_cursor;if(s.oracle.count>before)s.lastLog=this.now();
  }
- async read(s){const p=data(await this.adapters[s.adapter].tool('read_output',{session_id:s.id,control_epoch:s.epoch,stream_id:s.stream,cursor:s.cursor,limit:32768,wait_ms:0}));await this.acceptOutput(s,p);}
+ async read(s){
+  const p=data(await this.adapters[s.adapter].tool('read_output',{session_id:s.id,control_epoch:s.epoch,stream_id:s.stream,cursor:s.cursor,limit:32768,wait_ms:0}));
+  if(this.transition?.session===s&&this.transition.stage==='reclaiming'&&['stale_control_epoch','stale_stream','control_unavailable'].includes(p.code)){
+   const observed=await this.sessionStatus(s);
+   if(['reclaiming','user_owned'].includes(observed.state)&&observed.control_epoch>s.epoch&&observed.stream_id===null){
+    await this.event('public_boundary_unverified',{session:s.id,epoch:s.epoch,stream:s.stream,cursor:s.cursor,response:p,observed});this.transition.publicRetired=true;return;
+   }
+  }
+  await this.acceptOutput(s,p);
+ }
  service(){const task=this.serviceQueue.then(()=>this.consume());this.serviceQueue=task;return task;}
  async consume(){
   await this.checkStop();
-  for(const s of this.sessions){if(this.transition?.session===s&&this.transition.stage==='reclaimed')continue;await this.read(s);if(s.lastLog!==undefined)assert.ok(this.now()-s.lastLog<15000,'stalled_session_'+s.index);}
+  for(const s of this.sessions){if(this.transition?.session===s&&(this.transition.stage==='reclaimed'||this.transition.publicRetired))continue;await this.read(s);if(s.lastLog!==undefined&&!(this.transition?.session===s&&this.transition.publicRetired))assert.ok(this.now()-s.lastLog<15000,'stalled_session_'+s.index);}
   if(this.now()>=this.nextSave){this.summary.elapsedSeconds=this.elapsed();await this.save();this.nextSave=this.now()+10000;}
  }
  async during(operation){
@@ -125,6 +139,7 @@ class Runtime {
    const binding=actual.NetworkSettings.Ports['22/tcp'][0];assert.equal(binding.HostIp,'127.0.0.1');f.port=Number(binding.HostPort);
    f.fingerprint=(await this.docker('exec',f.id,'ssh-keygen','-lf','/etc/ssh/ssh_host_ed25519_key.pub')).match(/SHA256:\S+/)[0];
    await this.docker('cp',join(this.root,'rust/tests/phase5/separated/stream.sh'),f.id+':/tmp/soak-stream.sh');
+   if(i===0){const raw=await this.docker('exec',f.id,'bash','-c',"sleep(){ printf 'TICK\\n'; }; export -f sleep; bash /tmp/soak-stream.sh 99 0 90");await writeFile(join(this.out,'generator-ticks.txt'),raw+'\n');this.summary.generatorTicks=verifyStreamTicks(raw+'\n');}
   }
   const endpoint=join(this.out,'local/BatonRust/v2');
   for(let i=0;i<32;i++){const a=new Adapter(endpoint,{executable:this.summary.binaries.adapter.path,cwd:this.out});this.adapters.push(a);await a.initialize();}

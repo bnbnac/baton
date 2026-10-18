@@ -131,9 +131,11 @@ function verifyOverload(e,end,o){
  for(const s of e.summary.sessions.slice(1))assert.equal(latest(s,blocked.seq,o.seq)?.state,'agent_owned','other_not_alive');
 }
 export function verifyEvidence(e){
- const result={evidenceValid:false,scopePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',errors:[],metrics:{}};
+ const result={evidenceValid:false,scopePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',publicBoundaryCompleteness:'unverified',errors:[],metrics:{}};
  try{
   const s=e.summary,c=resolveContract(s.scope,s.profile);assert.ok(s.finishedUtc,'unfinished');assert.equal(compareIdentity(s,s).same,true,'identity_missing');
+  assert.equal(s.publicBoundaryCompleteness,s.scope==='M'?'not_exercised':'unverified','boundary_scope');result.publicBoundaryCompleteness=s.publicBoundaryCompleteness;
+  for(const v of e.events.filter(v=>v.type==='public_boundary_unverified')){assert.notEqual(s.scope,'M');assert.ok(['stale_control_epoch','stale_stream','control_unavailable'].includes(v.response.code));assert.ok(['reclaiming','user_owned'].includes(v.observed.state)&&v.observed.control_epoch>v.epoch&&v.observed.stream_id===null);assert.ok(e.events.some(p=>p.type==='mcp'&&p.name==='status'&&p.seq<v.seq&&p.response.sessions.some(x=>x.session_id===v.session&&JSON.stringify(x)===JSON.stringify(v.observed))),'boundary_status_evidence');}
   assert.equal(s.connections.length,32);assert.equal(new Set(s.connections).size,32);assert.equal(s.sessions.length,16);assert.equal(new Set(s.sessions.map(s=>s.id)).size,16);assert.deepEqual(s.sessions.map(s=>s.index).sort((a,b)=>a-b),Array.from({length:16},(_,i)=>i));
   assert.equal(s.fixtures.length,2);for(const f of s.fixtures){assert.equal(f.image,s.imageId,'fixture_image');assert.equal(f.removed,true,'fixture_not_removed');}
   let last=-Infinity;for(let i=0;i<e.events.length;i++){const v=e.events[i];assert.equal(v.seq,i+1,'event_sequence');assert.equal(v.owner,s.owner);assert.equal(v.scope,s.scope);assert.ok(Number.isFinite(v.t)&&v.t>=last,'event_time');last=v.t;}

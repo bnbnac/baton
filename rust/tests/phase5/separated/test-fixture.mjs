@@ -12,7 +12,7 @@ export function transitionEvidence(scope='F'){
  const bindings=e.summary.sessions.map(s=>({...s}));
  const status=(index)=>({app_state:'online',connection_id:e.summary.connections[index],sessions:bindings.filter(s=>s.adapter===index).map(s=>({session_id:s.id,state:'agent_owned',control_epoch:s.epoch,stream_id:s.stream,geometry:{rows:32,columns:120}}))});
  const raw=(t,index,response)=>emit('mcp',t,{index,name:'status',args:{},response});
- e.summary.scope=scope;e.summary.profile=scope==='N'?'full':'preflight';e.summary.elapsedSeconds=duration;
+ e.summary.scope=scope;e.summary.profile=scope==='N'?'full':'preflight';e.summary.elapsedSeconds=duration;e.summary.publicBoundaryCompleteness='unverified';
  emit('browser_disconnected',-1);for(const s of bindings)emit('session_ready',-1,{...s});emit('measurement_start',0);
  e.audits=bindings.map(s=>({index:s.index,session:s.id,actual:[]}));e.nativeFiles={requests:[],starts:[],responses:[],results:[]};
  for(let round=0;round<rounds;round++){
@@ -80,6 +80,6 @@ export function memoryEvidence(profile='preflight'){
  const cleanup={normalExit:true,forcedCleanup:false,remainingProcesses:0,remainingContainers:0,failures:[]};
  const fixtures=[0,1].map(i=>({id:'fixture'+i,name:'fixture'+i,image:imageId,removed:true}));
  const summary={schema:1,scope:'M',profile,owner,status:'finished',finishedUtc:'2026-10-18T00:00:00Z',elapsedSeconds:seconds,sessions,connections,fixtures,samples:memory,sources:{'runner.mjs':hash},binaries:{app:{sha256:hash},adapter:{sha256:hash}},imageId,environment:{platform:'win32',arch:'x64',osRelease:'1',node:'v22',webview:'155',playwright:'1.62'},instrumentation:{forcedGcCalls:0,jsProbes:0,rawCdpSessions:0},cleanup};
- summary.adapterIdentities=adapterIdentities;summary.clockOrigin=0;
+ summary.adapterIdentities=adapterIdentities;summary.clockOrigin=0;summary.publicBoundaryCompleteness='not_exercised';
  return {summary,events,output,memory,process,cleanup:{owner,fixtures,process,remaining:[],containers:[],...cleanup},boundary:{eventSeq:end.seq,elapsedSeconds:seconds,samples:memory.length},audits:sessions.map(s=>({index:s.index,session:s.id,actual:Array.from({length:rounds},(_,r)=>`AUDIT_${s.index}_${r}`)}))};
 }

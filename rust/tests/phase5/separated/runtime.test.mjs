@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createRuntime,cleanupFixture,validateShutdown,assertProcessIdentity} from './runtime.mjs';
+import {createRuntime,cleanupFixture,validateShutdown,assertProcessIdentity,verifyStreamTicks} from './runtime.mjs';
 import {LogOracle} from '../soak-oracle.mjs';
 const line=(n,id=0)=>`SOAK:${id}:${String(n).padStart(8,'0')}:${'x'.repeat(1008)}\n`;
 async function local(t){const out=await mkdtemp(join(tmpdir(),'baton-separated-'));t.after(()=>rm(out,{recursive:true,force:true}));const r=createRuntime({root:out,out,config:{},contract:{scope:'F',profile:'preflight'}});await r.init();return r;}
 const session=()=>({index:0,id:'s0',adapter:0,epoch:1,stream:'one',cursor:0,oracle:new LogOracle(0)});
+test('Linux generator preflight needs 90 ticks with exactly the three specified bursts',()=>{
+ let n=0;const raw=Array.from({length:90},(_,i)=>'TICK\n'+Array.from({length:(i+1)%30===0?5:1},()=>line(++n,99)).join('')).join('');
+ assert.deepEqual(verifyStreamTicks(raw),{ticks:90,burstTicks:[30,60,90],cumulative:[34,68,102],records:102});assert.throws(()=>verifyStreamTicks(raw.replace('TICK\n','')));
+});
 test('failed container creation response recovers only exact owner and name',async()=>{
  const f={name:'owned'},removed=[];
  const docker=async(...args)=>{
@@ -71,4 +75,11 @@ test('reclaim intent drains backlog and continues public reads until confirmed p
  r.read=async()=>{n++;if(n<=3)await r.acceptOutput(s,{oldest_cursor:0,next_cursor:n,text:line(n)});};
  await r.startMeasurement();await r.setTransition(s,'reclaiming');assert.equal(n,4,'drain through an empty read');assert.equal(s.privateStart,undefined);
  await r.service();assert.equal(n,5,'intent is still public');
+});
+test('only a proven reclaim can retire a rejected public read as an unverified boundary',async t=>{
+ const r=await local(t),s=session();r.sessions.push(s);r.transition={session:s,stage:'reclaiming'};
+ r.adapters.push({tool:async name=>({content:[{text:JSON.stringify(name==='status'?{sessions:[{session_id:'s0',state:'user_owned',control_epoch:2,stream_id:null}]}:{code:'stale_control_epoch'})}]})});
+ await r.service();assert.equal(r.transition.publicRetired,true);assert.equal(s.privateStart,undefined);assert.equal(s.cursor,0);
+ const rows=(await readFile(join(r.out,'events.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.ok(rows.some(v=>v.type==='public_boundary_unverified'&&v.cursor===0));
+ r.transition={session:s,stage:'reclaiming'};r.adapters[0].tool=async()=>({content:[{text:JSON.stringify({code:'app_offline'})}]});await assert.rejects(r.read(s),/bad_cursor/);
 });

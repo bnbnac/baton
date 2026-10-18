@@ -27,6 +27,9 @@ test('shutdown receipt must identify the same process as the final receipt',()=>
  const e=memoryEvidence();e.events.at(-1).process={...e.process,pid:777};assert.equal(verifyEvidence(e).evidenceValid,false);
 });
 function resequence(e){e.events.forEach((v,i)=>v.seq=i+1);e.boundary.eventSeq=e.events.find(v=>v.type==='measurement_end').seq;}
+test('F/N success explicitly leaves reclaim-boundary completeness unverified',()=>{
+ for(const scope of ['F','N']){const e=transitionEvidence(scope),v=verifyEvidence(e);assert.equal(v.publicBoundaryCompleteness,'unverified');e.summary.publicBoundaryCompleteness='verified';assert.equal(verifyEvidence(e).evidenceValid,false);}
+});
 for(const scope of ['F','N'])test(scope+' complete transition evidence passes only its own scope',()=>{const v=verifyEvidence(transitionEvidence(scope));assert.deepEqual(v.errors,[]);assert.equal(scope==='F'?v.preflightPassed:v.scopePassed,true);});
 test('transitions require binding events and the final owned stream',()=>{
  for(const mutate of [e=>{e.events=e.events.filter(v=>v.type!=='binding');e.output=e.output.map(row=>({...row,epoch:1,stream:'stream'+row.index,cursor:Number(row.response.text.match(/:(\d{8}):/)[1])-1,response:{...row.response,next_cursor:Number(row.response.text.match(/:(\d{8}):/)[1])}}));},e=>e.summary.sessions[0].epoch=1]){const e=transitionEvidence();mutate(e);resequence(e);assert.equal(verifyEvidence(e).evidenceValid,false);}

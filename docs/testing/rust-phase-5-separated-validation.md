@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태: 독립 검토 뒤 판정기/시간 제한 보강과 관련 검사 111개를 마쳤다. 공개→비공개 경계의 증거 한계 때문에 실행 준비 완료가 아니다. 실제 사전 검사와 네이티브 사례는 아직 실행하지 않았다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태: 독립 검토 수정 및 사용자 승인 범위 변경 후 관련 검사 114개를 마쳤다. 회수 경계 완전성을 미검증으로 명시하는 F/N 부분 시험을 승인받았다. 실제 실행 이력은 아래에 기록한다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -13,6 +13,8 @@
 | N | 복원/최대화, 서로 다른 2세션 | 없음 | 현재 Windows 환경에서 실제 입력 경로 |
 
 F는 분당 실행 속도나 2시간 지속성을 입증하지 않는다. N은 장기 안정성이나 모든 DPI/IME 환경을 입증하지 않는다. 세 결과 모두 `phase5Acceptance:false`, `combinedTransitionMemory:unverified`다.
+
+2026-10-19 승인에 따라 F/N은 `publicBoundaryCompleteness:unverified`도 명시한다. 각 공개 stream 내부의 연속성을 확인하지만 회수로 폐기된 마지막 꼬리의 완전성은 주장하지 않는다. M은 전환을 하지 않아 이 필드가 `not_exercised`다.
 
 ## 고정 입력과 실행
 
@@ -109,5 +111,7 @@ node rust/tests/phase5/separated/verify.mjs artifacts/phase5-separated-20261018/
 남은 경계 문제: `rust/crates/baton-core/src/session.rs`의 `reclaim()`은 stream을 비우고 `begin_transition()`은 공개 버퍼를 즉시 폐기한다. 기존 외부 API에서 이전 공개 stream의 최종 cursor를 조회할 수 없다. 따라서 마지막 read와 실제 회수 사이에 생성된 꼬리의 누락 여부를 현재 시험만으로 확정할 수 없다. 계속 읽다가 회수와 경합하면 오류로 실패하므로, 보강만으로 원래 경계 완전성 요구가 충족됐다고 주장하지 않는다. **현재 판정기의 F/N 통과 이름을 이 미해결 요구의 통과로 사용하지 않는다. 사전 시험은 보류한다.**
 
 사용자 결정 대기: (1) F/N을 각 공개 stream 내부 연속성 및 소유권/geometry 기능으로 한정하고 회수 경계 완전성을 별도 미검증 항목으로 고정하거나, (2) 제품에 최종 cursor를 남기는 관측 기능부터 별도 설계한다. 어느 경우든 원래 결합 전환·자연 메모리와 Phase 5 출시 차단은 해제하지 않는다.
+
+후속 결정: 사용자가 2026-10-19에 (1)을 승인했다. 위 보류는 이 범위 변경으로 해소했다. 예상된 stale read는 실제 reclaiming/user_owned 상태·증가한 epoch·null stream이 함께 확인될 때만 원시 경계 사건으로 보관한다. 앱 offline/통신 오류나 내부 sequence gap은 계속 실패한다. 최종 관련 검사 114/114 (`artifacts/separated-scope-suite.log`). 실제 Linux fixture에서 sleep을 대체한 90 tick/102 record 점검을 setup 중 수행하며, 이는 실제 1초 간격의 증거는 아니다.
 
 검토에서 실행하지 않은 항목: 실제 Docker/Windows 정리, 실제 네이티브 화면/좌표/DPI는 사전 시험/N에서 확인할 예정이다. N의 OS 표본 최대 45초 공백 검사는 짧은 관측 유효성 조건으로 유지하며 장기 메모리 통과를 뜻하지 않는다. 이전 Phase와 제품/fuzz는 이번 검토 밖이다.
