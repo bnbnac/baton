@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태: 사용자 승인 범위 변경 후 첫 M 사전 시험이 준비 단계에서 실패했다. 실행기 누락을 수정한 관련 검사 115개는 통과했으나 실제 재실행은 하지 않았다. 회수 경계 완전성을 미검증으로 명시하는 F/N 부분 시험을 승인받았다. 실제 실행 이력은 아래에 기록한다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태: 수정 후 M 사전 시험은 통과했다. 같은 입력의 F는 전환 17회와 정상 종료를 수행했으나 마지막 새 stream 출력 증거 부재로 독립 검증에 실패했다. 첫 출력 대기 보강 후 unit 116개 통과, 실제 재실행/N 미실행. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -130,3 +130,28 @@ node rust/tests/phase5/separated/verify.mjs artifacts/phase5-separated-20261018/
 후속 수정: 새 runtime에 부모 디렉터리 생성만 추가했다. 보안 DACL이 필요한 `BatonRust/v2` 자식은 계속 앱이 생성한다. 누락 회귀 테스트 RED→GREEN, 관련 suite **115/115** (`artifacts/separated-local-root-suite.log`). 제품·기존 실행기·fuzz·Cargo는 변경하지 않았다. 실패 당시 해시 대조는 수정 전 `post-failure-check.json`으로 보존하며, 현재 소스는 수정 때문에 해당 실패 실행과 다르다.
 
 자동 재실행하지 않았다. F 사전 시험과 N은 시작하지 않았다. 재실행 결정 시 새 증거 경로를 사용하고 F/N 및 정식 비교 설정의 baseline/preflight 경로도 새 성공 증거에 맞춰야 한다. 이번 실패 디렉터리를 덮어쓰지 않는다.
+
+### 2026-10-19 수정 후 M 통과 / F 증거 실패
+
+사용자 재실행 승인 후 커밋 `198caca41e77c184e7e90d25d5a8f816f86d1449`로 새 증거 루트 `artifacts/phase5-separated-20261019`를 사용했다. 먼저 M을 검증하고 통과 뒤 F만 실행했으며, 두 실행의 23 source/2 binary/image/OS/Node/WebView/Playwright 신원은 일치했다. Windows `10.0.26200`, Node `v22.17.0`, WebView `155.0.4283.62`, Playwright `1.62.1`.
+
+| 관측 | M preflight | F preflight |
+|---|---|---|
+| 증거 디렉터리 | `m-preflight` | `f-preflight` |
+| owner | `50279b02-2551-40d8-9004-7e2d73498f70` | `346d84f2-cadb-41c2-9e0b-6fb84b93ac3a` |
+| 전체 시작/종료 UTC | 2026-10-18 23:00:36.314 / 23:04:05.656 | 2026-10-18 23:04:34.009 / 23:05:32.554 |
+| 측정 경과 | 180.0363초 | 34.3978초 |
+| 연결/세션/서버 | 32/16/2 | 32/16/2 |
+| audit 효과 | 3회 ×16 = 48 | 17회 ×16 = 272 |
+| 세션별 출력률 | 1161.43~1168.26 B/s | 1140.80~1202.45 B/s |
+| 정상 종료/EOF | exit 0, 32개 | exit 0, 32개 |
+| 강제 정리/잔류 | false, process/container 0 | false, process/container 0 |
+| 독립 판정 | `preflightPassed:true` | `evidenceValid:false`, `new_stream_output_missing` |
+
+M의 OS 표본은 5.6874/33.7285/63.7884/93.8500/123.6871/153.7037초에 수집됐고 established debugger 연결은 모두 0이었다. 32KiB×40 정상 소비 대조, ACK 차단 후 victim closed와 다른 15세션 agent_owned, 원시 audit/출력/종료/정리를 확인했다. `verified.json` 생성, `scopePassed:false`, `phase5Acceptance:false` 유지. 2시간 자연 메모리 통과 증거가 아니다.
+
+F는 17번째 전환(session 0의 재방문, adapter 16→0, epoch 3→5) 후 새 stream으로 17번 읽었지만 구조화 SOAK record는 아직 없었다. binding 이벤트 t=51466.1763ms, 측정 종료 t=51730.8062ms로 간격은 약 264.63ms다. 발생기는 1초 주기이며 측정이 첫 새 record를 기다리지 않고 끝났다. 단순 cursor 이동/빈 read를 출력 관측 성공으로 취급하지 않은 독립 판정이 이를 거부했다. runner의 `status:finished`/17회 완료는 workload 조정기 종료를 뜻하며 인수 통과로 해석하지 않는다. F에 `verified.json`은 없다.
+
+양쪽 실제 owner label 컨테이너와 후보 executable 프로세스가 0임을 종료 뒤 교차 확인했다(`post-exit-check.json`). F 파일에는 수정 전 source 23개/binary 2개 해시 일치도 보존했다. M의 성공 파일과 F의 실패 파일은 수정하거나 다시 판정하지 않는다.
+
+후속 수정: `adoptBinding()`이 새 stream oracle의 첫 완전한 record를 관측할 때까지 기존 45초 wait/service 경로로 대기한다. 다른 세션 소비/stop 처리는 유지한다. 빈 read 뒤 다음 read에서 첫 record가 오는 회귀 검사 RED→GREEN, 전체 관련 unit **116/116** (`artifacts/separated-first-output-suite.log`). 이 수정은 F/N 공통 전환 경로이며 제품·기존 실행기·판정 기준을 완화하지 않는다. 소스 해시가 바뀌었으므로 이번 M/F와 새 수정본을 동일 소스 묶음으로 합산하지 않는다. 실제 재실행/N 및 정식 F/M은 시작하지 않았다.

@@ -16,6 +16,8 @@
 
 **2026-10-19 실제 결과:** `96853f0`의 M preflight 1회는 준비 중 실패했다(`webview_ready_timeout`, 앱 로그 `ipc_directory_unavailable`, exit 101). 정상 부하 미시작, Linux 90 tick 점검만 통과. 원인은 실행기의 격리 LOCALAPPDATA 부모 mkdir 누락이며 수정 후 관련 unit 115/115. 실패 원시 증거와 수정 전 23 source/2 binary hash 대조를 보존했다. 정상 종료 실패/강제 정리 발생, 잔류 owner container 및 후보 process 0. 자동 재실행 및 F/N 후속 실행 없음. [상세 결과](../../testing/rust-phase-5-separated-validation.md#2026-10-19-m-사전-시험-1회--준비-실패). Task 7은 부분 진행이며 완료가 아니다.
 
+**2026-10-19 승인된 재실행 결과:** `198caca`의 M preflight는 실제 180.0363초/48 audit 효과/과부하 대조/정상 종료/EOF 32/잔류 0으로 독립 검증 통과했다. 이어 같은 신원의 F preflight는 17회/272 효과/정상 종료를 수행했으나 마지막 새 stream record 전에 freeze되어 `new_stream_output_missing`으로 독립 검증 실패했다. 약 264.63ms 뒤 측정 종료한 실행기 대기 누락을 보강, 회귀 RED→GREEN 및 관련 unit 116/116. 실제 재실행과 N 미실행. 수정 후 source hash가 달라 기존 통과 M과 동일 소스 묶음으로 합치지 않는다. [M/F 원시 결과와 후속 수정](../../testing/rust-phase-5-separated-validation.md#2026-10-19-수정-후-m-통과--f-증거-실패).
+
 ## Global Constraints
 
 - 32개 고유 MCP 연결, 16개 SSH 세션, 별도 localhost 서버 두 개에 8개씩 배치한다.

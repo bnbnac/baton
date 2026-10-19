@@ -44,9 +44,15 @@ test('adoption requires reclaimed boundary and never joins two streams',async t=
  await r.acceptOutput(s,{oldest_cursor:0,next_cursor:1,text:line(1).slice(0,20)});
  await assert.rejects(r.adoptBinding(s,{adapter:16,epoch:3,stream:'two'}),/transition/);
  await r.setTransition(s,'reclaimed');
+ r.read=async()=>r.acceptOutput(s,{oldest_cursor:0,next_cursor:1,text:line(12)});
  await r.adoptBinding(s,{adapter:16,epoch:3,stream:'two'});
- await r.acceptOutput(s,{oldest_cursor:0,next_cursor:1,text:line(12)});
  assert.equal(s.oracle.last,12);assert.equal(s.adapter,16);
+});
+test('binding adoption waits through empty reads until the new stream has a complete record',async t=>{
+ const r=await local(t),s=session();r.sessions.push(s);await r.setTransition(s,'reclaimed');let reads=0;
+ r.read=async()=>{reads++;await r.acceptOutput(s,{oldest_cursor:0,next_cursor:reads===1?0:1,text:reads===1?'':line(12)});};
+ await r.adoptBinding(s,{adapter:16,epoch:3,stream:'two'});
+ assert.ok(reads>=2,'new stream must be consumed before adoption finishes');assert.equal(s.oracle.last,12);
 });
 test('write failure cannot advance cursor and stop does not prevent cleanup',async t=>{
  const r=await local(t),s=session();r.sessions.push(s);

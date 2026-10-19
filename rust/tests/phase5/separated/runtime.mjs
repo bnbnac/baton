@@ -98,6 +98,7 @@ class Runtime {
   await this.event('binding',{session:s.id,before:{adapter:s.adapter,epoch:s.epoch,stream:s.stream,cursor:s.cursor},after:b});
   if(s.privateStart!==undefined){s.privateMs=(s.privateMs??0)+this.now()-s.privateStart;s.privateStart=undefined;}
   Object.assign(s,{adapter:b.adapter,epoch:b.epoch,stream:b.stream,cursor:0,lastLog:this.now()});s.oracle.reset();this.transition=null;
+  await this.waitFor(async()=>s.oracle.last!==null,'new_stream_output');
  }
  async health(){const values=[];for(let i=0;i<32;i++){const p=await this.status(i);assert.equal(p.app_state,'online');assert.equal(p.connection_id,this.connections[i]);values.push(p);}await this.event('health',{values});return values;}
  async audit(round){for(const s of this.sessions){const token=`AUDIT_${s.index}_${round}`;await this.command(s,`printf '%s\\n' '${token}' >> /tmp/soak-audit-${s.index}`,true);s.audits.push(token);await this.service();}await this.event('audit',{round});}
