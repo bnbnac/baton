@@ -185,3 +185,17 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 `r2-evidence-crosscheck.json`은 세 실행 간 source 23개/binary 2개/image/환경 일치, 현재 파일 해시 일치, M/F 성공 파일의 summary SHA 일치와 실제 audit 48/272를 확인한다. M summary SHA는 `221e8f1b4e3b0d0aaef360ab6227bc6b5d4b775fbbe0f2a762cfc3ca1f7c0354`, F는 `396e82e3437ee5e7ba10be5a8de0e2b0c136ae1819e072464226ae20566dcd75`, N은 `003355f05a71892fc9073860d73d372fb7fd2dddbd69f319dd7fe410fcbbedbb`다. Windows/Node/WebView/Playwright와 image는 앞서 고정한 값과 같다.
 
 후속 재시도 준비는 소스/45초 기준을 그대로 두고 시스템 메뉴의 키보드 크기 조정을 사용하는 것이다. 사용자 “진행하자”를 근거로 `n-cases-retry1` 실행을 요청했으나 자동 승인 검토가 실패 후 재시도에 대한 명시 승인 불충분으로 거부했다. **실행되지 않았으며 해당 출력 디렉터리/launch 파일도 없다.** 우회 실행하지 않았다. 구체적 N 재시도 승인 확인이 필요하다. M/F 사전 검사는 반복할 필요가 없고, 정식 F 120회/M 7200초는 아직 별도 결정 대상이다. 회수 경계 완전성·결합 전환 메모리 미검증과 Phase 5 출시 차단은 유지한다. 이미지 태그는 후속 비교를 위해 보존한다.
+
+### 2026-10-19 N 명시 승인 재시도 — 완료 기록이 기한 이후 도착
+
+위 거부 이후 사용자가 N만 1회 재시도하는 요청에 명시적으로 `승인`했다. `n-cases-retry1`을 한 번 실행했다. 이전의 경로 부재/미실행 기록은 거부 시점의 상태이며, 이번 결과가 최신 상태다. 실행 커밋 `8b1c5ca`는 직전 `6089e6b`에 결과 문서만 추가한 커밋이다. 시험 source 23개/binary 2개/image/환경은 R2 M/F와 동일하고 실행 후 현재 해시도 일치했다(`failure-analysis.json`). 통과한 M/F를 반복하거나 제품·시험 소스를 수정하지 않았다.
+
+- owner: `11d7adbe-bd9e-4160-8b9b-8574a9e1cd3b`; launcher PID 39200. 전체 UTC `09:55:29.920`→`09:57:54.454`; 측정 구간 `09:55:48.293`→`09:57:49.926`, 121.6331초. 32연결/16세션/2서버 준비, OS 표본 4개. 사례 완료는 **0/2**.
+- 복원 창 관측과 soak-00 선택의 receipt 두 개를 완료했다. 세션 `31964461b8fabfc010a2fc12d7c5ecee`, 선택 시 MCP geometry 102×17.
+- resize 요청 `9153dfe0-b314-4fc9-a378-010e6a6d352e`: 입력 시작 t=95017.3168ms, deadline t=140017.3168ms. 실제 UI에서 Alt+Space → 크기 조정(S) → Right → Left → Return을 각각 새 관측 사이에 수행했다. 화면 너비는 **1183→1172**, 높이는 851 유지였으며 Return으로 조정을 확정했다. 실제 창 resize 자체는 관측했지만 서버 stty와의 일치까지 검증한 것은 아니다.
+- 완료 response 파일의 UTC mtime은 `09:57:53.910`으로 측정 중단 `09:57:49.926`보다 약 **3.984초 늦다**. 파일 시각은 보조 상관관계 증거이며 단조 deadline을 대체하지 않는다. 원시 events에서 선택 완료 이후 freeze 이전 MCP status 호출은 0개다. `runNative()`는 완료 receipt를 받은 뒤에만 resize geometry 확인을 호출하므로 이번에는 그 검증 단계에 진입하지 못했다. 실행기 오류는 `input_expired`다.
+- 따라서 이번 실패는 computer-use 조작·매 단계 화면 확인·완료 기록을 포함한 **전체 입력 절차가 45초를 넘긴 것**이다. Baton의 resize 응답 지연이나 서버 geometry 불일치로 분류하지 않는다. 늦게 저장된 `performed` response를 성공으로 간주하지 않으며 해당 resize result도 없다.
+- 이번에는 정상 종료 exit 0, 어댑터 EOF **32/32**, 자손 종료 감사 `verified`, 강제 정리 없음, 잔류 process/container **0/0**을 원시 shutdown 사건과 `post-exit-check.json`으로 확인했다. 이전 시도의 정상 종료 실패도 보존하며, 메뉴 종료만이 차이를 만들었다는 인과관계까지 단정하지 않는다.
+- 독립 verifier는 첫 사례 중단으로 `audit-observations.json`이 없어 `evidenceValid:false`를 기록했다. `verified.json` 없음. summary SHA `666d1d5df811dd1c1872fc4493b9c2b0aaeb3c41cd78aeb6b0b07d76b20e58b0`.
+
+승인된 재시도 1회를 소진했고 추가 실행하지 않았다. 다음 검토 대상은 N의 시간 측정 구간이다. 현재 45초는 제품 응답뿐 아니라 모델 판단과 도구 왕복/receipt 저장도 포함한다. 조작 수행 예산과 제품 상태 확인 기한을 분리하는 방안은 **제안일 뿐 승인·구현되지 않았으며**, 현재 기준과 실패 판정은 유지한다. N 재시도나 정식 F/M을 자동 시작하지 않는다. Phase 5 출시 차단과 회수 경계/결합 전환 메모리 미검증도 유지한다.
