@@ -155,3 +155,33 @@ F는 17번째 전환(session 0의 재방문, adapter 16→0, epoch 3→5) 후 �
 양쪽 실제 owner label 컨테이너와 후보 executable 프로세스가 0임을 종료 뒤 교차 확인했다(`post-exit-check.json`). F 파일에는 수정 전 source 23개/binary 2개 해시 일치도 보존했다. M의 성공 파일과 F의 실패 파일은 수정하거나 다시 판정하지 않는다.
 
 후속 수정: `adoptBinding()`이 새 stream oracle의 첫 완전한 record를 관측할 때까지 기존 45초 wait/service 경로로 대기한다. 다른 세션 소비/stop 처리는 유지한다. 빈 read 뒤 다음 read에서 첫 record가 오는 회귀 검사 RED→GREEN, 전체 관련 unit **116/116** (`artifacts/separated-first-output-suite.log`). 이 수정은 F/N 공통 전환 경로이며 제품·기존 실행기·판정 기준을 완화하지 않는다. 소스 해시가 바뀌었으므로 이번 M/F와 새 수정본을 동일 소스 묶음으로 합산하지 않는다. 실제 재실행/N 및 정식 F/M은 시작하지 않았다.
+
+### 2026-10-19 R2 — M/F 사전 검사 통과, N 입력 기한 초과
+
+사용자 재실행 승인 후 고정 커밋 `6089e6bd72254bc4b7cf2b9077c001bae05f5b37`과 증거 루트 `artifacts/phase5-separated-20261019-r2`를 사용했다. M 독립 검증 → F 독립 검증 → N 순서로 실행했다. 제품/진단 소스를 변경하거나 이미 통과한 판정을 다시 실행하지 않았다.
+
+| 관측 | M preflight | F preflight | N full 시도 |
+|---|---|---|---|
+| 증거 디렉터리 | `m-preflight` | `f-preflight` | `n-cases` |
+| owner | `3896488b-1937-482f-90db-ce59c71f8f1d` | `00e46691-6f75-4374-8511-5792ada7e732` | `80ef5ae7-320c-4402-b1c8-b903b833ab9d` |
+| 시작 UTC | 07:03:41.239 | 07:07:43.593 | 07:09:27.166 |
+| 종료 UTC | 07:07:14.682 | 07:08:48.560 | 07:12:35.354 |
+| 측정 경과 | 180.0968초 | 40.2712초 | 151.1045초 후 중단 |
+| 연결/세션/서버 | 32/16/2 | 32/16/2 | 32/16/2 준비 |
+| 완료 audit 효과 | 48 | 272 | 없음, 첫 사례 미완료 |
+| 독립 재구성 출력률 | 1161.04~1167.87 B/s | 1134.46~1153.91 B/s | 판정하지 않음 |
+| 정상 종료 / 강제 정리 | true / false | true / false | false / true |
+| 최종 소유 process/container | 0/0 | 0/0 | 0/0 |
+| 독립 결과 | `preflightPassed:true` | `preflightPassed:true` | `evidenceValid:false` |
+
+M의 자연 OS 표본은 6개이며 debugger established 연결은 모두 0이다. 정상 소비 1,310,720 bytes 대조와 ACK 차단 victim closed/다른 15세션 유지, 정상 종료 및 어댑터 EOF 32를 독립 검증했다. F는 17회 전환과 각 새 공개 stream의 첫 완전한 record까지 검증했다. M/F 모두 `scopePassed:false`, `phase5Acceptance:false`; 180초 M은 2시간 메모리 통과가 아니며 17회 F는 120회 정식 결과가 아니다.
+
+N은 첫 사례의 복원 창 관측과 soak-00 선택까지 두 receipt를 완료했다. 선택된 전체 session ID는 `0743b9e1b59462fd373a9c0e13773da5`, MCP geometry는 102×17이었다. 세 번째 resize 요청 `4255e7a1-67a6-4c2e-8b08-22e940df98c5`의 입력 시작은 t=123201.0845ms, deadline은 t=168201.0845ms였다. 두 native drag 뒤 창은 관측상 1183×851 그대로였고, 두 번째 시도에서는 본문 텍스트가 선택됐다. 이후 Alt+Space로 시스템 메뉴를 열었지만 크기 변경 완료 receipt를 발행하지 못한 상태에서 `input_expired`로 중단됐다. **완료 사례는 0/2이며 두 receipt를 두 사례 통과로 세지 않는다.**
+
+이 45초는 computer-use 도구 왕복·관측·판단을 포함한다. 원시 request/start/result와 실제 관측은 입력 경로가 완료되지 않았음을 보여 주며, 제품의 resize 처리 지연이나 geometry 불일치 자체를 입증하지 않는다. 실패 시 시스템 메뉴가 열린 상태였고 shutdown의 15초 `normal_exit` 대기도 만료됐다. 메뉴와 종료 실패의 인과관계는 아직 검증하지 않았으므로 추측으로 남긴다. 정상 종료/어댑터 EOF 32/자손 정상 종료 감사를 통과로 주장하지 않는다. 강제 정리 뒤 잔류 자원 없음만 별도로 확인했다.
+
+N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:false`를 저장했고 `verified.json`을 만들지 않았다. runner의 첫 원인은 `input_expired`; audit 부재는 첫 사례 완료 전에 중단된 결과다. `post-exit-check.json`에서 owner 컨테이너와 후보 앱/어댑터 및 이번 WebView 경로의 프로세스가 없음을 재확인했다.
+
+`r2-evidence-crosscheck.json`은 세 실행 간 source 23개/binary 2개/image/환경 일치, 현재 파일 해시 일치, M/F 성공 파일의 summary SHA 일치와 실제 audit 48/272를 확인한다. M summary SHA는 `221e8f1b4e3b0d0aaef360ab6227bc6b5d4b775fbbe0f2a762cfc3ca1f7c0354`, F는 `396e82e3437ee5e7ba10be5a8de0e2b0c136ae1819e072464226ae20566dcd75`, N은 `003355f05a71892fc9073860d73d372fb7fd2dddbd69f319dd7fe410fcbbedbb`다. Windows/Node/WebView/Playwright와 image는 앞서 고정한 값과 같다.
+
+후속 재시도 준비는 소스/45초 기준을 그대로 두고 시스템 메뉴의 키보드 크기 조정을 사용하는 것이다. 사용자 “진행하자”를 근거로 `n-cases-retry1` 실행을 요청했으나 자동 승인 검토가 실패 후 재시도에 대한 명시 승인 불충분으로 거부했다. **실행되지 않았으며 해당 출력 디렉터리/launch 파일도 없다.** 우회 실행하지 않았다. 구체적 N 재시도 승인 확인이 필요하다. M/F 사전 검사는 반복할 필요가 없고, 정식 F 120회/M 7200초는 아직 별도 결정 대상이다. 회수 경계 완전성·결합 전환 메모리 미검증과 Phase 5 출시 차단은 유지한다. 이미지 태그는 후속 비교를 위해 보존한다.
