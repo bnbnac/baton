@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태: 수정 후 M 사전 시험은 통과했다. 같은 입력의 F는 전환 17회와 정상 종료를 수행했으나 마지막 새 stream 출력 증거 부재로 독립 검증에 실패했다. 첫 출력 대기 보강 후 unit 116개 통과, 실제 재실행/N 미실행. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태: R2의 M 180초/F 17회 사전 검사는 통과했다. N은 두 차례 조작 완료 접수 기한 초과로 사례를 완료하지 못했다. 승인된 N v2 시간 분리와 판정 보완을 반영했으며 새 N/정식 F 120회/M 2시간은 미실행이다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -38,13 +38,15 @@ PowerShell에서 작업 디렉터리를 `C:\Users\sj\Documents\work\code\baton\.
   "pwsh": "C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe",
   "playwrightPath": "C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs",
   "preflightEvidence": {
-    "M": "artifacts/phase5-separated-20261018/m-preflight",
-    "F": "artifacts/phase5-separated-20261018/f-preflight"
+    "M": "artifacts/phase5-separated-20261019-r2/m-preflight",
+    "F": "artifacts/phase5-separated-20261019-r2/f-preflight"
   }
 }
 ```
 
-F/N 및 정식 비교 실행의 설정에는 `baselineEvidence`로 완료·검증된 최초 M 사전 검사 디렉터리를 지정한다. 해당 실행과 source manifest, 바이너리, image, OS/Node/WebView/Playwright가 달라지면 측정 전 거부한다. config 자체의 증거 경로 차이를 제품 변경으로 취급하지 않는다. fixture는 localhost에만 노출한다. 사용자 서버·자격 증명은 사용하지 않는다.
+F 및 정식 M 비교 실행의 설정에는 `baselineEvidence`로 완료·검증된 M 사전 검사 디렉터리를 지정한다. 해당 실행과 source manifest, 바이너리, image, OS/Node/WebView/Playwright가 달라지면 측정 전 거부한다. config 자체의 증거 경로 차이를 제품 변경으로 취급하지 않는다. fixture는 localhost에만 노출한다. 사용자 서버·자격 증명은 사용하지 않는다.
+
+N v2 설정은 `baselineEvidence`를 생략하고 위 `preflightEvidence`의 M/F를 모두 지정한다. 기존 원시 증거와 `verified.json`의 summary 해시를 읽기 전용으로 확인하고, `native.mjs`/`verify.mjs` 두 파일만 변경 전후 해시를 공개하여 허용한다. 그 외 공통 소스·바이너리·image·환경은 일치해야 한다. 동일 하네스 소스라고 주장하지 않는다. 준비된 설정은 `artifacts/phase5-separated-20261020-native-v2/config-n.json`이며 실제 실행 이력이 아니다. 정식 M/F는 이 예외를 적용하지 않으므로 실행할 소스와 사전 증거의 동일성을 별도로 결정해야 한다.
 
 ```powershell
 node rust/tests/phase5/separated/launch.mjs artifacts/phase5-separated-20261018/m-preflight artifacts/phase5-separated-20261018/config-m.json M preflight
@@ -69,9 +71,9 @@ computer-use skill의 관측 → 단일 조작 → 새 관측 절차를 따른�
 3. 조작 준비가 끝나면 `... native-ui.mjs start <evidence-dir> <request-id>`를 호출한다. `inputAllowed:true`와 해당 요청의 active 정보가 확인돼야 입력한다. 대기 중이면 peek로 확인하며 start나 UI 입력을 중복 실행하지 않는다.
 4. 새 관측으로 지정된 입력을 한 번 실행한다. 최대화 상태에서 이미 빗나간 접근성 요소 클릭 방식 대신 본문 캡처 좌표를 사용한다. 선택 목록은 전체 목표 연결 ID를 대조한다. 단축 표식만으로 다른 연결을 선택하지 않는다.
 5. 즉시 새 화면을 관측하고 `done`에 JSON observation을 전달한다. `screenshotId`는 모든 응답에 필수다. select에는 `selectedSession`, window_mode/resize에는 `windowMode`, choose_connection에는 `targetConnection`도 필요하다. 예: `{"screenshotId":"실제 캡처 ID","selectedSession":"전체 세션 ID"}`. 실패는 `failed`로 보고한다.
-6. receipt 저장 실패 시 UI를 다시 누르지 않는다. pending/active와 실제 화면·MCP 상태를 먼저 확인한다. 완료 판정은 runner의 MCP·서버 stty·epoch/stream/이전 owner 검증이 수행한다.
+6. receipt 저장 실패 시 UI를 다시 누르지 않는다. pending/active와 실제 화면·MCP 상태를 먼저 확인한다. `acceptances/<request-id>.json`과 `native_received`는 runner의 실제 접수를 기록하며 `responseReceivedAt`과 `verifyDeadline`을 담는다. `results`가 생성되어야 해당 상태 검증이 완료된 것이다. 완료 판정은 runner의 MCP·서버 stty·epoch/stream/이전 owner 검증이 수행한다.
 
-N의 전체 900초에는 준비가 포함된다. 입력 준비 전의 관측 대기와 실제 입력 확인은 별도다. start 승인부터 상태 확인까지 최대 45초이며 도구 왕복도 포함하므로 순수 제품 지연으로 보고하지 않는다. 세션 0은 복원 창 resize, 세션 1은 복원 상태에서 선택 후 최대화 resize를 사용한다. 전달할 연결 선택과 전달 버튼은 별도 요청이므로 하나의 입력 시간에 목록 탐색 전체를 몰아넣지 않는다.
+N v2의 전체 900초에는 준비가 포함된다. start 승인부터 조작·화면 관측·완료 기록 접수까지 120초, runner의 완료 접수부터 상태 검증까지 별도 45초다. 두 기한 모두 전체 900초에 잘린다. polling·중복 응답으로 시계를 다시 시작하지 않는다. 실제 제품 반응 시간은 `not_measured`다. 세션 0은 복원 창 resize, 세션 1은 복원 상태에서 선택 후 최대화 resize를 사용한다. 전달할 연결 선택과 전달 버튼은 별도 요청이므로 하나의 입력 시간에 목록 탐색 전체를 몰아넣지 않는다. 기존 N v1은 원래 45초 기준으로 유지한다.
 
 ## 관측·중단·검증
 
@@ -199,3 +201,17 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 - 독립 verifier는 첫 사례 중단으로 `audit-observations.json`이 없어 `evidenceValid:false`를 기록했다. `verified.json` 없음. summary SHA `666d1d5df811dd1c1872fc4493b9c2b0aaeb3c41cd78aeb6b0b07d76b20e58b0`.
 
 승인된 재시도 1회를 소진했고 추가 실행하지 않았다. 다음 검토 대상은 N의 시간 측정 구간이다. 현재 45초는 제품 응답뿐 아니라 모델 판단과 도구 왕복/receipt 저장도 포함한다. 조작 수행 예산과 제품 상태 확인 기한을 분리하는 방안은 **제안일 뿐 승인·구현되지 않았으며**, 현재 기준과 실패 판정은 유지한다. N 재시도나 정식 F/M을 자동 시작하지 않는다. Phase 5 출시 차단과 회수 경계/결합 전환 메모리 미검증도 유지한다.
+
+### 2026-10-20 N v2 시간 분리 — 구현 및 검토 완료, 실제 재시험 전
+
+위 제안을 사용자가 승인해 조작·화면 관측·완료 접수 120초와 접수 후 상태 검증 45초로 분리했다. 준비 포함 전체 900초 상한은 유지한다. 시작/접수 시각은 runner의 단조 시계를 사용하고 재접수·polling으로 연장하지 않는다. 실제 제품 반응 시간은 `not_measured`로 기록한다. 기존 N v1 실패 두 건을 새 기준으로 소급 통과시키지 않는다.
+
+독립 코드 검토에서 선택·resize의 합성 관측 시각만 검사하고 원시 MCP 상태의 접수 후 순서를 강제하지 않는 P2 결함을 확인했다. 잘못된 원시 증거가 실제 통과하는 세 회귀 사례를 먼저 재현하고, 접수 사건 이후~검증 종료 시각 안의 동일 세션/adapter/epoch/stream/geometry만 인정하도록 수정했다. 선택의 750ms 안정 구간도 그 안에 있어야 한다.
+
+- 관련 전체 unit **126/126 통과**, native/verify 문법 검사 및 `git diff --check` 통과. 로그: `artifacts/separated-native-timing-final-suite.log`.
+- 검토 결함의 RED: `artifacts/separated-native-raw-timing-red2.log`(의도한 3건 실패). GREEN: `artifacts/separated-native-raw-timing-green.log`(판정기 42/42).
+- 기존 R2 M/F 원시 증거와 저장된 summary SHA를 읽기 전용 재검증했다. `source-comparison-final.json`에 현재 source 23개/바이너리 2개 대조와 `sameHarnessSources:false`를 기록했다. 변경은 실행 소스 중 `native.mjs`와 `verify.mjs`뿐이며 나머지는 일치한다.
+- 위 정적 비교의 환경값은 과거 기록, image ID는 설정값이다. 현재 실제 환경/이미지가 같다는 새 실행 증거는 아니며, N setup에서 재확인해야 한다.
+- 새 설정과 비교 기록: `artifacts/phase5-separated-20261020-native-v2/`. 과거 `verified.json`은 덮어쓰지 않았다. 제품·공통 실행 소스·fuzz·Cargo는 이번 변경에 포함하지 않았다.
+
+새 N 실행은 아직 시작하지 않았다. 정식 F/M도 미실행이며, 이 N 전용 비교 예외로 정식 시험의 동일 소스 요구를 면제하지 않는다. 기존 2시간 실패, 회수 경계/결합 전환 메모리 미검증과 Phase 5 출시 차단을 유지한다.

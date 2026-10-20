@@ -1,11 +1,84 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,mkdir,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,mkdir,rm,readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {verifyEvidence,loadEvidence} from './verify.mjs';
+import * as verification from './verify.mjs';
+const {verifyEvidence,loadEvidence}=verification;
 import {memoryEvidence,transitionEvidence} from './test-fixture.mjs';
 import {runExperiment,reserveLaunch} from './run.mjs';
+const sourcePath=name=>'rust/tests/phase5/separated/'+name;
+function nativeContextPair(){
+ const peer=memoryEvidence().summary;peer.sources=Object.fromEntries(['native.mjs','verify.mjs','runtime.mjs','run.mjs','transitions.mjs','stream.sh'].map(p=>[sourcePath(p),'a'.repeat(64)]));
+ const current=structuredClone(peer);current.scope='N';current.nativeTimingVersion=2;current.sources[sourcePath('native.mjs')]='b'.repeat(64);current.sources[sourcePath('verify.mjs')]='c'.repeat(64);return {peer,current};
+}
+test('N comparison discloses changed native and verifier versions without claiming same source',()=>{
+ const {peer,current}=nativeContextPair();const c=verification.compareNativeContext(current,peer);
+ assert.equal(c.sameCommonInputs,true);assert.equal(c.sameHarnessSources,false);assert.deepEqual(c.changedSources.map(x=>x.path).sort(),[sourcePath('native.mjs'),sourcePath('verify.mjs')]);
+});
+test('N comparison never exempts shared execution, candidates, environment or missing source files',()=>{
+ for(const change of [s=>s.sources[sourcePath('runtime.mjs')]='d'.repeat(64),s=>s.sources[sourcePath('stream.sh')]='d'.repeat(64),s=>delete s.sources[sourcePath('native.mjs')],s=>s.binaries.app.sha256='d'.repeat(64),s=>s.imageId='sha256:'+'d'.repeat(64),s=>s.environment.webview='other',s=>s.nativeTimingVersion=3]){
+  const {peer,current}=nativeContextPair();change(current);assert.equal(verification.compareNativeContext(current,peer).sameCommonInputs,false);
+ }
+});
+test('N baseline checks re-read saved raw evidence without rewriting historical verdicts',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'baton-native-baselines-'));t.after(()=>rm(dir,{recursive:true,force:true}));const {peer,current}=nativeContextPair();
+ for(const scope of ['M','F']){
+  const e=scope==='M'?memoryEvidence():transitionEvidence('F');e.summary.sources=peer.sources;const out=join(dir,scope);await mkdir(out);
+  for(const [file,value] of [['summary',e.summary],['audit-observations',e.audits],['normal-boundary',e.boundary],['process',e.process],['final-cleanup',e.cleanup]])await writeFile(join(out,file+'.json'),JSON.stringify(value));
+  for(const key of ['events','output','memory'])await writeFile(join(out,key+'.jsonl'),e[key].map(x=>JSON.stringify(x)).join('\n')+'\n');
+  const summarySha256=createHash('sha256').update(await readFile(join(out,'summary.json'))).digest('hex');await writeFile(join(out,'verified.json'),JSON.stringify({preflightPassed:true,summarySha256}));
+ }
+ const saved=await readFile(join(dir,'M','verified.json'),'utf8');const reports=await verification.checkNativeBaselines(dir,{M:'M',F:'F'},current);assert.equal(reports.length,2);assert.ok(reports.every(x=>x.comparison.sameCommonInputs&&!x.comparison.sameHarnessSources));assert.equal(await readFile(join(dir,'M','verified.json'),'utf8'),saved);
+ await writeFile(join(dir,'M','verified.json'),JSON.stringify({preflightPassed:true,summarySha256:'f'.repeat(64)}));await assert.rejects(verification.checkNativeBaselines(dir,{M:'M',F:'F'},current),/summary_changed/);
+ await writeFile(join(dir,'M','verified.json'),saved);await writeFile(join(dir,'M','output.jsonl'),'');await assert.rejects(verification.checkNativeBaselines(dir,{M:'M',F:'F'},current),/baseline_invalid/);
+});
+function nativeV2Evidence(){
+ const e=transitionEvidence('N'),{peer,current}=nativeContextPair();Object.assign(e.summary,{sources:current.sources,nativeTimingVersion:2,nativeResponseLatency:'not_measured'});
+ // Hand-derived separate input/acceptance times precede the raw state checks.
+ const times=[[0,0],[1,2],[902,903],[3000,3001],[4002,4003],[4501,4502]];
+ e.nativeFiles.acceptances=[];
+ for(const v of e.events.filter(x=>x.type==='native')){
+  const q=v.request,base=q.round*10000,i=['window_mode','select','resize','reclaim','choose_connection','handoff'].indexOf(q.action);
+  q.timingVersion=2;q.issuedAt=q.inputStartedAt=base+times[i][0];q.inputDeadline=q.inputStartedAt+120000;q.responseReceivedAt=base+times[i][1];q.verifyDeadline=q.responseReceivedAt+45000;
+  const {inputStartedAt,inputDeadline,responseReceivedAt,verifyDeadline,...issued}=q;e.nativeFiles.requests[e.nativeFiles.requests.findIndex(x=>x.id===q.id)]=issued;
+  const accepted={id:q.id,owner:q.owner,responseReceivedAt,verifyDeadline};e.nativeFiles.acceptances.push(accepted);e.events.push({type:'native_received',t:responseReceivedAt,owner:q.owner,scope:'N',...accepted});
+ }
+ e.events.sort((a,b)=>a.t-b.t||Number(b.type==='native_received')-Number(a.type==='native_received'));resequence(e);
+ e.summary.nativeBaselines=['M','F'].map(scope=>{const p=structuredClone(peer);p.scope=scope;return {scope,evidence:'artifacts/'+scope,summarySha256:'a'.repeat(64),identity:p,comparison:{sameCommonInputs:true,sameHarnessSources:false,changedSources:[{path:sourcePath('native.mjs'),kind:'native_driver',before:'a'.repeat(64),after:'b'.repeat(64)},{path:sourcePath('verify.mjs'),kind:'verifier',before:'a'.repeat(64),after:'c'.repeat(64)}],differences:[]}};});
+ return e;
+}
+test('v2 native evidence verifies acceptance clock and retains the unmeasured response-latency label',()=>{
+ const v=verifyEvidence(nativeV2Evidence());assert.deepEqual(v.errors,[]);assert.equal(v.scopePassed,true);assert.equal(v.nativeTimingVersion,2);assert.equal(v.nativeResponseLatency,'not_measured');
+});
+for(const action of ['select','resize'])test('v2 rejects '+action+' raw state collected before acceptance even with valid receipt clocks',()=>{
+ const e=nativeV2Evidence(),v=e.events.find(x=>x.type==='native'&&x.request.action===action),q=v.request;
+ const at=action==='select'?101:1000.5,key=action==='select'?'selectedAt':'observedAt';
+ q.responseReceivedAt=at;q.verifyDeadline=at+45000;v.observation[key]=at;
+ const r=e.events.find(x=>x.type==='transition');r[action==='select'?'selected':'resized'][key]=at;
+ Object.assign(e.nativeFiles.acceptances.find(x=>x.id===q.id),{responseReceivedAt:at,verifyDeadline:q.verifyDeadline});
+ Object.assign(e.events.find(x=>x.type==='native_received'&&x.id===q.id),{t:at,responseReceivedAt:at,verifyDeadline:q.verifyDeadline});
+ e.events.sort((a,b)=>a.t-b.t);resequence(e);
+ const result=verifyEvidence(e);assert.equal(result.scopePassed,false);assert.match(result.errors.join(' '),/native_geometry_status_after_acceptance/);
+});
+test('v2 rejects geometry raw state after verifiedAt even when before the native result event',()=>{
+ const e=nativeV2Evidence(),v=e.events.find(x=>x.type==='native'&&x.request.action==='resize');
+ v.verifiedAt=999;e.nativeFiles.results.find(x=>x.request.id===v.request.id).verifiedAt=999;
+ const result=verifyEvidence(e);assert.equal(result.scopePassed,false);assert.match(result.errors.join(' '),/native_geometry_status_after_acceptance/);
+});
+test('v2 rejects late acceptance, late verification, reordered clocks and missing acceptance evidence',()=>{
+ for(const change of [
+  (e,v)=>v.request.responseReceivedAt=v.request.inputDeadline+1,
+  (e,v)=>v.verifiedAt=v.request.verifyDeadline+1,
+  (e,v)=>v.request.responseReceivedAt=v.request.inputStartedAt-1,
+  e=>e.nativeFiles.acceptances.pop(),
+  e=>{e.events=e.events.filter(x=>x.type!=='native_received');resequence(e);},
+  e=>e.summary.nativeResponseLatency='measured',
+  e=>e.summary.nativeBaselines[0].identity.sources[sourcePath('runtime.mjs')]='d'.repeat(64),
+  e=>e.summary.nativeTimingVersion=99
+ ]){const e=nativeV2Evidence();change(e,e.events.find(x=>x.type==='native'&&x.request.action==='resize'));assert.equal(verifyEvidence(e).scopePassed,false);}
+});
 test('complete short evidence stays preflight only, irrespective of summary success wording',()=>{
  const e=memoryEvidence(),v=verifyEvidence(e);assert.deepEqual(v.errors,[]);assert.equal(v.preflightPassed,true);assert.equal(v.scopePassed,false);assert.equal(v.phase5Acceptance,false);assert.equal(v.combinedTransitionMemory,'unverified');
  e.summary.status='passed';assert.equal(verifyEvidence(e).preflightPassed,true);

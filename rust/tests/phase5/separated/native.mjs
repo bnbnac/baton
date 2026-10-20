@@ -3,21 +3,22 @@ import {mkdir,readFile,writeFile,link,unlink,rename} from 'node:fs/promises';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {selectedGeometry,remoteGeometry,verifyTransition} from './transitions.mjs';
+import {checkNativeBaselines} from './verify.mjs';
 const read=async path=>{try{return JSON.parse(await readFile(path,'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}};
 async function exclusive(path,value){const tmp=path+'.'+randomUUID()+'.tmp';await writeFile(tmp,JSON.stringify(value,null,2),{flag:'wx'});try{await link(tmp,path);}finally{await unlink(tmp);}}
 export class NativeCasesMailbox {
  constructor(dir,owner,clock=()=>performance.now()){Object.assign(this,{dir,owner,clock});this.active=null;this.response=null;}
- async init(){for(const name of ['requests','starts','responses','results'])await mkdir(join(this.dir,name),{recursive:true});assert.equal(await this.read(),null,'pending_exists');}
+ async init(){for(const name of ['requests','starts','responses','acceptances','results'])await mkdir(join(this.dir,name),{recursive:true});assert.equal(await this.read(),null,'pending_exists');}
  read(){return read(join(this.dir,'pending.json'));}
  async issue(action,runDeadline){
   assert.equal(this.active,null,'action_pending');assert.ok(this.clock()<runDeadline,'run_expired');
-  this.active={...action,id:randomUUID(),owner:this.owner,issuedAt:this.clock(),expiresAt:runDeadline};this.response=null;
+  this.active={...action,timingVersion:2,id:randomUUID(),owner:this.owner,issuedAt:this.clock(),expiresAt:runDeadline};this.response=null;
   await exclusive(join(this.dir,'requests',this.active.id+'.json'),this.active);await exclusive(join(this.dir,'pending.json'),this.active);return this.active;
  }
- check(){assert.ok(this.active,'no_action');assert.ok(this.clock()<=this.active.expiresAt,'run_expired');if(this.active.verifyDeadline!==undefined)assert.ok(this.clock()<=this.active.verifyDeadline,'input_expired');}
+ check(){assert.ok(this.active,'no_action');const now=this.clock();assert.ok(now<=this.active.expiresAt,'run_expired');if(this.active.responseReceivedAt!==undefined)assert.ok(now<=this.active.verifyDeadline,'verification_expired');else if(this.active.inputDeadline!==undefined)assert.ok(now<=this.active.inputDeadline,'input_expired');}
  async beginInput(id){
   this.check();assert.equal(id,this.active.id,'request_id');assert.equal(this.active.inputStartedAt,undefined,'duplicate_start');
-  this.active.inputStartedAt=this.clock();this.active.verifyDeadline=Math.min(this.active.inputStartedAt+45000,this.active.expiresAt);
+  this.active.inputStartedAt=this.clock();this.active.inputDeadline=Math.min(this.active.inputStartedAt+120000,this.active.expiresAt);
   const tmp=join(this.dir,'active.tmp');await writeFile(tmp,JSON.stringify(this.active));await rename(tmp,join(this.dir,'active.json'));return this.active;
  }
  async accept(response){
@@ -26,7 +27,10 @@ export class NativeCasesMailbox {
   if(this.active.action==='select')assert.equal(o.selectedSession,this.active.session,'selected_session');
   if(this.active.action==='choose_connection')assert.equal(o.targetConnection,this.active.targetConnection,'target_connection');
   if(['window_mode','resize'].includes(this.active.action))assert.equal(o.windowMode,this.active.windowMode,'window_mode');
-  this.response=response;
+  this.check();const responseReceivedAt=this.clock(),verifyDeadline=Math.min(responseReceivedAt+45000,this.active.expiresAt);
+  assert.ok(responseReceivedAt<=this.active.inputDeadline,'input_expired');
+  await exclusive(join(this.dir,'acceptances',response.id+'.json'),{id:response.id,owner:this.owner,responseReceivedAt,verifyDeadline});
+  Object.assign(this.active,{responseReceivedAt,verifyDeadline});this.response=response;
  }
  async finish(observation){
   this.check();assert.ok(this.response,'response_required');assert.equal(observation.verified,true,'observation_unverified');
@@ -45,11 +49,13 @@ export async function publishNative(dir,action,id,observation){
  await exclusive(join(dir,'responses',id+'.json'),{id,owner:request.owner,status:action==='done'?'performed':'failed',observation});return {id,status:'receipt_recorded'};
 }
 export async function runNative(r,mailbox){
+ r.summary.nativeTimingVersion=2;r.summary.nativeResponseLatency='not_measured';
+ r.summary.nativeBaselines=await checkNativeBaselines(r.root,r.config.preflightEvidence,r.summary);await r.save();
  await mailbox.init();await r.disconnectBrowser();await r.startMeasurement();const runDeadline=r.born+900000;let nextSample=0;
  async function action(request,verify,onStart){
-  await mailbox.issue({...request,appExecutable:r.summary.binaries.app.path},runDeadline);
+  await mailbox.issue({...request,appExecutable:r.summary.binaries.app.path},runDeadline);let receivedLogged=false;
   while(true){await r.service();if(r.elapsed()>=nextSample){await r.sampleMemory();nextSample=r.elapsed()+30;}const response=await mailbox.poll(onStart);
-   if(response){const observation=await verify(response.observation);if(observation){const result=await mailbox.finish({verified:true,...observation});await r.event('native',result);return observation;}}
+   if(response){if(!receivedLogged){const {id,owner,responseReceivedAt,verifyDeadline}=mailbox.active;await r.event('native_received',{id,owner,responseReceivedAt,verifyDeadline});receivedLogged=true;}mailbox.check();const observation=await verify(response.observation);if(observation){const result=await mailbox.finish({verified:true,...observation});await r.event('native',result);return observation;}}
    await r.sleep(100);
   }
  }

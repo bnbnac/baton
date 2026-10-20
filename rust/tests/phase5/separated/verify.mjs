@@ -2,17 +2,52 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,access,readdir} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isDeepStrictEqual} from 'node:util';
 import {resolveContract,compareIdentity} from './contract.mjs';
 import {sha256,validateShutdown,assertProcessIdentity} from './runtime.mjs';
 import {memoryVerdict} from '../native-soak-control.mjs';
 import {LogOracle} from '../soak-oracle.mjs';
 import {verifyRounds} from './transitions.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../../../..');
+// Deliberately narrow comparison for N v2 against historical M/F. Never use this
+// as a same-source preflight check for M/F or to exempt shared execution changes.
+export function compareNativeContext(current,peer){
+ const differences=[],changedSources=[];
+ const sourcePath=name=>'rust/tests/phase5/separated/'+name;
+ const allowed=new Map([[sourcePath('native.mjs'),'native_driver'],[sourcePath('verify.mjs'),'verifier']]);
+ if(current?.scope!=='N'||current.nativeTimingVersion!==2||!['M','F'].includes(peer?.scope))differences.push('comparison_scope');
+ if(!compareIdentity(current,current).same||!compareIdentity(peer,peer).same)differences.push('invalid_identity');
+ if(!differences.length){
+  const left=Object.keys(current.sources).sort(),right=Object.keys(peer.sources).sort();
+  if(!isDeepStrictEqual(left,right))differences.push('source_set');
+  for(const required of ['native.mjs','verify.mjs','runtime.mjs','run.mjs','transitions.mjs','stream.sh'])if(!left.includes(sourcePath(required)))differences.push('required_source:'+required);
+  for(const path of new Set([...left,...right]))if(current.sources[path]!==peer.sources[path]){
+   changedSources.push({path,kind:allowed.get(path)??'shared_execution',before:peer.sources[path],after:current.sources[path]});
+   if(!allowed.has(path))differences.push('shared_source:'+path);
+  }
+  for(const key of ['imageId','environment'])if(!isDeepStrictEqual(current[key],peer[key]))differences.push(key);
+  for(const key of ['app','adapter'])if(current.binaries[key].sha256!==peer.binaries[key].sha256)differences.push('binary_'+key);
+ }
+ return {sameCommonInputs:differences.length===0,sameHarnessSources:!!current?.sources&&!!peer?.sources&&isDeepStrictEqual(current.sources,peer.sources),changedSources:changedSources.sort((a,b)=>a.path.localeCompare(b.path)),differences};
+}
+export async function checkNativeBaselines(workspace,paths,summary){
+ const reports=[];
+ for(const scope of ['M','F']){
+  assert.equal(typeof paths?.[scope],'string','native_baseline_required_'+scope);assert.ok(paths[scope].trim(),'native_baseline_required_'+scope);
+  const directory=resolve(workspace,paths[scope]),peer=await loadEvidence(directory),verdict=verifyEvidence(peer),saved=JSON.parse(await readFile(join(directory,'verified.json'),'utf8'));
+  assert.equal(peer.summary.scope,scope,'native_baseline_scope');assert.equal(verdict.preflightPassed,true,'native_baseline_invalid');assert.equal(saved.preflightPassed,true,'native_baseline_not_verified');
+  const summarySha256=await sha256(join(directory,'summary.json'));assert.equal(saved.summarySha256,summarySha256,'native_baseline_summary_changed');
+  const {sources,binaries,imageId,environment}=peer.summary,identity={scope,sources,binaries,imageId,environment},comparison=compareNativeContext(summary,identity);
+  assert.equal(comparison.sameCommonInputs,true,'native_baseline_common_inputs:'+comparison.differences.join(','));
+  reports.push({scope,evidence:paths[scope],summarySha256,identity,comparison});
+ }
+ return reports;
+}
 export async function loadEvidence(out){
  async function json(name){try{return JSON.parse((await readFile(join(out,name),'utf8')).replace(/^\uFEFF/,''));}catch(e){throw Error(name+': '+e.message);}}
  async function lines(name){try{const text=await readFile(join(out,name),'utf8');assert.ok(!text||text.endsWith('\n'),'truncated_final_record');return text.split('\n').filter(Boolean).map(JSON.parse);}catch(e){throw Error(name+': '+e.message);}}
  const summary=await json('summary.json'),events=await lines('events.jsonl'),output=await lines('output.jsonl'),memory=await lines('memory.jsonl');
- const nativeFiles={};if(summary.scope==='N')for(const kind of ['requests','starts','responses','results']){const files=await readdir(join(out,'native',kind));assert.ok(files.every(f=>f.endsWith('.json')),'partial_native_file');nativeFiles[kind]=await Promise.all(files.map(f=>json('native/'+kind+'/'+f)));}
+ const nativeFiles={};if(summary.scope==='N')for(const kind of ['requests','starts','responses',...(summary.nativeTimingVersion===2?['acceptances']:[]),'results']){const files=await readdir(join(out,'native',kind));assert.ok(files.every(f=>f.endsWith('.json')),'partial_native_file');nativeFiles[kind]=await Promise.all(files.map(f=>json('native/'+kind+'/'+f)));}
  return {summary,events,output,memory,nativeFiles,audits:await json('audit-observations.json'),boundary:await json('normal-boundary.json'),process:await json('process.json'),cleanup:await json('final-cleanup.json')};
 }
 function verifyOutput(e,start,end){
@@ -98,6 +133,13 @@ function verifyTransitionRaw(e,records){
  for(const s of e.summary.sessions)assert.deepEqual({adapter:s.adapter,epoch:s.epoch,stream:s.stream},state.get(s.id),'final_binding');
 }
 function verifyNative(e,records){
+ const version=e.summary.nativeTimingVersion??1;assert.ok([1,2].includes(version),'native_timing_version');
+ if(version===2){
+  assert.equal(e.summary.nativeResponseLatency,'not_measured','native_latency_claim');
+  assert.deepEqual(e.summary.nativeBaselines?.map(x=>x.scope),['M','F'],'native_baselines');
+  for(const b of e.summary.nativeBaselines){assert.equal(b.identity.scope,b.scope);assert.equal(typeof b.evidence,'string');assert.ok(b.evidence.length);assert.match(b.summarySha256,/^[a-f0-9]{64}$/);const c=compareNativeContext(e.summary,b.identity);assert.equal(c.sameCommonInputs,true,'native_baseline_common_inputs');assert.deepEqual(b.comparison,c,'native_baseline_comparison');}
+  assert.equal(e.events.filter(v=>v.type==='native_received').length,12,'native_acceptance_events');assert.equal(e.nativeFiles.acceptances?.length,12,'native_acceptance_files');
+ }
  const native=e.events.filter(v=>v.type==='native'),actions=['window_mode','select','resize','reclaim','choose_connection','handoff'];assert.equal(native.length,12);assert.equal(new Set(native.map(v=>v.request.id)).size,12,'duplicate_native_id');
  for(const kind of ['requests','starts','responses','results'])assert.equal(e.nativeFiles?.[kind]?.length,12,'native_files_missing');
  let previous=-Infinity;
@@ -109,8 +151,28 @@ function verifyNative(e,records){
   const observed={window_mode:{windowMode:q.windowMode},select:r.selected,resize:r.resized,reclaim:r.reclaimed,choose_connection:{targetConnection:r.targetConnection},handoff:r.assigned}[q.action];
   for(const [key,value] of Object.entries(observed))assert.deepEqual(v.observation[key],value,'native_round_observation');
   assert.ok(Number.isFinite(e.summary.clockOrigin));assert.equal(q.expiresAt,e.summary.clockOrigin+900000,'native_watchdog');assert.ok(v.verifiedAt<=e.summary.clockOrigin+v.t&&v.seq<r.seq,'native_observation_time');
-  assert.ok(q.issuedAt>=previous&&q.inputStartedAt>=q.issuedAt);assert.equal(q.verifyDeadline,Math.min(q.inputStartedAt+45000,q.expiresAt));assert.ok(v.verifiedAt>=q.inputStartedAt&&v.verifiedAt<=q.verifyDeadline);assert.equal(v.observation.verified,true);previous=v.verifiedAt;
-  const {inputStartedAt,verifyDeadline,...issued}=q;
+  assert.ok(q.issuedAt>=previous&&q.inputStartedAt>=q.issuedAt);assert.equal(v.observation.verified,true);
+  let issued;
+  if(version===2){
+   assert.equal(q.timingVersion,2);assert.equal(q.inputDeadline,Math.min(q.inputStartedAt+120000,q.expiresAt),'native_input_deadline');assert.ok(q.responseReceivedAt>=q.inputStartedAt&&q.responseReceivedAt<=q.inputDeadline,'native_acceptance_time');
+   assert.equal(q.verifyDeadline,Math.min(q.responseReceivedAt+45000,q.expiresAt),'native_verification_deadline');assert.ok(v.verifiedAt>=q.responseReceivedAt&&v.verifiedAt<=q.verifyDeadline,'native_verification_time');
+   const accepted={id:q.id,owner:q.owner,responseReceivedAt:q.responseReceivedAt,verifyDeadline:q.verifyDeadline};
+   const files=e.nativeFiles.acceptances.filter(x=>x.id===q.id);assert.equal(files.length,1,'native_acceptance_id');assert.deepEqual(files[0],accepted,'native_acceptance_file');
+   const events=e.events.filter(x=>x.type==='native_received'&&x.id===q.id);assert.equal(events.length,1,'native_acceptance_event_id');const event=events[0];for(const [key,value]of Object.entries(accepted))assert.equal(event[key],value,'native_acceptance_event');
+   assert.ok(event.seq<v.seq&&q.responseReceivedAt<=e.summary.clockOrigin+event.t&&e.summary.clockOrigin+event.t<=v.verifiedAt,'native_acceptance_order');
+   if(q.action==='select')assert.ok(v.observation.selectedAt>=q.responseReceivedAt,'native_state_before_acceptance');
+   if(q.action==='resize')assert.ok(v.observation.observedAt>=q.responseReceivedAt,'native_state_before_acceptance');
+   const status=e.events.filter(x=>x.type==='mcp'&&x.name==='status'&&x.seq>event.seq&&x.seq<v.seq&&e.summary.clockOrigin+x.t>=q.responseReceivedAt&&e.summary.clockOrigin+x.t<=v.verifiedAt);
+   if(['select','resize'].includes(q.action)){
+    const matching=status.filter(x=>x.index===r.before.adapter&&x.response.sessions.some(s=>s.session_id===q.session&&s.state==='agent_owned'&&s.control_epoch===r.before.epoch&&s.stream_id===r.before.stream&&isDeepStrictEqual(s.geometry,v.observation.geometry)));
+    assert.ok(matching.length>0&&(q.action!=='select'||matching.length>=2&&matching.at(-1).t-matching[0].t>=750),'native_geometry_status_after_acceptance');
+   }
+   if(['reclaim','handoff'].includes(q.action)){const target=q.action==='reclaim'?r.reclaimed:r.assigned.session;assert.ok(status.some(x=>x.index===(q.action==='reclaim'?r.before.adapter:r.adapter)&&x.response.sessions.some(s=>isDeepStrictEqual(s,target))),'native_status_after_acceptance');}
+   const {inputStartedAt,inputDeadline,responseReceivedAt,verifyDeadline,...rest}=q;issued=rest;
+  }else{
+   assert.equal(q.verifyDeadline,Math.min(q.inputStartedAt+45000,q.expiresAt));assert.ok(v.verifiedAt>=q.inputStartedAt&&v.verifiedAt<=q.verifyDeadline);const {inputStartedAt,verifyDeadline,...rest}=q;issued=rest;
+  }
+  previous=v.verifiedAt;
   for(const [kind,expected] of [['requests',issued],['starts',{id:q.id,owner:q.owner}],['responses',v.response],['results',{request:q,response:v.response,observation:v.observation,verifiedAt:v.verifiedAt}]]){const matching=e.nativeFiles[kind].filter(x=>(x.id??x.request?.id)===q.id);assert.equal(matching.length,1,'native_file_id');assert.deepEqual(matching[0],expected,'native_file_mismatch');}
  }
  assert.ok(e.events.find(v=>v.type==='measurement_end').t<=900000,'native_whole_run_deadline');
@@ -162,9 +224,7 @@ export function verifyEvidence(e){
    if(s.scope==='N'){
     assert.ok(duration<=900);assert.deepEqual(records.map(r=>r.windowMode),['restored','maximized']);
     verifyNative(e,records);
-    const native=e.events.filter(v=>v.type==='native');for(let round=0;round<2;round++)for(const action of ['window_mode','select','resize','reclaim','choose_connection','handoff']){
-     const matches=native.filter(v=>v.request.round===round&&v.request.action===action);assert.equal(matches.length,1,'native_receipt');const v=matches[0],q=v.request;assert.equal(q.owner,s.owner);assert.equal(v.response.id,q.id);assert.equal(v.response.owner,s.owner);assert.equal(v.response.status,'performed');assert.ok(q.inputStartedAt>=q.issuedAt);assert.equal(q.verifyDeadline,Math.min(q.inputStartedAt+45000,q.expiresAt));assert.ok(v.verifiedAt>=q.inputStartedAt&&v.verifiedAt<=q.verifyDeadline);assert.equal(v.observation.verified,true);assert.ok(v.response.observation.screenshotId);
-    }
+    result.nativeTimingVersion=s.nativeTimingVersion??1;result.nativeResponseLatency='not_measured';if(s.nativeTimingVersion===2)result.nativeBaselines=s.nativeBaselines;
    }
   }
   result.evidenceValid=true;
@@ -183,7 +243,8 @@ export async function verifyDirectory(out,comparisons=[]){
   const evidence=await loadEvidence(out);result=verifyEvidence(evidence);
   for(const [p,hash] of Object.entries(evidence.summary.sources))assert.equal(await sha256(join(root,p)),hash,'source_changed_'+p);
   for(const b of Object.values(evidence.summary.binaries))assert.equal(await sha256(b.path),b.sha256,'binary_changed');
-  for(const other of comparisons){const peer=await loadEvidence(other);assert.equal(compareIdentity(evidence.summary,peer.summary).same,true,'comparison_identity_mismatch');}
+  if(evidence.summary.scope==='N'&&evidence.summary.nativeTimingVersion===2){const paths=Object.fromEntries(evidence.summary.nativeBaselines.map(b=>[b.scope,b.evidence]));assert.deepEqual(await checkNativeBaselines(root,paths,evidence.summary),evidence.summary.nativeBaselines,'native_baselines_changed');}
+  result.comparisons=[];for(const other of comparisons){const peer=await loadEvidence(other);if(evidence.summary.scope==='N'&&evidence.summary.nativeTimingVersion===2){const comparison=compareNativeContext(evidence.summary,peer.summary);assert.equal(comparison.sameCommonInputs,true,'comparison_common_inputs_mismatch');result.comparisons.push({evidence:other,...comparison});}else assert.equal(compareIdentity(evidence.summary,peer.summary).same,true,'comparison_identity_mismatch');}
   result.summarySha256=await sha256(join(out,'summary.json'));
  }catch(error){result??={evidenceValid:false,scopePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',errors:[]};result.evidenceValid=false;result.scopePassed=false;result.preflightPassed=false;result.errors.push(error.message);}
  result.verifiedUtc=new Date().toISOString();await writeFile(join(out,'verification.json'),JSON.stringify(result,null,2)+'\n');
