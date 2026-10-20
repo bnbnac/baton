@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태: R2의 M 180초/F 17회 사전 검사는 통과했다. N은 두 차례 조작 완료 접수 기한 초과로 사례를 완료하지 못했다. 승인된 N v2 시간 분리와 판정 보완을 반영했으며 새 N/정식 F 120회/M 2시간은 미실행이다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태: R2의 M 180초/F 17회 사전 검사는 통과했다. N v1 두 실패를 보존하며, 승인 후 실행한 N v2도 연결 목록 조작 도구 오류와 입력 기한 초과로 사례 0/2에서 종료됐다. v2 첫 세션의 선택·resize·회수까지 관측했고 정상 종료/잔류 0을 확인했다. 정식 F 120회/M 2시간은 미실행이다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -215,3 +215,17 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 - 새 설정과 비교 기록: `artifacts/phase5-separated-20261020-native-v2/`. 과거 `verified.json`은 덮어쓰지 않았다. 제품·공통 실행 소스·fuzz·Cargo는 이번 변경에 포함하지 않았다.
 
 새 N 실행은 아직 시작하지 않았다. 정식 F/M도 미실행이며, 이 N 전용 비교 예외로 정식 시험의 동일 소스 요구를 면제하지 않는다. 기존 2시간 실패, 회수 경계/결합 전환 메모리 미검증과 Phase 5 출시 차단을 유지한다.
+
+### 2026-10-20 N v2 1회 — 드롭다운 입력 도구 오류 후 기한 만료
+
+사용자의 후속 `진행`에 따라 `5bdde17f23d4bb1da9ab2f7660d208e469d6a41d`에서 N을 한 번 실행했다. 증거는 `artifacts/phase5-separated-20261020-native-v2/n-cases`, sibling log/launch JSON이다. owner `dca0b8a3-131d-4390-8b00-febaad5426d5`, launcher PID 12712, 시작 UTC `09:08:53.321`, finishedUtc `09:14:21.511`. 정상 측정 구간은 304.8192초, OS 표본 9개, 완료 사례는 **0/2**다.
+
+- 첫 세션 `2be46ed201cd8986dd5cfed95f91ff16`의 복원 창·선택·resize·회수 receipt 네 개가 완료됐다. 네이티브 시스템 메뉴 키보드 조작으로 창 너비 1183→1172를 관측했다. MCP geometry는 **102×17→100×17**, 원격 `stty`는 **17 100**으로 일치했다. 회수 뒤 `user_owned`, epoch 2, stream null을 확인했다.
+- 조작 시작~완료 접수는 네 단계 각각 15.228/17.266/37.090/20.087초였다. 이는 도구 왕복·관측을 포함하는 운영 시간이며 제품 반응 시간이 아니다. 특히 resize가 이전보다 빠르게 반응했다거나 제품 지연을 해결했다고 해석하지 않는다.
+- 다음 목표 연결 `30cee5e830f57290e9167c55038edfa9`를 목록 accessibility description의 전체 ID로 대조했다. 항목 클릭은 `point (...) is over msedgewebview2.exe "Chrome Legacy Window", not target window baton.exe "Baton"`으로 거부됐다. 창 활성화·새 관측 후 드롭다운 screenshot 좌표로 한 번 재시도했으나 같은 대상 창 불일치로 거부됐다. 선택 완료나 전달 버튼 실행은 확인하지 못했으며 전달 receipt도 없다.
+- 컴퓨터 제어를 중단하고 `failed` receipt를 게시하려 했지만 자동 승인 검토의 사용량 한도로 **그 명령은 실행되지 않았다**. 승인 검토 실패는 안전성 거부가 아니다. runner는 연결 선택 요청의 120초 입력 기한(t=203581.427→323581.427ms)을 만료시켜 `input_expired`로 종료했다. 도구 창 판정 오류와 이후 기록 저장 차단을 제품 소유권 전달 실패로 분류하지 않는다.
+- 종료는 exit 0, 어댑터 EOF **32/32**, 자손 종료 감사 `verified`, 강제 정리 없음이다. `final-cleanup.json`은 잔류 process/container 0/0이며, 후속 읽기 전용 점검에서도 소유 프로세스 신원 43개(PID+시작 ticks)와 정확한 owner label 컨테이너의 잔류 0을 확인했다(`post-exit-check.json`).
+- 실행 후 source 23개/binary 2개 해시가 모두 일치했다(`failure-analysis.json`). 준비 때 실제 OS/Node/WebView/Playwright/image도 R2 M/F와 일치했고, N 조정기/판정기 두 파일 차이만 공개했다. 환경은 Windows 10.0.26200, Node v22.17.0, WebView 155.0.4283.62, Playwright 1.62.1이다.
+- 독립 verifier는 첫 사례 미완료로 `audit-observations.json`이 없어 `evidenceValid:false`, `scopePassed:false`를 기록했다. `verified.json`은 없다. summary SHA는 `f222038ac64bb46774c6d0671497671dd556a3a83e9584d14041b8d0e38e579e`다. 부분 관측을 N 통과로 승격하지 않는다.
+
+실행 중 소스를 변경하거나 새 시험을 자동 시작하지 않았다. 다음 검토 대상은 별도 WebView popup에 대한 컴퓨터 제어의 대상 지정/키보드 선택 경로다. 제품 변경이나 기한 추가 완화의 근거는 없으며, N 재시험 및 정식 F/M은 시작하지 않았다. 기존 메모리 실패와 Phase 5 출시 차단은 유지한다.

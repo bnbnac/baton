@@ -20,6 +20,8 @@
 
 ## Global Constraints
 
+**2026-10-20 N v2 실제 실행 최신 상태:** 후속 사용자 승인으로 `5bdde17`에서 N 1회를 실행했다. 복원/선택/resize/회수 네 receipt와 MCP geometry 102×17→100×17 및 서버 `17 100`을 확인했다. 연결 선택에서 컴퓨터 제어가 별도 WebView popup을 대상 Baton 창과 다르다고 거부했고, 새 관측 후 한 번 재시도도 실패했다. failed receipt 게시는 자동 승인 검토 사용량 한도로 실행되지 않았고 runner는 120초 `input_expired`로 종료했다. 사례 0/2, 독립 증거 무효(audit 파일 부재). 정상 종료/EOF32/자손 종료 감사/강제 정리 없음/실제 잔류0 및 source23/binary2 해시 일치 확인. [상세 결과](../../testing/rust-phase-5-separated-validation.md#2026-10-20-n-v2-1회--드롭다운-입력-도구-오류-후-기한-만료). 추가 시험은 자동 실행하지 않으며 Task 7과 Phase 5는 미완료다. 아래 미실행 기록은 각각 당시 상태다.
+
 **2026-10-20 승인 변경 및 현재 상태:** 사용자가 N의 조작/관측/완료 접수 120초와 접수 후 독립 상태 검증 45초 분리를 승인했다. 전체 준비 포함 900초 상한은 유지한다. `nativeTimingVersion:2`, `nativeResponseLatency:not_measured`, 접수 파일/원시 사건을 추가했다. 독립 검토에서 선택·resize의 원시 상태가 접수 이전이어도 통과하는 결함을 확인해, 접수 이후~검증 완료 사이의 상태와 750ms 선택 안정 구간을 요구하도록 보완했다. 기존 R2 M/F 사전 검사 통과와 N 두 실패는 보존한다. N만 native/verify 두 파일의 버전 차이를 공개한 공통 입력 비교를 허용하며, 정식 M/F 동일 소스 요구는 유지한다. 새 N 및 정식 F/M은 미실행이다. 아래 2026-10-19 기록의 승인 대기/기준 미구현은 당시 상태다.
 
 검증: 검토 결함 3건 RED→GREEN, 최종 관련 unit 126/126·문법 검사·diff 공백 검사 통과. 기존 M/F raw와 저장 summary SHA를 재검증했고 두 변경 파일 외 source/binary 차이는 없었다. 준비 설정은 `artifacts/phase5-separated-20261020-native-v2/config-n.json`, 상세 기록은 [N v2 구현 결과](../../testing/rust-phase-5-separated-validation.md#2026-10-20-n-v2-시간-분리--구현-및-검토-완료-실제-재시험-전). 실제 실행 환경/이미지는 이후 setup에서 확인할 대상이다. Task 7 및 Phase 5는 계속 미완료다.
