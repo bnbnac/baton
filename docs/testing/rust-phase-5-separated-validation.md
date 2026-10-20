@@ -69,11 +69,23 @@ computer-use skill의 관측 → 단일 조작 → 새 관측 절차를 따른�
 1. `node rust/tests/phase5/separated/native-ui.mjs peek <evidence-dir>`로 요청과 전체 세션/목표 연결 ID를 읽는다.
 2. 대상 창을 새로 관측하고 본문 캡처의 크기·내용으로 screenshotId를 고른다. 첫 배열 원소가 본문이라고 가정하지 않는다. 복원/최대화 완료 후 다시 관측한다.
 3. 조작 준비가 끝나면 `... native-ui.mjs start <evidence-dir> <request-id>`를 호출한다. `inputAllowed:true`와 해당 요청의 active 정보가 확인돼야 입력한다. 대기 중이면 peek로 확인하며 start나 UI 입력을 중복 실행하지 않는다.
-4. 새 관측으로 지정된 입력을 한 번 실행한다. 최대화 상태에서 이미 빗나간 접근성 요소 클릭 방식 대신 본문 캡처 좌표를 사용한다. 선택 목록은 전체 목표 연결 ID를 대조한다. 단축 표식만으로 다른 연결을 선택하지 않는다.
+4. 새 관측으로 지정된 입력을 한 번 실행한다. 최대화 상태에서 이미 빗나간 접근성 요소 클릭 방식 대신 본문 캡처 좌표를 사용한다. 연결 선택은 아래 키보드 절차를 따른다. WebView popup 항목에 대한 좌표/접근성 클릭과 select `set_value`를 재시도 경로로 사용하지 않는다.
 5. 즉시 새 화면을 관측하고 `done`에 JSON observation을 전달한다. `screenshotId`는 모든 응답에 필수다. select에는 `selectedSession`, window_mode/resize에는 `windowMode`, choose_connection에는 `targetConnection`도 필요하다. 예: `{"screenshotId":"실제 캡처 ID","selectedSession":"전체 세션 ID"}`. 실패는 `failed`로 보고한다.
 6. receipt 저장 실패 시 UI를 다시 누르지 않는다. pending/active와 실제 화면·MCP 상태를 먼저 확인한다. `acceptances/<request-id>.json`과 `native_received`는 runner의 실제 접수를 기록하며 `responseReceivedAt`과 `verifyDeadline`을 담는다. `results`가 생성되어야 해당 상태 검증이 완료된 것이다. 완료 판정은 runner의 MCP·서버 stty·epoch/stream/이전 owner 검증이 수행한다.
 
 N v2의 전체 900초에는 준비가 포함된다. start 승인부터 조작·화면 관측·완료 기록 접수까지 120초, runner의 완료 접수부터 상태 검증까지 별도 45초다. 두 기한 모두 전체 900초에 잘린다. polling·중복 응답으로 시계를 다시 시작하지 않는다. 실제 제품 반응 시간은 `not_measured`다. 세션 0은 복원 창 resize, 세션 1은 복원 상태에서 선택 후 최대화 resize를 사용한다. 전달할 연결 선택과 전달 버튼은 별도 요청이므로 하나의 입력 시간에 목록 탐색 전체를 몰아넣지 않는다. 기존 N v1은 원래 45초 기준으로 유지한다.
+
+### 연결 선택의 키보드 절차
+
+2026-10-16의 같은 후보 앱에서 열린 목록의 End→Enter 선택과 실제 전달을 확인했다. 이는 현재 임의 중간 항목까지 검증됐다는 의미가 아니다. 원래 실패한 popup 클릭은 반복하지 않으며 실제 조작은 computer-use API의 관측→한 키→새 관측으로 진행한다.
+
+1. `choose_connection` 요청의 전체 `targetConnection`을 읽고 start 승인을 확인한다. 새 본문 관측에서 활성화된 **선택 상자 자체**를 눌러 목록을 연다. 이는 popup 항목 클릭과 구별한다.
+2. 열린 목록의 접근성 항목 description에서 전체 ID와 화면의 순서를 확인한다. placeholder 포함 여부와 현재 강조 항목을 확인하며 adapter 번호나 과거 실행의 목록 순서로 키 횟수를 계산하지 않는다. 전체 목표 ID가 유일하게 식별되지 않으면 중단한다.
+3. 관측한 목록의 가까운 끝으로 Home 또는 End 한 번을 보내고 다시 관측한다. 목표까지 Up/Down 한 번씩 이동하며 매번 강조 항목·목록 열림 상태를 확인한다. `press_key`는 선택된 Baton 창을 대상으로 하며 OS 단축키나 popup 좌표 조작으로 대체하지 않는다. 닫힌 select에서 여러 방향키를 이어 보내지 않는다.
+4. 목표 항목이 강조된 관측을 전체 ID와 대조한 뒤 Return으로 확정하고 새 화면에서 선택값을 확인한다. 축약 ID는 앞서 관측한 전체 ID와 유일하게 대응해야 한다. 동일 접두어가 여럿이거나 선택 결과를 구별할 수 없으면 `done`을 게시하지 않는다.
+5. 확인 후 `choose_connection` receipt를 기록한다. 이 receipt는 UI 관측이며 전달 성공 판정이 아니다. 별도 `handoff` 요청 이후 전달 버튼을 누르고, runner가 정확한 새 owner/epoch/stream 및 이전 owner 해제를 검증해야 한다.
+
+목록이 예상 밖으로 닫히거나 포커스가 사라지거나 도구 오류가 발생하면 추가 키를 보내지 않고 새 관측으로 실패 여부를 판단한다. 타임아웃을 늘리거나 선택된 것으로 추정해 전달하지 않는다. 선택 변경의 `onchange`는 제어 패널을 다시 렌더하므로 확정 뒤에는 이전 요소 인덱스를 버린다. 관련 없는 출력 알림만으로 DOM을 교체하지 않는 기존 수정은 유지되어 있다.
 
 ## 관측·중단·검증
 
@@ -229,3 +241,11 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 - 독립 verifier는 첫 사례 미완료로 `audit-observations.json`이 없어 `evidenceValid:false`, `scopePassed:false`를 기록했다. `verified.json`은 없다. summary SHA는 `f222038ac64bb46774c6d0671497671dd556a3a83e9584d14041b8d0e38e579e`다. 부분 관측을 N 통과로 승격하지 않는다.
 
 실행 중 소스를 변경하거나 새 시험을 자동 시작하지 않았다. 다음 검토 대상은 별도 WebView popup에 대한 컴퓨터 제어의 대상 지정/키보드 선택 경로다. 제품 변경이나 기한 추가 완화의 근거는 없으며, N 재시험 및 정식 F/M은 시작하지 않았다. 기존 메모리 실패와 Phase 5 출시 차단은 유지한다.
+
+### 2026-10-20 키보드 경로 검토
+
+과거 [네이티브 UI 조사](rust-phase-5-native-ui-report.md#변경된-windows-앱에서의-확인)와 [기존 soak 운영 절차](rust-phase-5-native-soak.md)를 다시 확인했다. 10월 16일에 동일 popup 소유 창 오류 및 `set_value`의 변경 미관측을 이미 기록하고, 열린 목록의 키보드 선택을 운영 경로로 지정했었다. 이번 N v2에서 그 경로를 적용하지 않고 항목 클릭과 좌표 클릭을 다시 시도한 것은 운영상 실수다. 새 제품 결함의 발견으로 취급하지 않는다.
+
+과거 run2의 선택 UI 원문·회수/전달 응답을 읽기 전용 대조했다. 목표 연결 `ff5546cc9c15674fac1e8cdd36a75921`, adapter 15→22, user_owned epoch2→agent_owned epoch3, 원격 `17 102`와 정상 정리 기록을 확인했다. 현재 후보 앱 SHA `1ae03f6b7fc0d3d17eb5571c81ba0c11d73ad9cfc39e37c2c520a9393aa0df0e`와 과거 candidate가 일치하고, 현재 `OwnershipView`도 당시 빌드 소스와 일치한다. 과거 `verified.json`을 재작성하지 않았다.
+
+연결 목록은 표시 문자열이 12자리 접두어이고 실제 option 값은 전체 ID다. 전체 ID 관측과 정확한 새 owner의 MCP 검증을 계속 요구한다. 출력 알림에 대한 DOM 유지와, 실제 선택 변경에 따른 DOM 교체를 구별해 위 키보드 절차를 명시했다. 과거 End→Enter 성공을 임의 중간 항목 성공으로 확대하지 않는다. 제품/시험 코드는 수정하지 않았고 추가 unit·빌드·실제 N 시험은 실행하지 않았다. 다음 실행의 확인 대상은 이 절차로 현재 N의 지정 연결을 선택할 수 있는지이며, 120초/45초/900초 기준과 기존 실패 기록은 그대로 유지한다.
