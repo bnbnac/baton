@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태: R2의 M 180초/F 17회 사전 검사는 통과했다. N v1 두 실패를 보존하며, 승인 후 실행한 N v2도 연결 목록 조작 도구 오류와 입력 기한 초과로 사례 0/2에서 종료됐다. v2 첫 세션의 선택·resize·회수까지 관측했고 정상 종료/잔류 0을 확인했다. 정식 F 120회/M 2시간은 미실행이다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태(2026-10-21): R2의 M 180초/F 17회 사전 검사는 통과했다. N v2 키보드 재시도도 연결 선택 완료 전 입력 기한이 만료돼 사례 0/2에서 종료됐다. 사용자는 사용량 한도로 대화가 중단됐다고 보고했다. 첫 세션의 선택·resize·회수 및 정상 종료/잔류 0은 확인했지만 지정 연결 선택·재전달은 미검증이다. 정식 F 120회/M 2시간은 미실행이다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -249,3 +249,16 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 과거 run2의 선택 UI 원문·회수/전달 응답을 읽기 전용 대조했다. 목표 연결 `ff5546cc9c15674fac1e8cdd36a75921`, adapter 15→22, user_owned epoch2→agent_owned epoch3, 원격 `17 102`와 정상 정리 기록을 확인했다. 현재 후보 앱 SHA `1ae03f6b7fc0d3d17eb5571c81ba0c11d73ad9cfc39e37c2c520a9393aa0df0e`와 과거 candidate가 일치하고, 현재 `OwnershipView`도 당시 빌드 소스와 일치한다. 과거 `verified.json`을 재작성하지 않았다.
 
 연결 목록은 표시 문자열이 12자리 접두어이고 실제 option 값은 전체 ID다. 전체 ID 관측과 정확한 새 owner의 MCP 검증을 계속 요구한다. 출력 알림에 대한 DOM 유지와, 실제 선택 변경에 따른 DOM 교체를 구별해 위 키보드 절차를 명시했다. 과거 End→Enter 성공을 임의 중간 항목 성공으로 확대하지 않는다. 제품/시험 코드는 수정하지 않았고 추가 unit·빌드·실제 N 시험은 실행하지 않았다. 다음 실행의 확인 대상은 이 절차로 현재 N의 지정 연결을 선택할 수 있는지이며, 120초/45초/900초 기준과 기존 실패 기록은 그대로 유지한다.
+
+### 2026-10-21 N v2 키보드 재시도 마감 — 입력 완료 전 중단
+
+사용자 `하자` 승인으로 고정 커밋 `0cee14c650dd554c860fb0cfffd50fb1efac9c8d`에서 N 1회를 실행했다. 증거는 `artifacts/phase5-separated-20261020-native-v2/n-keyboard`와 sibling log/launch JSON이다. owner `8c9f93e4-b023-4ada-9126-84354f7ccd80`, launcher PID 35812. 실행은 2026-10-20 **23:34:36~23:39:30 KST**(UTC 14:34:36.223~14:39:30.835), 부하 측정은 **270.8540초**, OS 표본 8개다. 32연결/16세션/2서버를 준비했지만 완료 사례는 **0/2**다.
+
+- 복원 창 관측·soak-00 선택·resize·회수의 receipt/접수/검증 결과 네 개가 있다. 세션은 `b9abc9c83c470b583f81583a02b4efe0`. MCP geometry **102×17→100×17**과 원격 `stty` **17 100**이 일치하고, 회수 뒤 `user_owned`, epoch 2, stream null을 확인했다.
+- 연결 선택 요청 `348f70e7-9604-46ad-a63b-5fb0028e2ede`의 목표는 `b6d96e0637bc8bb527b927f991fa619f`다. 실제 UI에서 전체 ID를 확인하고 열린 목록에 End를 입력해 마지막 항목이 강조된 것까지 관측했다. 목표 항목 확정 및 재전달 완료는 관측하지 못했다. 해당 요청은 starts만 있고 response/acceptance/result가 없다.
+- 사용자가 후속 재개 요청에서 사용량 한도로 대화가 중단됐다고 보고했다. 실행기에서 직접 확인되는 원인은 **`input_expired`**이며 입력 시작 t=169266.2085ms, deadline t=289266.2085ms다. 외부 한도의 정확한 발생 시각·종류는 실행기 원시 증거에 없으므로 이를 계측한 것으로 주장하지 않는다. 임의 중간 항목의 키보드 선택 실패 또는 제품 전달 결함으로 판정하지도 않는다.
+- 정상 종료 exit 0, 어댑터 EOF **32/32**(모두 exit 0), 자손 종료 감사 `verified`, 강제 정리 없음과 기록상 잔류 process/container 0/0을 확인했다. 후속 CIM 조회로 앱·자손·어댑터 **42개 PID+생성 시각** 및 정확한 owner label 컨테이너의 잔류 0을 재확인했다. runner PID도 없다. 첫 `Get-Process` 조회는 PID 35876의 시작 시각을 읽지 못해 불완전했으며, 별도 `post-exit-check-cim.json`이 이를 대체한다. 해당 PID는 나중에 시작된 `svchost.exe`로 재사용됐고 이번 시험 자원이 아니므로 건드리지 않았다.
+- 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:false`, `scopePassed:false`를 기록했고 `verified.json`을 만들지 않았다. 완료 transition/audit/health가 없어 출력률 인수·두 사례·메모리 판정을 내리지 않는다. partial native receipt 네 개는 사례 네 개가 아니다.
+- 현재 source **23개**, binary **2개** 해시 일치를 별도 `failure-analysis.json`에 저장했다. summary SHA는 `da6291897c227a6a5733af2a3e23710652838a0507816d0c63912ac3e513c497`다. R2 M/F에 대한 실행 당시 비교는 `sameCommonInputs:true`, `sameHarnessSources:false`이며 native/verify 두 파일 차이 공개를 유지한다.
+
+이번 재개에서는 종료된 실행에 늦은 receipt를 넣거나 새 시험을 시작하지 않았다. 원시 실패를 보존하고 결과 문서만 갱신한다. 다음 미완료 작업은 N의 지정 연결 선택·재전달을 포함한 두 사례이며, 새 실행은 별도 재시도 결정 대상이다. 정식 F 120회/M 7200초, 회수 경계 완전성·결합 전환 메모리와 Phase 5 출시 차단은 그대로 남는다. 제품 수정이나 입력 기한 추가 완화의 근거는 없다.
