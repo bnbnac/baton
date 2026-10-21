@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태(2026-10-21 최신): 사용량 한도 중단에 대비해 N을 사례별 독립 실행·종료·검증 후 합산하도록 변경했다. 관련 테스트 131개와 독립 코드 리뷰를 통과했다. 새 사례의 실측은 아직 없으며, 이전 1/2 부분 관측은 최종 audit 부재로 무효인 채 보존한다. R2 M 180초/F 17회 사전 검사는 통과했지만 정식 F 120회/M 2시간과 Phase 5 인수는 미완료다.
+상태(2026-10-21 최신): N 사례별 독립 완료 방식 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 resize 대기 중 read_output의 app_offline 응답으로 실패했으며 정상 종료 실패 후 강제 정리됐다. 원인 미확정, 현재 소유 잔류 0, 독립 사례 통과 0/2다. 최대화는 시작하지 않았다. 기존 부분/실패 기록은 보존한다. R2 M/F 사전 검사는 통과했지만 정식 F 120회/M 2시간과 Phase 5 인수는 미완료다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -289,3 +289,12 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 - 현재 source 23개/binary 2개 해시가 일치한다. summary SHA `954a6a304bc1e9ee1df65ad961e1bc7fde948b0886f1108fa58a531aa7b09425`. 원시 사건/출력과의 부분 대조는 별도 `partial-analysis.json`에 저장했다. 기존 실패 기록을 덮어쓰거나 첫 사례 부분 결과로 전체 verifier를 통과시키지 않았다.
 
 현재 제한은 제품 결함으로 입증된 것이 아니라 대화 중단에 민감한 실제 입력 시험 운영이다. 종료된 시험에는 늦은 receipt를 보내지 않았다. 새 실행·시간 기준 변경·제품 수정 없이 이번 결과를 마감한다. N 전체 두 사례, 정식 F/M, 회수 경계 완전성·결합 전환 메모리와 Phase 5 출시 차단은 그대로 남는다.
+
+### 2026-10-21 사례 분리 후 복원 창 1회 — app_offline
+
+- 구현 커밋: `8aafc1a`; 증거: `artifacts/phase5-separated-20261021-independent/n-restored`. owner `6111f970-15d8-485a-a499-57fe10c26a34`, runner PID 39076. 시작 02:57:43 UTC, 종료 03:00:58 UTC. 자연 관측 157.331초/OS 표본 5개, 32연결/16세션/2서버.
+- 창 복원 상태와 세션 선택 두 요청만 검증됐다. 세션 `9113e33a22d7550fe6110be71ec26031`, 초기 geometry 102×17. 테두리 drag 후 화면 너비는 1183으로 동일했다. Windows 창 메뉴를 여는 Alt+Space 다음 관측에서 accessibility가 null이어서 tree 출력 코드가 오류를 냈다. resize 완료 receipt, 회수·전달, audit는 없다.
+- runner는 `bad_cursor`로 실패했다. 마지막 원시 출력 응답은 cursor 188704 요청에 대한 `{"code":"app_offline"}`이며, cursor 숫자 불일치의 증거가 아니다. `acceptOutput()`이 정상 출력의 next_cursor를 요구하면서 붙인 오류 이름이다. 입력 deadline 237132ms보다 앞선 175514ms에 오류가 기록됐으므로 입력 시간 초과로 분류하지 않는다. 사용자 보고 사용량 한도 중단과 앱 연결 단절의 인과관계는 확인되지 않았다.
+- shutdownFailure `normal_exit`; 최종 cleanup `normalExit:false, forcedCleanup:true`, 잔류 프로세스/컨테이너 0. 07:47 UTC에 소유 신원 42건을 PID+startedTicks로 다시 대조했고 일치 잔류 0, runner 없음, owner label 컨테이너 없음이다. `post-exit-check.json`에 저장했다. process.log는 비어 있고 해당 시각의 Baton/WebView Application 충돌/멈춤 이벤트 조회에서 일치 항목을 얻지 못했다. 이것만으로 충돌 여부나 단절 원인을 확정하지 않는다.
+- 독립 verifier는 audit-observations 부재로 무효, casePassed/scopePassed false, verified.json 없음. `failure-analysis.json`에서 소스 23개/바이너리 2개 현재 해시 일치를 확인했다. summary SHA256 `54e69688beba5418e3cecfee89e721fc822d3819435e6e6e102b32202676e748`.
+- 독립 사례 0/2. 최대화 설정만 준비했으며 실행하지 않았다. 자동 재실행하지 않고 먼저 app_offline 원인을 조사한다. 원시 증거·기존 실패 및 Phase 5 출시 차단을 유지한다.
