@@ -189,3 +189,7 @@
 ### 2026-10-21 독립 사례 첫 실행 결과
 
 구현 `8aafc1a` 이후 `artifacts/phase5-separated-20261021-independent/n-restored`를 한 번 실행했다. window_mode/select만 검증된 뒤 resize 대기 중 raw `app_offline` → runner `bad_cursor` 실패. audit 부재와 강제 cleanup 때문에 독립 통과 0/2이며 최대화는 미실행이다. 정상 종료 실패, 최종/후속 소유 잔류 0, 소스23/바이너리2 해시 일치를 기록했다. 사용량 한도 중단 보고만으로 원인을 정하지 않는다. 다음 작업은 원시 app_offline의 연결 단절 원인 조사이며 자동 재실행하지 않는다. 상세 수치와 한계는 시험 운영 문서의 해당 날짜 결과를 따른다.
+
+### 2026-10-21 창 메뉴 최소 진단
+
+N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴+접근성 조회, 메뉴+화면 전용 두 조건에서 offline 및 정상 종료 실패가 재현됐다. 메뉴 없는 대조는 75.534초 online/exit0/EOF0을 확인했다. 메뉴 사례는 프로세스 생존 중 offline이며 Escape 뒤 10개 표본에서도 회복되지 않았다. 모든 실행 후 잔류0. 현재 유력한 경로는 프런트엔드 30초 heartbeat 감시의 영구 stopping 전환이나 직접 정지 사유/스택이 없어 확정하지 않는다. 다음은 별도 진단 후보의 정지 사유·ping/pong·종료 단계 관측이며 제품 수정/N 재실행은 아직 하지 않았다. 상세 증거와 한계: `docs/testing/rust-phase-5-offline-investigation.md`.

@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태(2026-10-21 최신): N 사례별 독립 완료 방식 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 resize 대기 중 read_output의 app_offline 응답으로 실패했으며 정상 종료 실패 후 강제 정리됐다. 원인 미확정, 현재 소유 잔류 0, 독립 사례 통과 0/2다. 최대화는 시작하지 않았다. 기존 부분/실패 기록은 보존한다. R2 M/F 사전 검사는 통과했지만 정식 F 120회/M 2시간과 Phase 5 인수는 미완료다.
+상태(2026-10-21 최신): N 사례별 독립 완료 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 app_offline으로 실패, 독립 사례 통과 0/2, 최대화 미실행이다. 후속 최소 진단에서 Windows 창 메뉴 조건의 offline·정상 종료 실패를 두 번 재현했고, 메뉴 없는 75초 대조는 정상 종료했다. [조사 결과](rust-phase-5-offline-investigation.md)에 확인 사실과 미확정 내부 원인을 구분했다. 현재 소유 잔류 0. 기존 실패와 정식 F/M·Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
