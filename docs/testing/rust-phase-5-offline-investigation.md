@@ -1,6 +1,6 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
-2026-10-21. **창 메뉴를 열어 둔 조건에서 offline 전환과 정상 종료 실패를 두 번 재현했다.** 메뉴 없는 대조 실행은 75.534초 동안 같은 연결로 online을 유지하고 정상 종료했다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 내부 정지 원인의 확정은 아직 남아 있다.
+2026-10-22 갱신. **별도 진단 빌드에서 heartbeat 시간 초과 → FrontendLost → offline 경로를 확인했다.** 서비스와 IPC 종료는 완료됐지만 이후 정상 종료 대기는 실패했다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 아래 2026-10-21 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
 
@@ -46,3 +46,20 @@
 2. 같은 최소 메뉴 재현에서 정지 경로와 UI thread 대기 위치를 대조한다. 정상 종료 실패도 함께 설명돼야 한다.
 3. 실제 프런트엔드 상실 시 차단하는 기존 보장을 유지하면서 Windows 메뉴/크기 조정 중 일시 지연을 어떻게 다룰지 결정한다. 30초 제한 연장이나 app_offline 무시로 시험만 통과시키지 않는다.
 4. 원인이 해결된 뒤 N 사례를 다시 판단한다. 기존 실패를 통과로 바꾸지 않고 Phase 5 인수/결합 메모리/공개 경계 미검증은 그대로 둔다.
+
+## 2026-10-22: 정지 사유 계측 결과
+
+증거: `artifacts/phase5-offline-trace-20261022/`. 이전 고정 후보의 보존 소스를 새 디렉터리로 복사하고, Rust 앱 소스 6개에 경계 로그와 로그 모듈 1개만 추가했다. UI assets, Cargo.lock, 제품 작업 파일과 미완성 fuzz는 변경하지 않았다. `source-before.json`, `source-verified.json`, `verify-source.mjs`가 전체 복사본의 변경 범위를 검증한다. 최초 `diagnostic` 모듈 이름이 Rust/Tauri 매크로의 도구 이름과 충돌해 빌드에 실패했고 `baton_trace`로 바꿔 빌드했다. 최초 overlay 목록보다 최종 `source-verified.json`이 최종 파일 hash의 기준이다.
+
+- 진단 앱 SHA256: `f9387df8af7983c1f05b73fa80fd978559757ae9c4791df7c94fc4a43c09c6e6`. `build2.json` exit 0. 기존 후보 앱·adapter는 보존했다.
+- SSH 0, MCP 1, CDP/Playwright 0. logger는 별도 로컬 파일에 시각·Rust thread ID·경계 이벤트만 기록한다. 원래 timeout이나 정지/종료 동작은 변경하지 않았다. 로그 추가에 따른 타이밍 영향은 배제하지 않는다.
+- 최초 `control`은 제한된 실행 환경에서 MCP online에 도달하지 못해 중단했다. 앱 heartbeat 자체는 정상 왕복했다. `menu-closed.json`은 이 실행을 조기 종료하기 위한 marker이며 실제 메뉴 조작이 아니다. 그 파일의 고정 UTC는 실제 관측 시각으로 쓰지 않는다. `abort-note.json`과 `analysis.json`에 제외 사유를 기록했다. summary의 `observationComplete:true`만으로 유효한 대조로 판단하지 않는다. 실행 권한이 연결 실패의 원인이라는 가설은 있으나 ACL 실패 지점을 확정하지 않았다.
+- 기존 시험과 같은 사용자 권한에서 실행한 `control2`는 동일 연결의 online 표본 76개, 75.482초를 확인했다. heartbeat timeout 없음, 앱 exit 0, adapter EOF 0, descendant audit verified.
+- 같은 권한·바이너리의 `menu`는 Alt+Space로 메뉴를 열고 screenshot만 관측했다. 송신 로그는 계속 성공했지만 pong이 멈췄다. 마지막 pong과 timeout 로그 사이 30.073초, timeout 직전 내부 경과 측정 30.072초에 `heartbeat.timeout` → `frontend_lost` → `stop.begin reason=FrontendLost` → `stop.state_locked`가 기록됐다. 이어 MCP가 offline으로 바뀌었다. 이것으로 이 실행의 정지 사유는 확인됐지만, heartbeat가 UI 처리의 어느 내부 단계에서 지연됐는지는 아직 확인하지 않았다.
+- Escape로 메뉴가 사라진 뒤 약 10초간 상태 표본 10개 모두 offline이었다. timeout 이후 수락된 pong도 0이다. 정지 후 pong을 거부하는 코드는 확인했지만, 이번 로그에는 늦게 도착해 거부된 pong 호출 자체도 없다. 따라서 회복 실패를 pong 거부만으로 설명하지 않는다.
+- 정상 창 닫기 요청에서 `window.close_requested` 이후 **6ms 안에** `service.shutdown.end`, `ipc.shutdown.end`, `shutdown.join.end`, `handle.exit.begin/end`, `app.exit_requested`까지 도달했다. 서비스나 IPC 종료 future가 영원히 기다리는 가설은 이번 실행에서 배제된다. 그러나 supervisor의 정상 종료 대기는 15초 한도로 실패했고 root exit code/EOF/descendant audit는 확인되지 않았다. 이 기록만으로 Tauri/WebView 내부 대기 위치나 앱 root와 supervisor 중 어느 프로세스가 최종 대기의 원인인지 단정하지 않는다.
+- 이후 소유 supervisor 정리와 job kill-on-close를 거쳤다. 동일 사용자 권한의 `post-exit-check.json`으로 세 실행의 기록된 앱·자식·adapter·runner PID 잔류 0을 확인했다. 메뉴 실행 receipt의 `forcedCleanup:false`는 정상 종료 증거가 아니다.
+
+`node artifacts/phase5-offline-trace-20261022/analyze.mjs`가 원시 trace/status, 정리 기록, 전체 진단 소스와 바이너리 hash를 대조했다. 메뉴 summary SHA256은 `0b59cd7854a4135b82aff7299e9ec6a91b902a12f637b896c875f1b3f3bed342`, trace SHA256은 `93a11e95103fdac5202470bf2855b5315699a95037afe6b2144cfb80340fc3ea`다. 수집 UTC는 2026-10-21 15시대이며 한국 날짜로 10월 22일이다.
+
+다음 조사는 `app.exit_requested` 이후의 Exit 이벤트/이벤트 루프 반환과, 강제 정리 전 root·WebView·supervisor의 동일 권한 생존 상태에 집중한다. 장시간 시험이나 N/F/M은 재실행하지 않았다. 실제 frontend 상실 차단을 유지하는 수정 설계는 이 종료 문제를 구분한 뒤 정한다. Phase 5 출시 차단은 유지한다.

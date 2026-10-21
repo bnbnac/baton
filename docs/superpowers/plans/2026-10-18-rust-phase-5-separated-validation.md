@@ -193,3 +193,7 @@
 ### 2026-10-21 창 메뉴 최소 진단
 
 N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴+접근성 조회, 메뉴+화면 전용 두 조건에서 offline 및 정상 종료 실패가 재현됐다. 메뉴 없는 대조는 75.534초 online/exit0/EOF0을 확인했다. 메뉴 사례는 프로세스 생존 중 offline이며 Escape 뒤 10개 표본에서도 회복되지 않았다. 모든 실행 후 잔류0. 현재 유력한 경로는 프런트엔드 30초 heartbeat 감시의 영구 stopping 전환이나 직접 정지 사유/스택이 없어 확정하지 않는다. 다음은 별도 진단 후보의 정지 사유·ping/pong·종료 단계 관측이며 제품 수정/N 재실행은 아직 하지 않았다. 상세 증거와 한계: `docs/testing/rust-phase-5-offline-investigation.md`.
+
+### 2026-10-22 정지 사유 계측
+
+고정 후보의 별도 소스 복사본에만 로그를 추가해 `artifacts/phase5-offline-trace-20261022`에서 대조/메뉴 진단을 수행했다. 제한 실행 환경의 최초 control은 MCP online 미성립으로 제외했다. 같은 사용자 권한의 control2는 75.482초 online, exit0/EOF0을 확인했다. 메뉴 사례는 마지막 pong 이후 내부 측정 30.072초에 heartbeat timeout/FrontendLost로 정지했다. 정상 닫기 요청 후 서비스·IPC 종료와 Tauri ExitRequested까지 6ms 내 도달했지만 supervisor의 15초 종료 대기는 실패했다. 원시 로그·소스/바이너리 해시와 정리 기록을 analyze.mjs로 대조했으며 세 실행 잔류0. 제품 수정·N/F/M 재실행 없음. 다음은 ExitRequested 이후의 이벤트 루프/창 정리와 root·WebView·supervisor 생존을 같은 권한에서 구분하는 조사다. heartbeat 정지 사유 확인과 종료 문제 해결을 혼동하지 않는다. 세부 근거·제외 기준·한계는 `docs/testing/rust-phase-5-offline-investigation.md`에 기록했다.
