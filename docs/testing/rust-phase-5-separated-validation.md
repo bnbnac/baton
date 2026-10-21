@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태(2026-10-21): R2의 M 180초/F 17회 사전 검사는 통과했다. N v2 키보드 재시도도 연결 선택 완료 전 입력 기한이 만료돼 사례 0/2에서 종료됐다. 사용자는 사용량 한도로 대화가 중단됐다고 보고했다. 첫 세션의 선택·resize·회수 및 정상 종료/잔류 0은 확인했지만 지정 연결 선택·재전달은 미검증이다. 정식 F 120회/M 2시간은 미실행이다. 기존 2시간 실패와 Phase 5 출시 차단은 유지한다.
+상태(2026-10-21 최신): N 키보드 재시도에서 첫 사례의 지정 연결 선택·재전달과 새 stream 출력을 확인했다. 두 번째 사례 시작 관측 중 입력 기한 만료로 종료돼 runner 완료는 1/2이며 최종 audit 부재로 전체 N 증거는 무효다. 사용자 보고는 사용량 한도로 대화 중단이다. 정상 종료/잔류 0을 확인했고 기존 실패는 보존한다. R2 M 180초/F 17회 사전 검사는 통과했지만 정식 F 120회/M 2시간과 Phase 5 인수는 미완료다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -262,3 +262,16 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 - 현재 source **23개**, binary **2개** 해시 일치를 별도 `failure-analysis.json`에 저장했다. summary SHA는 `da6291897c227a6a5733af2a3e23710652838a0507816d0c63912ac3e513c497`다. R2 M/F에 대한 실행 당시 비교는 `sameCommonInputs:true`, `sameHarnessSources:false`이며 native/verify 두 파일 차이 공개를 유지한다.
 
 이번 재개에서는 종료된 실행에 늦은 receipt를 넣거나 새 시험을 시작하지 않았다. 원시 실패를 보존하고 결과 문서만 갱신한다. 다음 미완료 작업은 N의 지정 연결 선택·재전달을 포함한 두 사례이며, 새 실행은 별도 재시도 결정 대상이다. 정식 F 120회/M 7200초, 회수 경계 완전성·결합 전환 메모리와 Phase 5 출시 차단은 그대로 남는다. 제품 수정이나 입력 기한 추가 완화의 근거는 없다.
+
+### 2026-10-21 키보드 재시도 — 첫 사례 완료, 두 번째 사례 전 중단
+
+사용자 `네 합시다` 승인으로 `62f3e990c4906689dae13311cffe72dd3fdde43f`에서 N 1회를 실행했다. 증거 경로는 `artifacts/phase5-separated-20261021-native-keyboard/n-cases`다. 첫 launcher 호출은 새 부모 폴더가 없어 `realpath`에서 프로세스 생성 전에 종료됐다. 폴더를 생성한 뒤 실제 runner를 한 번 시작했다(PID 8884, owner `afb15771-dbb3-4dbb-aaa6-926d9c5bc7da`). 실제 실행은 **2026-10-21 06:08:18~06:14:09 KST**, 부하 측정 327.2980초, OS 표본 10개, 연결/세션/서버 32/16/2다.
+
+- 첫 사례의 복원 창·선택·resize·회수·연결 선택·전달 **6개 receipt**가 접수·검증됐다. 창 너비 1183→1172, MCP 102×17→100×17과 원격 `17 100`이 일치했다.
+- 열린 연결 목록에서 전체 ID를 대조하고 Down을 한 번씩 입력·관측한 뒤 Return으로 지정 중간 항목 `8acaf30dbd9b609e8030709fe2b9d417`을 확정했다. 이후 전달 버튼을 눌렀고 원시 MCP status에서 세션 `0b9b4d077d269b502098efe28e81334d`의 adapter **0→16**, epoch **1→2(user_owned)→3(agent_owned)**, 새 stream `8db0eb55037b78e3a70c2fbf8e2dfb42`를 확인했다. 이전 owner의 sessions는 비었다. 저장된 출력에 LogOracle을 다시 적용해 새 stream의 **160개 레코드 연속성**을 확인했다(`partial-analysis.json`). 이번 지정 중간 항목의 키보드 선택·전달은 관측됐지만 모든 항목/환경으로 일반화하지 않는다.
+- runner의 transition 완료는 **1/2**다. 첫 audit 실행 사건과 health 사건은 각 1개지만 최종 서버 `audit-observations.json`은 없다. 서버 효과 16개/32개 검증이나 전체 N 통과로 주장하지 않는다. 독립 verifier는 필수 audit 부재로 `evidenceValid:false`, `scopePassed:false`이고 `verified.json`도 없다.
+- 두 번째 사례의 `window_mode` 요청 `688b0dae-29b9-4e88-81cd-cfa2b3c5f98f`는 입력 시작 t=226742.7035ms, deadline t=346742.7035ms다. 복원 창 화면 관측 뒤 완료 receipt 발행 전에 대화가 중단됐고 runner가 `input_expired`로 종료했다. 사용자는 사용량 한도 중단을 보고했지만 runner는 외부 한도를 계측하지 않는다. 두 번째 세션 선택/최대화/회수/전달은 수행하지 못했다.
+- 정상 종료 exit 0, 어댑터 EOF 32/32(모두 exit 0), 자손 종료 감사 `verified`, 강제 정리 없음이다. 현재 CIM의 **44개 소유 PID+생성 시각**, runner PID 및 정확한 owner label 컨테이너를 읽기 전용 점검해 잔류 0을 확인했다(`post-exit-check.json`).
+- 현재 source 23개/binary 2개 해시가 일치한다. summary SHA `954a6a304bc1e9ee1df65ad961e1bc7fde948b0886f1108fa58a531aa7b09425`. 원시 사건/출력과의 부분 대조는 별도 `partial-analysis.json`에 저장했다. 기존 실패 기록을 덮어쓰거나 첫 사례 부분 결과로 전체 verifier를 통과시키지 않았다.
+
+현재 제한은 제품 결함으로 입증된 것이 아니라 대화 중단에 민감한 실제 입력 시험 운영이다. 종료된 시험에는 늦은 receipt를 보내지 않았다. 새 실행·시간 기준 변경·제품 수정 없이 이번 결과를 마감한다. N 전체 두 사례, 정식 F/M, 회수 경계 완전성·결합 전환 메모리와 Phase 5 출시 차단은 그대로 남는다.
