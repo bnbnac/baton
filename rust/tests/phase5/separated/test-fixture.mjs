@@ -6,8 +6,9 @@ export function transitionFixture(round=0){
   assigned:{connection_id:'c'+target,session:{session_id:'s'+index,state:'agent_owned',control_epoch:epoch+2,stream_id:`stream-${index}-${epoch+2}`}},
   oldOwner:{connection_id:'c'+previous,sessions:[]},targetConnection:'c'+target,adapter:target};
 }
-export function transitionEvidence(scope='F'){
- const e=memoryEvidence(),rounds=scope==='N'?2:17,duration=rounds*10,events=[];
+export function transitionEvidence(scope='F',nativeCase){
+ const e=memoryEvidence(),rounds=scope==='N'?(nativeCase?1:2):17,duration=rounds*10,events=[];
+ if(nativeCase)Object.assign(e.summary,{nativeCase,completedCases:1});
  const emit=(type,t,detail={})=>events.push({type,t,owner:e.summary.owner,scope,...detail});
  const bindings=e.summary.sessions.map(s=>({...s}));
  const status=(index)=>({app_state:'online',connection_id:e.summary.connections[index],sessions:bindings.filter(s=>s.adapter===index).map(s=>({session_id:s.id,state:'agent_owned',control_epoch:s.epoch,stream_id:s.stream,geometry:{rows:32,columns:120}}))});
@@ -26,7 +27,7 @@ export function transitionEvidence(scope='F'){
   emit('binding',base+5002,{session:s.id,before:{adapter:s.adapter,epoch:s.epoch,stream:s.stream,cursor:0},after:{adapter:r.adapter,epoch:r.assigned.session.control_epoch,stream:r.assigned.session.stream_id}});
   Object.assign(s,{adapter:r.adapter,epoch:r.assigned.session.control_epoch,stream:r.assigned.session.stream_id});
   if(scope==='N'){
-   r.windowMode=round===0?'restored':'maximized';
+   r.windowMode=nativeCase??(round===0?'restored':'maximized');
    for(const [i,action] of ['window_mode','select','resize','reclaim','choose_connection','handoff'].entries()){
     const t=base+[0,901,1001,4000,4500,5000][i],id=`native-${round}-${action}`,request={id,owner:e.summary.owner,action,round,issuedAt:t,inputStartedAt:t,expiresAt:900000,verifyDeadline:t+45000};
     if(action!=='window_mode')request.session=s.id;if(['window_mode','resize'].includes(action))request.windowMode=action==='window_mode'?'restored':r.windowMode;

@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태(2026-10-21 최신): N 키보드 재시도에서 첫 사례의 지정 연결 선택·재전달과 새 stream 출력을 확인했다. 두 번째 사례 시작 관측 중 입력 기한 만료로 종료돼 runner 완료는 1/2이며 최종 audit 부재로 전체 N 증거는 무효다. 사용자 보고는 사용량 한도로 대화 중단이다. 정상 종료/잔류 0을 확인했고 기존 실패는 보존한다. R2 M 180초/F 17회 사전 검사는 통과했지만 정식 F 120회/M 2시간과 Phase 5 인수는 미완료다.
+상태(2026-10-21 최신): 사용량 한도 중단에 대비해 N을 사례별 독립 실행·종료·검증 후 합산하도록 변경했다. 관련 테스트 131개와 독립 코드 리뷰를 통과했다. 새 사례의 실측은 아직 없으며, 이전 1/2 부분 관측은 최종 audit 부재로 무효인 채 보존한다. R2 M 180초/F 17회 사전 검사는 통과했지만 정식 F 120회/M 2시간과 Phase 5 인수는 미완료다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -10,7 +10,7 @@
 |---|---|---|---|
 | M | 7,200초, 고정 첫 탭, Playwright 분리 | 180초/3회 audit | 고정 UI의 부하·자연 메모리 및 과부하·종료 |
 | F | Playwright 연결, 전환 120회 | 17회(첫 세션 재방문) | 프런트엔드 resize·회수·다른 owner 전달 기능 |
-| N | 복원/최대화, 서로 다른 2세션 | 없음 | 현재 Windows 환경에서 실제 입력 경로 |
+| N | 복원/최대화 각각 독립 실행, 새 세션 1개씩 | 없음 | 현재 Windows 환경에서 실제 입력 경로 |
 
 F는 분당 실행 속도나 2시간 지속성을 입증하지 않는다. N은 장기 안정성이나 모든 DPI/IME 환경을 입증하지 않는다. 세 결과 모두 `phase5Acceptance:false`, `combinedTransitionMemory:unverified`다.
 
@@ -63,6 +63,20 @@ node --test rust/tests/phase5/separated/*.test.mjs rust/tests/phase5/native-soak
 Node가 wildcard를 처리하지 못하는 환경에서는 separated 아래 `contract.test.mjs`, `runtime.test.mjs`, `memory.test.mjs`, `transitions.test.mjs`, `native.test.mjs`, `verify.test.mjs`를 나열한다. 미완성 fuzz가 포함되는 상위 glob이나 Cargo 빌드는 실행하지 않는다. 단위 테스트의 가짜 7,200초 증거는 실제 장시간 부하 결과가 아니다.
 
 ## N 네이티브 소비자
+
+### 2026-10-21 승인 변경: 사례별 완료 보존
+
+설정의 `nativeCase`를 `restored` 또는 `maximized`로 지정하면 해당 사례만 실행한다. 각각 새로운 32연결/16세션/2서버를 준비하고 세션 index 0에서 지정 창 모드의 resize·회수·다른 연결 재전달을 수행한다. 서로 독립 실행이므로 실제 세션/owner는 새로 생성된다. 각 사례는 16세션 audit 1회, health, 출력, 정상 종료, 32 adapter EOF, 소유 자원 정리까지 마친다. 전체 준비 포함 900초와 입력 120초/검증 45초 제한은 유지한다.
+
+각 디렉터리에 기존 `verify.mjs <case-directory>`를 실행하면 원시 증거와 현재 소스/후보를 검증한다. 통과는 `casePassed:true, scopePassed:false`로 저장된다. 완료한 사례는 재실행하지 않고 그대로 둔다. 두 사례가 각각 완료된 뒤 아래 명령으로 원시 증거를 다시 읽어 합산한다.
+
+```powershell
+node rust/tests/phase5/separated/verify.mjs --native-cases artifacts/<batch>/n-aggregate.json artifacts/<batch>/n-restored artifacts/<batch>/n-maximized
+```
+
+합산은 서로 다른 owner와 정확히 한 건씩의 복원/최대화, 각 `verified.json`의 summary hash, 현재 소스/바이너리 및 M/F 사전 증거를 확인한다. 두 사례의 전체 소스·후보·image·환경·baseline이 일치해야 한다. 결과 파일은 덮어쓰지 않는다. 합산 통과는 `execution:independent_cases`로 명시하며 연속 실행이나 장기 안정성 통과가 아니다. Phase 5 출시 차단과 두 미검증 항목은 유지한다.
+
+`nativeCase` 없는 과거 실행은 기존 두 사례 방식으로 계속 검증한다. 과거 실패/부분 기록을 새 단일 사례로 재표기하지 않는다. 아래 세션 0/1 설명은 이 과거 방식에 해당한다. 변경은 N driver와 verifier에만 한정했으며 공통 runtime/launcher/M/F 코드는 그대로다. 기존 M/F와의 소스 차이 허용 범위도 N driver/verifier 두 파일로 유지한다.
 
 computer-use skill의 관측 → 단일 조작 → 새 관측 절차를 따른다. 직접 Win32/PowerShell UIA helper 또는 관측 없는 클릭 루프를 사용하지 않는다. 로그인은 setup 단계에서 fixture 전용 Playwright로 끝나 있으므로 네이티브 조작은 준비된 세션의 창/탭/소유권만 다룬다.
 

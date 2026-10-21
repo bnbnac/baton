@@ -134,14 +134,15 @@ function verifyTransitionRaw(e,records){
 }
 function verifyNative(e,records){
  const version=e.summary.nativeTimingVersion??1;assert.ok([1,2].includes(version),'native_timing_version');
+ const count=records.length*6;
  if(version===2){
   assert.equal(e.summary.nativeResponseLatency,'not_measured','native_latency_claim');
   assert.deepEqual(e.summary.nativeBaselines?.map(x=>x.scope),['M','F'],'native_baselines');
   for(const b of e.summary.nativeBaselines){assert.equal(b.identity.scope,b.scope);assert.equal(typeof b.evidence,'string');assert.ok(b.evidence.length);assert.match(b.summarySha256,/^[a-f0-9]{64}$/);const c=compareNativeContext(e.summary,b.identity);assert.equal(c.sameCommonInputs,true,'native_baseline_common_inputs');assert.deepEqual(b.comparison,c,'native_baseline_comparison');}
-  assert.equal(e.events.filter(v=>v.type==='native_received').length,12,'native_acceptance_events');assert.equal(e.nativeFiles.acceptances?.length,12,'native_acceptance_files');
+  assert.equal(e.events.filter(v=>v.type==='native_received').length,count,'native_acceptance_events');assert.equal(e.nativeFiles.acceptances?.length,count,'native_acceptance_files');
  }
- const native=e.events.filter(v=>v.type==='native'),actions=['window_mode','select','resize','reclaim','choose_connection','handoff'];assert.equal(native.length,12);assert.equal(new Set(native.map(v=>v.request.id)).size,12,'duplicate_native_id');
- for(const kind of ['requests','starts','responses','results'])assert.equal(e.nativeFiles?.[kind]?.length,12,'native_files_missing');
+ const native=e.events.filter(v=>v.type==='native'),actions=['window_mode','select','resize','reclaim','choose_connection','handoff'];assert.equal(native.length,count);assert.equal(new Set(native.map(v=>v.request.id)).size,count,'duplicate_native_id');
+ for(const kind of ['requests','starts','responses','results'])assert.equal(e.nativeFiles?.[kind]?.length,count,'native_files_missing');
  let previous=-Infinity;
  for(let i=0;i<native.length;i++){
   const v=native[i],q=v.request,r=records[Math.floor(i/6)],o=v.response.observation;assert.equal(q.action,actions[i%6],'native_action_order');assert.equal(q.round,r.round);assert.equal(q.owner,e.summary.owner);assert.equal(v.response.id,q.id);assert.equal(v.response.owner,q.owner);assert.equal(v.response.status,'performed');assert.ok(o?.screenshotId);
@@ -193,9 +194,11 @@ function verifyOverload(e,end,o){
  for(const s of e.summary.sessions.slice(1))assert.equal(latest(s,blocked.seq,o.seq)?.state,'agent_owned','other_not_alive');
 }
 export function verifyEvidence(e){
- const result={evidenceValid:false,scopePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',publicBoundaryCompleteness:'unverified',errors:[],metrics:{}};
+ const result={evidenceValid:false,scopePassed:false,casePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',publicBoundaryCompleteness:'unverified',errors:[],metrics:{}};
  try{
   const s=e.summary,c=resolveContract(s.scope,s.profile);assert.ok(s.finishedUtc,'unfinished');assert.equal(compareIdentity(s,s).same,true,'identity_missing');
+  const singleCase=s.nativeCase!==undefined;
+  if(singleCase){assert.equal(s.scope,'N','native_case_scope');assert.equal(s.nativeTimingVersion,2,'native_case_timing');assert.ok(['restored','maximized'].includes(s.nativeCase),'native_case');assert.equal(s.completedCases,1,'native_case_count');}
   assert.equal(s.publicBoundaryCompleteness,s.scope==='M'?'not_exercised':'unverified','boundary_scope');result.publicBoundaryCompleteness=s.publicBoundaryCompleteness;
   for(const v of e.events.filter(v=>v.type==='public_boundary_unverified')){assert.notEqual(s.scope,'M');assert.ok(['stale_control_epoch','stale_stream','control_unavailable'].includes(v.response.code));assert.ok(['reclaiming','user_owned'].includes(v.observed.state)&&v.observed.control_epoch>v.epoch&&v.observed.stream_id===null);assert.ok(e.events.some(p=>p.type==='mcp'&&p.name==='status'&&p.seq<v.seq&&p.response.sessions.some(x=>x.session_id===v.session&&JSON.stringify(x)===JSON.stringify(v.observed))),'boundary_status_evidence');}
   assert.equal(s.connections.length,32);assert.equal(new Set(s.connections).size,32);assert.equal(s.sessions.length,16);assert.equal(new Set(s.sessions.map(s=>s.id)).size,16);assert.deepEqual(s.sessions.map(s=>s.index).sort((a,b)=>a-b),Array.from({length:16},(_,i)=>i));
@@ -206,7 +209,7 @@ export function verifyEvidence(e){
   const shutdown=e.events.filter(v=>v.type==='shutdown');assert.equal(shutdown.length,1);assert.ok(shutdown[0].t>end.t);assert.equal(shutdown[0].exit.code,0);validateShutdown(shutdown[0].process,shutdown[0].eofs);validateShutdown(e.process,shutdown[0].eofs);assert.deepEqual(shutdown[0].process,e.process,'shutdown_receipt');assert.deepEqual(e.cleanup.process,e.process,'cleanup_receipt');
   assert.equal(e.cleanup.owner,s.owner);for(const key of ['normalExit','forcedCleanup','remainingProcesses','remainingContainers','failures'])assert.deepEqual(e.cleanup[key],s.cleanup[key],'cleanup_summary');
   assert.equal(e.cleanup.normalExit,true);assert.equal(e.cleanup.forcedCleanup,false);assert.equal(e.cleanup.remainingProcesses,0);assert.equal(e.cleanup.remainingContainers,0);assert.deepEqual(e.cleanup.failures,[]);assert.deepEqual(e.cleanup.remaining,[]);assert.deepEqual(e.cleanup.containers,[]);assert.deepEqual(e.cleanup.fixtures,s.fixtures);
-  const rounds=s.scope==='N'?2:c.rounds;verifyAudits(e,rounds,start,end);result.metrics.rates=verifyOutput(e,start,end);
+  const rounds=s.scope==='N'?(singleCase?1:2):c.rounds;verifyAudits(e,rounds,start,end);result.metrics.rates=verifyOutput(e,start,end);
   const health=e.events.filter(v=>v.type==='health'&&v.t>=start.t&&v.t<=end.t);assert.equal(health.length,rounds,'health_rounds');for(const row of health){assert.equal(row.values.length,32);row.values.forEach((p,i)=>{assert.equal(p.app_state,'online');assert.equal(p.connection_id,s.connections[i]);});}
   if(s.scope==='M'||s.scope==='N'){
    for(const key of ['forcedGcCalls','jsProbes','rawCdpSessions'])assert.equal(s.instrumentation[key],0,'instrumentation_'+key);
@@ -222,7 +225,7 @@ export function verifyEvidence(e){
   }else{
    const records=e.events.filter(v=>v.type==='transition');verifyRounds(records,rounds,s.sessions,s.connections);verifyTransitionRaw(e,records);
    if(s.scope==='N'){
-    assert.ok(duration<=900);assert.deepEqual(records.map(r=>r.windowMode),['restored','maximized']);
+    assert.ok(duration<=900);assert.deepEqual(records.map(r=>r.windowMode),singleCase?[s.nativeCase]:['restored','maximized']);
     verifyNative(e,records);
     result.nativeTimingVersion=s.nativeTimingVersion??1;result.nativeResponseLatency='not_measured';if(s.nativeTimingVersion===2)result.nativeBaselines=s.nativeBaselines;
    }
@@ -231,25 +234,52 @@ export function verifyEvidence(e){
   if(s.scope!=='N'&&result.metrics.rates.some(r=>r.bytesPerSecond<1024))result.errors.push('output_rate_below_1KiB_s');
   if(result.metrics.memory?.passed===false)result.errors.push('memory_growth_over_20_percent');
   if(s.status==='failed'||s.failure)result.errors.push(s.failure??'runner_failed');
-  result.scopePassed=c.scopeEligible&&result.errors.length===0;result.preflightPassed=!c.scopeEligible&&result.errors.length===0;
-  result.scope=s.scope;result.profile=s.profile;result.resultName=result.scopePassed?({M:'detached_static_load_passed',F:'transition_cycles_passed',N:'native_cases_passed'})[s.scope]:result.preflightPassed?'preflight_passed':'failed';
+  result.casePassed=singleCase&&result.errors.length===0;if(singleCase)result.nativeCase=s.nativeCase;
+  result.scopePassed=!singleCase&&c.scopeEligible&&result.errors.length===0;result.preflightPassed=!c.scopeEligible&&result.errors.length===0;
+  result.scope=s.scope;result.profile=s.profile;result.resultName=result.casePassed?'native_case_passed':result.scopePassed?({M:'detached_static_load_passed',F:'transition_cycles_passed',N:'native_cases_passed'})[s.scope]:result.preflightPassed?'preflight_passed':'failed';
  }catch(error){result.errors.push(error.message);}
  return result;
+}
+// This combines independently shut down cases, not one continuous transition run.
+export function verifyNativeCasePair(evidences){
+ assert.equal(evidences.length,2,'native_pair_count');
+ assert.deepEqual(evidences.map(e=>e.summary.nativeCase).sort(),['maximized','restored'],'native_pair_modes');
+ assert.notEqual(evidences[0].summary.owner,evidences[1].summary.owner,'native_pair_owner');
+ const cases=evidences.map(e=>{const v=verifyEvidence(e);assert.equal(v.casePassed,true,'native_pair_invalid:'+v.errors.join(';'));return v;});
+ const comparison=compareIdentity(evidences[0].summary,evidences[1].summary);assert.equal(comparison.same,true,'native_pair_identity:'+comparison.differences.join(','));
+ assert.deepEqual(evidences[0].summary.nativeBaselines,evidences[1].summary.nativeBaselines,'native_pair_baselines');
+ return {scope:'N',scopePassed:true,phase5Acceptance:false,combinedTransitionMemory:'unverified',publicBoundaryCompleteness:'unverified',nativeResponseLatency:'not_measured',execution:'independent_cases',resultName:'native_cases_passed',cases:cases.sort((a,b)=>['restored','maximized'].indexOf(a.nativeCase)-['restored','maximized'].indexOf(b.nativeCase)),comparison};
+}
+async function checkCurrentNativeInputs(evidence){
+ for(const [p,hash] of Object.entries(evidence.summary.sources))assert.equal(await sha256(join(root,p)),hash,'source_changed_'+p);
+ for(const b of Object.values(evidence.summary.binaries))assert.equal(await sha256(b.path),b.sha256,'binary_changed');
+ if(evidence.summary.scope==='N'&&evidence.summary.nativeTimingVersion===2){const paths=Object.fromEntries(evidence.summary.nativeBaselines.map(b=>[b.scope,b.evidence]));assert.deepEqual(await checkNativeBaselines(root,paths,evidence.summary),evidence.summary.nativeBaselines,'native_baselines_changed');}
+}
+export async function aggregateNativeDirectories(directories,output){
+ assert.equal(directories.length,2,'native_pair_count');assert.equal(new Set(directories.map(p=>resolve(p))).size,2,'native_pair_directories');
+ const evidences=[],receipts=[];
+ for(const directory of directories){
+  const evidence=await loadEvidence(directory),saved=JSON.parse(await readFile(join(directory,'verified.json'),'utf8')),summarySha256=await sha256(join(directory,'summary.json'));
+  assert.equal(saved.casePassed,true,'native_case_not_verified');assert.equal(saved.summarySha256,summarySha256,'native_case_summary_changed');
+  await checkCurrentNativeInputs(evidence);evidences.push(evidence);receipts.push({directory:resolve(directory),nativeCase:evidence.summary.nativeCase,summarySha256});
+ }
+ const result={...verifyNativeCasePair(evidences),receipts,verifiedUtc:new Date().toISOString()};
+ await writeFile(output,JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result;
 }
 export async function verifyDirectory(out,comparisons=[]){
  let result;
  try{
   try{await access(join(out,'verified.json'));throw Error('verified_file_already_exists');}catch(e){if(e.code!=='ENOENT')throw e;}
   const evidence=await loadEvidence(out);result=verifyEvidence(evidence);
-  for(const [p,hash] of Object.entries(evidence.summary.sources))assert.equal(await sha256(join(root,p)),hash,'source_changed_'+p);
-  for(const b of Object.values(evidence.summary.binaries))assert.equal(await sha256(b.path),b.sha256,'binary_changed');
-  if(evidence.summary.scope==='N'&&evidence.summary.nativeTimingVersion===2){const paths=Object.fromEntries(evidence.summary.nativeBaselines.map(b=>[b.scope,b.evidence]));assert.deepEqual(await checkNativeBaselines(root,paths,evidence.summary),evidence.summary.nativeBaselines,'native_baselines_changed');}
+  await checkCurrentNativeInputs(evidence);
   result.comparisons=[];for(const other of comparisons){const peer=await loadEvidence(other);if(evidence.summary.scope==='N'&&evidence.summary.nativeTimingVersion===2){const comparison=compareNativeContext(evidence.summary,peer.summary);assert.equal(comparison.sameCommonInputs,true,'comparison_common_inputs_mismatch');result.comparisons.push({evidence:other,...comparison});}else assert.equal(compareIdentity(evidence.summary,peer.summary).same,true,'comparison_identity_mismatch');}
   result.summarySha256=await sha256(join(out,'summary.json'));
- }catch(error){result??={evidenceValid:false,scopePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',errors:[]};result.evidenceValid=false;result.scopePassed=false;result.preflightPassed=false;result.errors.push(error.message);}
+ }catch(error){result??={evidenceValid:false,scopePassed:false,preflightPassed:false,phase5Acceptance:false,combinedTransitionMemory:'unverified',errors:[]};result.evidenceValid=false;result.scopePassed=false;result.casePassed=false;result.preflightPassed=false;result.errors.push(error.message);}
  result.verifiedUtc=new Date().toISOString();await writeFile(join(out,'verification.json'),JSON.stringify(result,null,2)+'\n');
- if(result.evidenceValid&&(result.scopePassed||result.preflightPassed))await writeFile(join(out,'verified.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result;
+ if(result.evidenceValid&&(result.scopePassed||result.preflightPassed||result.casePassed))await writeFile(join(out,'verified.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});return result;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- assert.ok(process.argv[2],'usage: verify.mjs evidence-dir [comparison-dir...]');const result=await verifyDirectory(resolve(process.argv[2]),process.argv.slice(3).map(p=>resolve(p)));console.log(JSON.stringify(result,null,2));if(!result.scopePassed&&!result.preflightPassed)process.exitCode=1;
+ assert.ok(process.argv[2],'usage: verify.mjs evidence-dir [comparison-dir...] | --native-cases output.json restored-dir maximized-dir');
+ const result=process.argv[2]==='--native-cases'?await aggregateNativeDirectories(process.argv.slice(4).map(p=>resolve(p)),resolve(process.argv[3])):await verifyDirectory(resolve(process.argv[2]),process.argv.slice(3).map(p=>resolve(p)));
+ console.log(JSON.stringify(result,null,2));if(!result.scopePassed&&!result.preflightPassed&&!result.casePassed)process.exitCode=1;
 }

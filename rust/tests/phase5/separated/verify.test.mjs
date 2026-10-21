@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,mkdir,rm,readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import * as verification from './verify.mjs';
 const {verifyEvidence,loadEvidence}=verification;
 import {memoryEvidence,transitionEvidence} from './test-fixture.mjs';
@@ -34,8 +35,8 @@ test('N baseline checks re-read saved raw evidence without rewriting historical 
  await writeFile(join(dir,'M','verified.json'),JSON.stringify({preflightPassed:true,summarySha256:'f'.repeat(64)}));await assert.rejects(verification.checkNativeBaselines(dir,{M:'M',F:'F'},current),/summary_changed/);
  await writeFile(join(dir,'M','verified.json'),saved);await writeFile(join(dir,'M','output.jsonl'),'');await assert.rejects(verification.checkNativeBaselines(dir,{M:'M',F:'F'},current),/baseline_invalid/);
 });
-function nativeV2Evidence(){
- const e=transitionEvidence('N'),{peer,current}=nativeContextPair();Object.assign(e.summary,{sources:current.sources,nativeTimingVersion:2,nativeResponseLatency:'not_measured'});
+function nativeV2Evidence(nativeCase){
+ const e=transitionEvidence('N',nativeCase),{peer,current}=nativeContextPair();Object.assign(e.summary,{sources:current.sources,nativeTimingVersion:2,nativeResponseLatency:'not_measured'});
  // Hand-derived separate input/acceptance times precede the raw state checks.
  const times=[[0,0],[1,2],[902,903],[3000,3001],[4002,4003],[4501,4502]];
  e.nativeFiles.acceptances=[];
@@ -49,6 +50,65 @@ function nativeV2Evidence(){
  e.summary.nativeBaselines=['M','F'].map(scope=>{const p=structuredClone(peer);p.scope=scope;return {scope,evidence:'artifacts/'+scope,summarySha256:'a'.repeat(64),identity:p,comparison:{sameCommonInputs:true,sameHarnessSources:false,changedSources:[{path:sourcePath('native.mjs'),kind:'native_driver',before:'a'.repeat(64),after:'b'.repeat(64)},{path:sourcePath('verify.mjs'),kind:'verifier',before:'a'.repeat(64),after:'c'.repeat(64)}],differences:[]}};});
  return e;
 }
+
+for(const mode of ['restored','maximized'])test('independent '+mode+' case requires its own audit and shutdown and cannot pass all of N',()=>{
+ const e=nativeV2Evidence(mode),v=verifyEvidence(e);
+ assert.deepEqual(v.errors,[]);assert.equal(v.casePassed,true);assert.equal(v.nativeCase,mode);assert.equal(v.scopePassed,false);assert.equal(v.preflightPassed,false);assert.equal(v.resultName,'native_case_passed');
+ for(const mutate of [e=>e.audits[0].actual=[],e=>e.events=e.events.filter(x=>x.type!=='shutdown'),e=>e.cleanup.forcedCleanup=true,e=>e.summary.completedCases=2,e=>e.summary.nativeCase='unknown',e=>e.summary.nativeTimingVersion=1,e=>e.events.find(x=>x.type==='transition').windowMode=mode==='restored'?'maximized':'restored']){
+  const broken=nativeV2Evidence(mode);mutate(broken);assert.notEqual(verifyEvidence(broken).casePassed,true);
+ }
+});
+function nativePair(){
+ return ['restored','maximized'].map(mode=>{const original=nativeV2Evidence(mode),e=JSON.parse(JSON.stringify(original).replaceAll('test-owner','owner-'+mode));e.summary.nativeBaselines=original.summary.nativeBaselines;return e;});
+}
+test('native aggregation revalidates both raw cases and requires identical candidates, sources and environment',()=>{
+ const pair=nativePair(),v=verification.verifyNativeCasePair(pair);
+ assert.equal(v.scopePassed,true);assert.equal(v.phase5Acceptance,false);assert.equal(v.combinedTransitionMemory,'unverified');assert.equal(v.publicBoundaryCompleteness,'unverified');assert.deepEqual(v.cases.map(x=>x.nativeCase),['restored','maximized']);
+ for(const mutate of [p=>p.pop(),p=>p.push(structuredClone(p[0])),p=>p[1]=structuredClone(p[0]),p=>p[1].summary.owner=p[0].summary.owner,p=>p[1].summary.sources[sourcePath('native.mjs')]='d'.repeat(64),p=>p[1].summary.binaries.app.sha256='d'.repeat(64),p=>p[1].summary.environment.webview='other',p=>p[1].summary.imageId='sha256:'+'d'.repeat(64),p=>p[1].audits[0].actual=[],p=>p[1].output=[],p=>p[1].summary.status='failed',p=>p[1].summary.nativeBaselines[0].summarySha256='b'.repeat(64)]){
+  const broken=nativePair();mutate(broken);assert.throws(()=>verification.verifyNativeCasePair(broken));
+ }
+});
+test('old two-case evidence and incomplete partial runs cannot be relabeled as an independent case',()=>{
+ const old=nativeV2Evidence();old.summary.nativeCase='restored';old.summary.completedCases=1;
+ assert.notEqual(verifyEvidence(old).casePassed,true);
+ const partial=nativeV2Evidence('restored');delete partial.summary.finishedUtc;
+ assert.notEqual(verifyEvidence(partial).casePassed,true);
+});
+async function saveRawEvidence(out,e){
+ await mkdir(out,{recursive:true});
+ for(const [file,value] of [['summary',e.summary],['audit-observations',e.audits],['normal-boundary',e.boundary],['process',e.process],['final-cleanup',e.cleanup]])await writeFile(join(out,file+'.json'),JSON.stringify(value));
+ for(const key of ['events','output','memory'])await writeFile(join(out,key+'.jsonl'),e[key].map(x=>JSON.stringify(x)).join('\n')+'\n');
+ if(e.summary.scope==='N')for(const [kind,values] of Object.entries(e.nativeFiles)){await mkdir(join(out,'native',kind),{recursive:true});for(const v of values)await writeFile(join(out,'native',kind,(v.id??v.request.id)+'.json'),JSON.stringify(v));}
+}
+test('saved native cases survive independent verification and aggregation without rewriting completed evidence',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'baton-native-pair-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const workspace=resolve(dirname(fileURLToPath(import.meta.url)),'../../../..'),digest=bytes=>createHash('sha256').update(bytes).digest('hex');
+ const pair=nativePair(),sources={};for(const p of Object.keys(pair[0].summary.sources))sources[p]=digest(await readFile(join(workspace,p)));
+ const binary=join(dir,'candidate.bin');await writeFile(binary,'candidate');const binaries=Object.fromEntries(['app','adapter'].map(key=>[key,{path:binary,sha256:digest('candidate')}]));
+ const paths={M:join(dir,'M'),F:join(dir,'F')};
+ for(const scope of ['M','F']){
+  const e=scope==='M'?memoryEvidence():transitionEvidence('F');Object.assign(e.summary,{sources,binaries});await saveRawEvidence(paths[scope],e);
+  await writeFile(join(paths[scope],'verified.json'),JSON.stringify({preflightPassed:true,summarySha256:digest(await readFile(join(paths[scope],'summary.json')))}));
+ }
+ const directories=[];
+ for(const e of pair){
+  Object.assign(e.summary,{sources,binaries});e.summary.nativeBaselines=await verification.checkNativeBaselines(workspace,paths,e.summary);
+  const out=join(dir,e.summary.nativeCase);directories.push(out);await saveRawEvidence(out,e);
+  const v=await verification.verifyDirectory(out);assert.deepEqual(v.errors,[]);assert.equal(v.casePassed,true);assert.equal(v.scopePassed,false);
+  assert.equal(JSON.parse(await readFile(join(out,'verified.json'),'utf8')).casePassed,true);
+ }
+ const before=await Promise.all(directories.map(out=>readFile(join(out,'verified.json'),'utf8'))),report=join(dir,'aggregate.json');
+ assert.equal((await verification.aggregateNativeDirectories(directories,report)).scopePassed,true);
+ assert.deepEqual(await Promise.all(directories.map(out=>readFile(join(out,'verified.json'),'utf8'))),before);
+ const saved=await readFile(report,'utf8');await assert.rejects(verification.aggregateNativeDirectories(directories,report),/EEXIST/);assert.equal(await readFile(report,'utf8'),saved);
+ await writeFile(join(directories[1],'output.jsonl'),'');await assert.rejects(verification.aggregateNativeDirectories(directories,join(dir,'invalid.json')),/native_pair_invalid/);
+ await assert.rejects(readFile(join(dir,'invalid.json')),/ENOENT/);
+ // A persisted pass is not enough if either current binary or the summary changes.
+ await writeFile(binary,'changed');const changed=join(dir,'changed-binary');await saveRawEvidence(changed,pair[0]);const invalid=await verification.verifyDirectory(changed);assert.equal(invalid.casePassed,false);assert.ok(invalid.errors.some(x=>x.includes('binary_changed')));
+ await assert.rejects(verification.aggregateNativeDirectories(directories,join(dir,'binary.json')),/binary_changed/);
+ await writeFile(binary,'candidate');await writeFile(join(directories[0],'summary.json'),JSON.stringify({...pair[0].summary,extra:'changed'}));
+ await assert.rejects(verification.aggregateNativeDirectories(directories,join(dir,'changed.json')),/native_case_summary_changed/);
+});
 test('v2 native evidence verifies acceptance clock and retains the unmeasured response-latency label',()=>{
  const v=verifyEvidence(nativeV2Evidence());assert.deepEqual(v.errors,[]);assert.equal(v.scopePassed,true);assert.equal(v.nativeTimingVersion,2);assert.equal(v.nativeResponseLatency,'not_measured');
 });

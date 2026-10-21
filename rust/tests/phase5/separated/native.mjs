@@ -49,6 +49,9 @@ export async function publishNative(dir,action,id,observation){
  await exclusive(join(dir,'responses',id+'.json'),{id,owner:request.owner,status:action==='done'?'performed':'failed',observation});return {id,status:'receipt_recorded'};
 }
 export async function runNative(r,mailbox){
+ const modes=r.config.nativeCase===undefined?['restored','maximized']:[r.config.nativeCase];
+ assert.ok(modes.every(mode=>['restored','maximized'].includes(mode)),'native_case');
+ if(r.config.nativeCase!==undefined)r.summary.nativeCase=r.config.nativeCase;
  r.summary.nativeTimingVersion=2;r.summary.nativeResponseLatency='not_measured';
  r.summary.nativeBaselines=await checkNativeBaselines(r.root,r.config.preflightEvidence,r.summary);await r.save();
  await mailbox.init();await r.disconnectBrowser();await r.startMeasurement();const runDeadline=r.born+900000;let nextSample=0;
@@ -60,8 +63,8 @@ export async function runNative(r,mailbox){
   }
  }
  try{
-  for(let round=0;round<2;round++){
-   const s=r.sessions[round],windowMode=round===0?'restored':'maximized';
+  for(let round=0;round<modes.length;round++){
+   const s=r.sessions[round],windowMode=modes[round];
    await action({action:'window_mode',round,windowMode:'restored'},async o=>({windowMode:o.windowMode}));
    const before={session:s.id,adapter:s.adapter,epoch:s.epoch,stream:s.stream};
    const selected=await action({action:'select',round,session:s.id,label:`soak-${String(s.index).padStart(2,'0')}`},async()=>selectedGeometry(r,s,r.now()));
@@ -74,5 +77,5 @@ export async function runNative(r,mailbox){
    const record={round,index:s.index,before,selected,resized,remote,reclaimed,assigned,oldOwner:await r.status(before.adapter),targetConnection,adapter,windowMode};verifyTransition(record);await r.adoptBinding(s,{adapter,epoch:assigned.session.control_epoch,stream:assigned.session.stream_id});await r.event('transition',record);await r.audit(round);await r.health();
   }
  }finally{await r.freeze();}
- await r.verifyAudits();r.summary.normalWorkloadPassed=true;r.summary.completedCases=2;return {workloadPassed:true,cases:2};
+ await r.verifyAudits();r.summary.normalWorkloadPassed=true;r.summary.completedCases=modes.length;return {workloadPassed:true,cases:modes.length};
 }
