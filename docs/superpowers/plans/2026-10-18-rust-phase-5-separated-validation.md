@@ -197,3 +197,7 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 ### 2026-10-22 정지 사유 계측
 
 고정 후보의 별도 소스 복사본에만 로그를 추가해 `artifacts/phase5-offline-trace-20261022`에서 대조/메뉴 진단을 수행했다. 제한 실행 환경의 최초 control은 MCP online 미성립으로 제외했다. 같은 사용자 권한의 control2는 75.482초 online, exit0/EOF0을 확인했다. 메뉴 사례는 마지막 pong 이후 내부 측정 30.072초에 heartbeat timeout/FrontendLost로 정지했다. 정상 닫기 요청 후 서비스·IPC 종료와 Tauri ExitRequested까지 6ms 내 도달했지만 supervisor의 15초 종료 대기는 실패했다. 원시 로그·소스/바이너리 해시와 정리 기록을 analyze.mjs로 대조했으며 세 실행 잔류0. 제품 수정·N/F/M 재실행 없음. 다음은 ExitRequested 이후의 이벤트 루프/창 정리와 root·WebView·supervisor 생존을 같은 권한에서 구분하는 조사다. heartbeat 정지 사유 확인과 종료 문제 해결을 혼동하지 않는다. 세부 근거·제외 기준·한계는 `docs/testing/rust-phase-5-offline-investigation.md`에 기록했다.
+
+### 2026-10-23 한도 중단 후 종료 경계 회수
+
+`artifacts/phase5-exit-trace-20261022`의 이미 끝난 결과를 분석했다. 최초 menu는 수집기 구문 오류로 제외했고 수정·수집 자체 확인 후 실행한 menu2와 short-menu에서 종료 허용 이후 동일 PID/시작 시각의 앱 root와 WebView 6개 생존을 확인했다. 서비스/IPC 종료는 완료됐으나 최종 Exit 이벤트는 없고 정상 종료 15초 대기는 실패했다. short-menu는 메뉴 닫힌 뒤 9.086초 후 timeout, 그 2.086초 뒤 정상 닫기 요청이므로 timeout 없는 종료 대조로 사용할 수 없다. 전체 진단 소스/앱 hash, 원시 표본, 소유 잔류0 검증 완료. 재개 시 재실행/제품 수정 없음. 다음은 Windows 이벤트 처리의 복구·최종 Exit 경계를 스택 또는 최소 재현으로 구분하는 조사다. N/F/M 및 Phase 5 차단 유지. 상세는 `docs/testing/rust-phase-5-offline-investigation.md` 마지막 절.

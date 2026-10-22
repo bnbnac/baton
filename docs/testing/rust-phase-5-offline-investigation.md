@@ -1,6 +1,6 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
-2026-10-22 갱신. **별도 진단 빌드에서 heartbeat 시간 초과 → FrontendLost → offline 경로를 확인했다.** 서비스와 IPC 종료는 완료됐지만 이후 정상 종료 대기는 실패했다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 아래 2026-10-21 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
+2026-10-23 갱신. **heartbeat 시간 초과 → FrontendLost → offline 경로와, 종료 허용 후에도 실제 앱·WebView 프로세스가 살아 있는 것을 확인했다.** 서비스와 IPC 종료는 완료됐지만 최종 Exit 이벤트는 관측되지 않았다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
 
@@ -63,3 +63,29 @@
 `node artifacts/phase5-offline-trace-20261022/analyze.mjs`가 원시 trace/status, 정리 기록, 전체 진단 소스와 바이너리 hash를 대조했다. 메뉴 summary SHA256은 `0b59cd7854a4135b82aff7299e9ec6a91b902a12f637b896c875f1b3f3bed342`, trace SHA256은 `93a11e95103fdac5202470bf2855b5315699a95037afe6b2144cfb80340fc3ea`다. 수집 UTC는 2026-10-21 15시대이며 한국 날짜로 10월 22일이다.
 
 다음 조사는 `app.exit_requested` 이후의 Exit 이벤트/이벤트 루프 반환과, 강제 정리 전 root·WebView·supervisor의 동일 권한 생존 상태에 집중한다. 장시간 시험이나 N/F/M은 재실행하지 않았다. 실제 frontend 상실 차단을 유지하는 수정 설계는 이 종료 문제를 구분한 뒤 정한다. Phase 5 출시 차단은 유지한다.
+
+## 2026-10-23: 한도 중단 후 종료 경계 결과 회수
+
+증거 루트는 `artifacts/phase5-exit-trace-20261022/`다. 실행은 한국 날짜 10월 22일에 완료됐으며, 10월 23일 재개 시 새 시험 없이 기존 결과를 분석하고 소유 프로세스 잔류를 다시 확인했다. 기존 진단 소스에서 `main.rs`의 Exit/Destroyed/종료 허용/반환 로그만 추가했고, `manifest.json`으로 전체 소스와 바이너리를 고정했다. 앱 SHA256은 `06c64e1256da66f8ed39ec2d7dbe153df1b6d5636b46dfea0ead10e2618f522f`, 빌드 exit 0. 제품 소스와 미완성 fuzz는 그대로다.
+
+첫 `menu` 실행은 새 PowerShell 수집기의 닫는 괄호 누락으로 표본 수집에 실패했다. 이 실행을 정상 종료 deadline 검증이나 생존 증거로 사용하지 않는다. 오류를 수정하고 구문 검사와 살아 있는 자체 프로세스 수집을 확인한 뒤 같은 바이너리의 `menu2`를 실행했다. `harness-revision2.json`은 수집기 수정, `harness-revision3.json`은 짧은 메뉴 조건 추가를 기록한다. 최초 manifest의 수집기 hash를 수정 후 파일 hash로 오인하지 않는다.
+
+| 관측 | menu2 | short-menu |
+|---|---:|---:|
+| 메뉴 열림/닫힘 관측 marker 간격 | 54.204초 | 16.855초 |
+| 마지막 수락 pong → timeout 로그 | 30.055초 | 30.046초 |
+| 메뉴 닫힘 marker → timeout | 닫히기 28.258초 전 | 닫힌 뒤 9.086초 |
+| 정상 창 닫기 요청 → 종료 허용 | 7ms | 7ms |
+| 생존 표본의 실제 창 닫기 요청 후 시각 | 2.668초 / 9.330초 | 2.668초 / 9.316초 |
+| 각 생존 표본 | 같은 앱 root + 같은 WebView 6개 | 같은 앱 root + 같은 WebView 6개 |
+| 최종 Exit 이벤트 / 정상 종료 | 미관측 / 15초 대기 실패 | 미관측 / 15초 대기 실패 |
+
+생존 표본은 같은 실행 권한에서 조회했고 앱·WebView의 PID와 Process.StartTime ticks가 시작 기록과 일치했다. 따라서 감시 프로세스만 남은 현상이 아니라 **앱 자체도 실제 살아 있었다.** `exit-plus2.json`/`exit-plus8.json`이라는 파일명은 예약 지연이며 실제 측정 시각은 표와 JSON의 UTC를 따른다. Node supervisor/runner/adapter 생존도 기록했지만 최초 시작 시각과 대조하지 않은 항목은 root/WebView와 같은 신원 검증으로 주장하지 않는다.
+
+두 실행 모두 서비스·IPC 종료가 완료되고 `app.exit_allowed`까지 도달했으나 `app.exit_event`/`window.destroyed`는 기록되지 않았다. Windows의 Tao `run`은 내부 `run_return` 뒤 `std::process::exit`를 호출하므로, 추가한 `app.run_returned` 로그 부재 자체는 정지 증거가 아니다. `ThreadState/WaitReason` 표본은 호출 스택이 아니며 특정 COM/잠금/라이브러리 줄을 원인으로 확정하지 않는다.
+
+짧은 메뉴 조건은 5초 후 닫기 요청 marker를 만들도록 했지만 실제 조작·관측 간격은 16.855초였다. marker는 키 입력 시각 자체가 아니다. 메뉴가 사라진 뒤에도 창 닫기 요청 전까지 `pong.begin`이 0건이고, 9.086초 뒤 timeout이 발생했다. **정상 창 닫기 요청은 그 timeout보다 2.086초 늦었다.** 따라서 메뉴를 닫아도 heartbeat가 회복되지 않은 관측은 유효하지만, 의도했던 “heartbeat timeout 없이도 종료 실패” 대조는 성립하지 않았다. 이를 통과/확정 결과로 쓰거나 자동 재실행하지 않는다.
+
+`analyze.mjs`가 원시 trace/status/표본을 대조하고 전체 진단 소스·앱 hash 불변을 검증했다. `analysis.json`에는 수치와 원시 파일 hash를 저장했다. 세 실행 모두 `resume-cleanup-check.json`에서 기록된 시작 시각까지 일치하는 소유 프로세스 잔류 0을 확인했다. 강제 정리를 거친 실패 실행을 정상 종료로 바꾸지 않는다.
+
+다음 조사 범위는 메뉴가 사라진 뒤에도 UI heartbeat 처리가 재개되지 않고 종료 허용 이후 최종 Exit로 진행하지 않는 Windows 이벤트 처리 경계다. 실제 호출 스택 또는 최소 이벤트 루프 재현으로 구분해야 하며, 시간 초과값 변경으로 우회하지 않는다. N 독립 사례 0/2, 정식 F/M 미실행과 Phase 5 출시 차단은 유지한다.
