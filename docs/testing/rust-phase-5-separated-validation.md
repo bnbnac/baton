@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-상태(2026-10-23 최신): N 사례별 독립 완료 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 app_offline으로 실패, 독립 사례 통과 0/2, 최대화 미실행이다. 창 메뉴 중 heartbeat timeout/FrontendLost를 확인했고, 후속 진단에서는 종료 허용 후에도 동일 앱·WebView 프로세스가 살아 있고 최종 Exit 이벤트가 오지 않음을 확인했다. 짧은 메뉴도 닫힌 뒤 heartbeat가 회복되지 않았지만, 창 닫기 요청 전에 timeout이 발생해 timeout 없는 종료 대조는 성립하지 않았다. 한도 중단 후 기존 결과를 회수했고 새 시험은 실행하지 않았다. [조사 결과](rust-phase-5-offline-investigation.md)에 근거와 한계를 기록했다. 현재 소유 잔류 0. 기존 실패와 정식 F/M·Phase 5 출시 차단은 유지한다.
+상태(2026-10-23 최신): N 사례별 독립 완료 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 app_offline으로 실패, 독립 사례 통과 0/2, 최대화 미실행이다. 후속 최소 Tauri 창에서도 SSH/MCP/watchdog 없이 메뉴 후 Rust 응답 중단·정상 종료 실패를 재현했다. 화면 JS 카운터는 증가하지만 Rust 수신은 멈췄고 종료 허용 후에도 같은 앱·WebView가 살아 있었다. 메뉴 없는 동일 바이너리 대조는 정상 종료했다. [조사 결과](rust-phase-5-offline-investigation.md)에 원시 근거와 하위 이벤트 처리 조사 범위를 기록했다. 현재 소유 잔류 0. 기존 실패와 정식 F/M·Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 

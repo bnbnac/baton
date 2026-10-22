@@ -201,3 +201,7 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 ### 2026-10-23 한도 중단 후 종료 경계 회수
 
 `artifacts/phase5-exit-trace-20261022`의 이미 끝난 결과를 분석했다. 최초 menu는 수집기 구문 오류로 제외했고 수정·수집 자체 확인 후 실행한 menu2와 short-menu에서 종료 허용 이후 동일 PID/시작 시각의 앱 root와 WebView 6개 생존을 확인했다. 서비스/IPC 종료는 완료됐으나 최종 Exit 이벤트는 없고 정상 종료 15초 대기는 실패했다. short-menu는 메뉴 닫힌 뒤 9.086초 후 timeout, 그 2.086초 뒤 정상 닫기 요청이므로 timeout 없는 종료 대조로 사용할 수 없다. 전체 진단 소스/앱 hash, 원시 표본, 소유 잔류0 검증 완료. 재개 시 재실행/제품 수정 없음. 다음은 Windows 이벤트 처리의 복구·최종 Exit 경계를 스택 또는 최소 재현으로 구분하는 조사다. N/F/M 및 Phase 5 차단 유지. 상세는 `docs/testing/rust-phase-5-offline-investigation.md` 마지막 절.
+
+### 2026-10-23 최소 Tauri 창 재현
+
+`artifacts/phase5-minimal-window-20261023`에서 Baton SSH/MCP/watchdog를 실행하지 않는 최소 UI를 비교했다. 같은 의존성/설정, 별도 source/dist만 변경했다. 메뉴 없는 대조는 JS tick/eval ack, Exit 이벤트, exit0/정상 자식 정리 통과. 메뉴 조건은 화면 카운터 27→47에도 Rust tick/ack 수신이 중단되고, 종료 허용 후 Exit 이벤트 없이 15초 대기 실패. 2.686초 생존 표본에서 동일 root/WebView6을 확인했다. 원시 분석과 전체 소스/실행기/바이너리 해시, 소유 잔류0 검증 완료. 따라서 watchdog timeout과 제품 SSH/MCP 서비스는 이 재현의 필요 조건이 아니다. 동일 native automation/job supervisor/창 설정의 영향과 특정 Tauri/Tao 원인은 미확정이며 다음은 하위 Windows 이벤트 전달·종료 경계 계측이다. 제품 변경/N/F/M 재실행 없음. 상세는 조사 보고서 마지막 절.

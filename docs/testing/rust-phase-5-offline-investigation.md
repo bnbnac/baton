@@ -1,6 +1,6 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
-2026-10-23 갱신. **heartbeat 시간 초과 → FrontendLost → offline 경로와, 종료 허용 후에도 실제 앱·WebView 프로세스가 살아 있는 것을 확인했다.** 서비스와 IPC 종료는 완료됐지만 최종 Exit 이벤트는 관측되지 않았다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
+2026-10-23 갱신. **Baton의 SSH/MCP/heartbeat 감시를 실행하지 않는 최소 Tauri 창에서도 메뉴 후 Rust 응답 중단·정상 종료 실패를 재현했다.** 메뉴 없는 대조는 정상 종료했다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
 
@@ -89,3 +89,26 @@
 `analyze.mjs`가 원시 trace/status/표본을 대조하고 전체 진단 소스·앱 hash 불변을 검증했다. `analysis.json`에는 수치와 원시 파일 hash를 저장했다. 세 실행 모두 `resume-cleanup-check.json`에서 기록된 시작 시각까지 일치하는 소유 프로세스 잔류 0을 확인했다. 강제 정리를 거친 실패 실행을 정상 종료로 바꾸지 않는다.
 
 다음 조사 범위는 메뉴가 사라진 뒤에도 UI heartbeat 처리가 재개되지 않고 종료 허용 이후 최종 Exit로 진행하지 않는 Windows 이벤트 처리 경계다. 실제 호출 스택 또는 최소 이벤트 루프 재현으로 구분해야 하며, 시간 초과값 변경으로 우회하지 않는다. N 독립 사례 0/2, 정식 F/M 미실행과 Phase 5 출시 차단은 유지한다.
+
+## 2026-10-23: Baton 서비스 없는 최소 Tauri 창 재현
+
+`artifacts/phase5-minimal-window-20261023/`에 기존 진단 소스 복사본의 `main.rs`, `dist/index.html`을 바꾸고 `minimal.js/css`만 추가했다. `manifest.json`이 이 네 파일 차이와 전체 소스/실행기/수집기/바이너리 hash를 기록한다. Rust 의존성/lockfile과 Tauri 설정은 유지했으며, Baton 라이브러리의 파일 logger만 사용한다. AppService/SSH/MCP 서버/heartbeat 감시를 생성하거나 실행하지 않는다. 따라서 완전히 독립된 새 Tauri 프로젝트는 아니지만 해당 제품 서비스의 런타임 영향을 제거한 재현이다.
+
+최소 HTML은 1초마다 화면 카운터를 갱신하고 `diagnostic_tick` 명령을 호출한다. 별도 Rust thread는 2초마다 `window.eval`로 `diagnostic_ack` 호출을 요청한다. 정상 창 닫기는 기존과 같은 `prevent_close` → 다른 thread의 `app.exit(0)` 흐름을 사용하되 서비스 종료/정지 플래그/비동기 drain은 없다. `ExitRequested`는 무조건 허용하며 `Exit` 이벤트를 기록한다. 타이머를 늘리거나 종료를 강제 통과시키는 제품 수정은 하지 않았다.
+
+| 항목 | control | menu |
+|---|---|---|
+| 런타임 SSH/MCP/watchdog/CDP | 모두 0/없음 | 모두 0/없음 |
+| 초기 JS tick / eval ack 수신 | 20 / 10 | 24 / 12 이후 중단 |
+| 화면 관측 | 메뉴 조작 없음 | 메뉴 열린 화면 tick 27 → 닫힌 화면 tick 47 |
+| 메뉴 닫힘 관측 뒤 정상 창 닫기까지 | 해당 없음 | 10.964초 |
+| 그 구간 Rust에서 받은 tick / ack | 해당 없음 | 0 / 0, eval 송신 시도 5회 |
+| 창 닫기 → ExitRequested 허용 | 2ms | 2ms |
+| 최종 Exit 이벤트 / 종료 | 관측 / exit 0, descendant audit verified | 미관측 / 15초 정상 종료 대기 실패 |
+| 종료 요청 후 생존 | 정상 종료 | 2.686초 표본에서 동일 root와 동일 WebView 6개 생존 |
+
+메뉴 열림/닫힘 관측 marker 간격은 19.809초다. 화면 관측은 computer-use screenshot에서 읽은 값이며 원시 trace의 마지막 수신 tick 24와 구분한다. 화면 카운터 증가로 JavaScript 타이머와 화면 갱신이 진행한 것은 보이지만, Rust에 명령이 도착하지 않은 정확한 내부 단계까지 설명하지는 못한다. `eval.sent ok=true`도 스크립트 실행 완료 보장이 아니다.
+
+두 실행은 동일 바이너리 `ea5fbca3ba85c6226ecf691d499fea8048b7339be1e2c8b048281b7cbe2738a4`, 동일 WebView `155.0.4283.62`를 사용했다. `analyze.mjs`로 원시 trace/표본, 전체 소스와 실행기·수집기·바이너리 hash를 검증했다. 메뉴 summary SHA256은 `aea53220f4669ea14fdb286bb34309510f0ac181f6444b719ac736fe7c9fe8f9`, trace SHA256은 `bcd16a7c6a75bee7f3b3cf01fcf5e23db594168817196a0715de0955fa62a41e`다. `cleanup-check.json`에서 PID와 시작 시각을 대조한 소유 잔류 0을 확인했다. 메뉴 실패는 supervisor 정리/job kill-on-close를 거쳤으며 정상 종료가 아니다.
+
+**이 조건에서 종료 실패를 만들기 위해 Baton watchdog timeout이나 SSH/MCP 서비스는 필요하지 않다.** 기존 제품의 frontend timeout은 실제 관측된 후속 정지 경로지만 이번 최소 재현에는 없다. 다음 조사 지점은 동일 Windows 창/이벤트 루프의 메시지 전달·종료 진행 경계다. Tauri/Tao의 특정 결함으로 확정하지 않으며, 같은 native automation·job supervisor·창 설정·WebView 조합의 영향도 아직 분리하지 않았다. 하위 루프의 상태/메시지 계측 또는 스택을 확보해 이 경계를 구분한다. Phase 5 인수와 N/F/M 상태는 변경하지 않는다.
