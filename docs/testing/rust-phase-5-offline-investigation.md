@@ -1,5 +1,7 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
+최신 후보 검증(2026-10-23): 동기 Alt+Space 큐 전달을 제품 계측 복사본에만 적용한 두 시험이 통과했다. Alt+Space74.292초/pong15와 제목 표시줄60.521초/pong12 동안 동일 연결·online을 유지하고 실제 메뉴 종료·정상 앱 종료·소유 잔류0을 확인했다. 제품 채택이나 Phase5 합격을 뜻하지 않는다. 상세는 마지막 절.
+
 최신 제품 경계 검증(2026-10-23): Alt+Space 메뉴 중 마지막 heartbeat 응답 후30초에 FrontendLost가 발생했고 실제 메뉴 종료 뒤에도 offline을 유지했다. 메뉴 종료 후 앱 자체는 정상 종료했다. 같은 바이너리의 제목 표시줄 메뉴는62.594초 동안 pong13회/online을 유지했다. 상세·절차 변경·한계는 마지막 절을 따른다.
 
 2026-10-23 갱신. **Escape 두 번째 입력에서 실제 메뉴 루프가 끝났고, 동기 전달 원본과 큐 전달 진단 앱 모두 응답 복구·정상 종료했다.** 첫 Escape로 팝업이 사라져도 메뉴 모드는 남아 있었다. 앞선 종료 실패를 영구 교착 또는 별도의 종료 결함으로 확정하지 않는다. 원본은 메뉴 루프 동안 Rust 수신이 멈추고 큐 전달 실험은 응답을 유지한다는 차이는 남는다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
@@ -235,3 +237,28 @@ Alt+Space는 send_flags1, 제목 표시줄은0이었다. 실제 메뉴 종료 �
 `analyze.mjs`/`analysis.json`이 snapshot 전체 소스·앱·실행기·adapter 해시, 로그 연속 순번/cap 미도달, 실제 메뉴 이벤트와 pong/timeout/status 시각, 동일 WebView 경로 버전, 완결 실행 exit/EOF/audit, 세 실행 소유 잔류0을 검증했다. 원시 파일별 해시는 analysis에 보존했다. 완결 Alt+Space summary SHA256 `97309db49ef962d577989ecd962f3a2ed969243a1945b6ca2ac83d281bc8cdbe`, 제목 표시줄 summary SHA256 `e025f2cdf871bded3158e7dd4e8139fea857f025d5750c0cbdda717868e1b98d`.
 
 다음 후보는 동기 Alt+Space 큐 전달을 제품 계측 복사본에만 적용해30초보다 충분히 긴 메뉴 동안 pong/online 유지, 실제 메뉴 종료, 정상 종료 및 제목 표시줄 회귀를 검증하는 것이다. watchdog 연장이나 stopping 자동 해제는 이번 근거로 제안하지 않는다. 제품 patch 채택과 SSH/소유권 포함 N 본시험은 별도 검증이 필요하다. 제품/fuzz 변경 없음, N/F/M 및 기존2시간 실패·출시 차단 유지.
+
+## 2026-10-23 제품 계측 복사본의 큐 전달 후보
+
+증거 루트 `artifacts/phase5-product-defer-20261023`. 앞 절의 소스 snapshot을 복사하고 Tao `event_loop.rs` 한 파일만 변경했다. 동기 전송 중인 Alt+Space(WM_SYSCHAR/space/Alt context bit, InSendMessageEx의 SEND이면서 REPLIED가 아닌 경우)를 같은 HWND/wParam/lParam으로 PostMessageW한 뒤 성공하면0을 반환한다. 큐잉 실패는 기존 처리로 내려가고, 큐에서 받은 메시지는 send_flags0이므로 다시 큐잉하지 않는다. 제품 service/watchdog/프런트엔드와 다른 snapshot 파일은 동일하다. 이 코드는 실험 디렉터리의 후보이며 저장소 제품 코드에는 반영하지 않았다.
+
+개입 전에 `check.mjs`를 작성해 기존 Alt+Space 완결 기록에서 heartbeat_timeout 실패를 확인했다(`red.json`, `red.log`). 기존 제목 표시줄 기록에는 같은 검사가 통과했다. 검사는 timeout/FrontendLost 없음, 실제 메뉴 루프40초 이상, 구간 수락 pong7회 이상, 최초 online 이후 모든 status online/동일 connection ID, 종료 후9표본 이상, 실제 메뉴 종료·최종 Exit·exit0·EOF0·audit verified·소유 잔류0을 요구한다. 검사 파일은 후보 실행 전 manifest에 hash로 고정했다. 후보의 두 실행은 이 검사를 변경하지 않고 통과했다.
+
+| 항목 | Alt+Space long-menu | 제목 표시줄 title-long |
+|---|---:|---:|
+| 실제 메뉴 유지 | 74.292초 | 60.521초 |
+| 메뉴 중 수락 pong | 15 | 12 |
+| 큐 전달 성공 | 1회, send_flags1→0 | 0회 |
+| online / connection ID | 계속 유지 / 동일 | 계속 유지 / 동일 |
+| 실제 메뉴 종료 | 두 번째 Escape 뒤 확인 | 첫 Escape 뒤 확인 |
+| 창 닫기 요청→최종 Exit | 10ms | 10ms |
+| 정상 앱/adapter 종료 | exit0 / EOF0 | exit0 / EOF0 |
+| 자식 audit / 소유 잔류 | verified / 0 | verified / 0 |
+
+offline/locked release build 성공(1분). 앱 SHA256 `07cb57017a8f6268356a42e21753cdf90f19b1cdb0b289a11f502c040a1dd101`. Alt+Space summary SHA256 `4d2720015130659336bcf2746d19f85fc422cc0000a90a25eccf5b5363ecba5e`, 제목 표시줄 summary SHA256 `d024cb4cd853ca7977416a713283f6757f60d637af039aba2ab41210817b9c32`. `analyze.mjs`/`analysis.json`은 snapshot 소스 전체/앱/adapter/실행기/검사 파일 해시, 로그 순번, 단일 큐잉과 flags 전환, 두 실행 동일 WebView 경로155.0.4283.62, 실제 종료와 잔류0을 대조했다. 이전 원본과도 같은 WebView 경로 버전이다.
+
+해석 한계: 이 결과는 해당 제품 계측 복사본에서 후보가 관측 증상을 막았다는 증거다. 반환 후 재전송은 송신자 대기 해제뿐 아니라 Tao의 중첩 flush.peek 처리에서 정상 이벤트 펌프로 처리 시점을 옮긴다. 따라서 송신 스레드 대기 하나만이 유일 원인이라는 결론은 내리지 않는다. 단회 두 입력 경로, SSH0/adapter1/CDP0, 로그 계측과 native automation 환경이다. 빠른 반복 입력·메뉴의 이동/크기/닫기 선택·종료와 큐잉 경합·SSH 세션/소유권·최대화/DPI/IME 및 정식 N/F/M은 이번 시험에 포함하지 않았다. 큐잉 실패 fallback은 원래 중단 경로로 돌아갈 수 있으므로 전면 해결 보장도 아니다.
+
+다음은 이 후보를 제품에 넣을 위치와 의존성 patch 유지 방법을 정하고, 위 입력/종료 경합을 포함한 회귀 범위를 갖춘 실제 구현으로 옮기는 것이다. diagnostic trace/임시 디렉터리를 제품 의존성으로 삼지 않는다. 현재 제품 코드 변경 없음, 미완성 fuzz 보존, N/F/M 및 기존2시간 실패·Phase5 출시 차단 유지.
+
+2026-10-24 KST 리뷰 마무리: 별도 읽기 전용 검토에서 단회 진단을 무효화할 결함은 발견하지 않았다. 다만 기존 checker는 최초 진입/종료를 독립 선택하므로 반복 메뉴 시험으로 일반화하기 전에 같은 HWND의 순서쌍 검증이 필요하다는 지적을 받았다. 고정된 실행 전 checker는 변경하지 않고 후처리 `analyze.mjs`에 진입/종료 각1회·동일 HWND·시간 순서, 원본/큐 메시지 wParam/lParam 동일성을 추가했다. 저장된 원시 로그에 대한 보강 분석 통과(`analysis-reviewed-output.json`). 앱 재실행은 하지 않았다. 제품 채택 전 반복 입력·포커스 전환·메뉴 명령·재생 전 창 종료 검증은 남아 있으며, 기존 해석 한계와 출시 차단을 유지한다.
