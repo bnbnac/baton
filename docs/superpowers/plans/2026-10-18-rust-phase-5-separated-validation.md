@@ -209,3 +209,7 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 ### 2026-10-23 Windows 내부 경계와 진입 방식 대조
 
 `phase5-tao-loop-20261023`의 대조/Alt+Space 결과를 회수하고, 추가 경계 계측을 한 `phase5-tao-paint-20261023`에서 대조/Alt+Space/제목 표시줄 우클릭을 비교했다. 별도 Tao 복사본 2파일의 로그와 경로 patch만 변경했으며 제품/registry/fuzz는 보존했다. Alt+Space는 WM_PAINT → PeekMessageW → WM_SYSCHAR/WM_SYSCOMMAND의 DefWindowProcW 안에서 반환되지 않았고, 화면상 메뉴가 사라져도 WM_EXITMENULOOP가 없었다. 종료 허용과 ExitWithCode(0)은 중첩 처리됐지만 바깥 루프로 복귀하지 않았다. 동일 바이너리의 제목 표시줄 메뉴는 실제 15.580초 메뉴 구간에서 tick16/ack8, 메뉴 종료 이벤트, exit0/정상 자식 정리를 확인했다. 따라서 이전 메뉴 닫힘 marker를 실제 메뉴 루프 종료로 보는 해석은 철회한다. 원시 로그/소스/앱/registry hash 및 다섯 실행 소유 잔류0 검증 완료. 다음은 Alt+Space/WM_SYSCHAR 송신·focus·동기 전달 경계 조사이며 WebView2 재진입은 아직 가설이다. N/F/M 및 Phase 5 차단 유지. 세부 수치/한계/검사 오류 기록은 조사 보고서 마지막 절.
+
+### 2026-10-23 동기 전송 문맥과 큐 전달 실험
+
+`phase5-syschar-context-20261023`에서 Alt+Space send_flags1/제목 표시줄0과 양쪽의 소유 WebView 포커스를 확인했다. 송신 PID는 이 API로 확정하지 않았다. `phase5-syschar-defer-20261023`는 별도 진단 복사본 한 파일에 동기 Alt+Space를 큐잉하는 개입만 추가했다. 먼저 작성한 회복 검사는 변경 전후 모두 menu_loop_exit_missing으로 실패했다. 변경 후 send_flags1→0, 양방향 응답 유지(tick11/ack6)는 확인했으나 실제 메뉴 종료/앱 정상 종료 실패는 남아 제품 수정안으로 채택하지 않는다. 첫 개입 실행은 사용량 중단으로 제외하고, 명시적 재개 후 같은 바이너리의 새 menu-complete 증거에서 마무리했다. 원시 로그/전체 소스·바이너리·registry/단일 변경 범위 및 네 실행 소유 잔류0 검증 완료. 한 실패 실행은 최종 process.json 부재를 별도로 기록하고 beforeClose/생존 표본으로 신원을 검증했다. 다음은 Escape/키 해제/메뉴 취소 경로 조사. 제품/fuzz 변경 및 N/F/M 재실행 없음, Phase 5 출시 차단 유지.

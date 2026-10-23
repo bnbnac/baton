@@ -1,6 +1,6 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
-2026-10-23 갱신. **최소 Tauri 창의 Alt+Space 경로에서 Windows 메뉴 처리 호출이 반환되지 않는 경계를 확인했다. 같은 바이너리의 제목 표시줄 우클릭 메뉴는 정상 응답·종료했다.** 화면에서 메뉴가 사라졌다는 관측은 메뉴 루프 종료를 뜻하지 않았다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
+2026-10-23 갱신. **Alt+Space의 동기 메시지 전달을 확인했다. 이를 큐로 넘기는 진단 실험은 JS↔Rust 응답을 회복시켰지만 메뉴 루프와 앱 종료 실패는 해결하지 못했다.** 제목 표시줄 메뉴는 정상 응답·종료했다. 화면에서 메뉴가 사라진 관측을 메뉴 루프 종료로 해석하지 않는다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
 
@@ -156,3 +156,32 @@ Tao 바깥 DispatchMessageW(WM_PAINT)
 첫 소스 준비 스크립트는 교체 대상이 유일하지 않아 실행 전에 assertion으로 두 차례 중단했다. 범위를 좁혀 수정한 뒤 빌드했으며 실패한 준비 단계에서 앱은 실행하지 않았다. 후속 control 정리 검사는 기존 WebView PID가 `svchost`로 재사용되어 StartTime 조회가 불가능한 경우에 처음 실패했다. 다른 프로세스 이름으로 신원을 구분하고, 신원을 판정할 수 없으면 실패하도록 검사한 뒤 잔류0을 확인했다. 해당 프로세스에는 종료나 변경 작업을 하지 않았다.
 
 다음 조사는 Alt+Space/WM_SYSCHAR의 송신·focus·동기 전달 경계를 확인하는 것이다. 메뉴를 강제 종료하거나 heartbeat 제한을 늘리는 우회는 적용하지 않았다. 이번 다섯 실행의 소유 자원 정리 완료, 제품/fuzz 변경 없음. N 독립 사례0/2, 정식 F/M 미실행 및 Phase 5 출시 차단 유지.
+
+## 2026-10-23: 동기 메시지 문맥 확인과 큐 전달 가설 검증
+
+`artifacts/phase5-syschar-context-20261023/`는 직전 진단 복사본의 Tao `event_loop.rs`에 InSendMessageEx, GetFocus, GetWindowThreadProcessId, GetClassNameW, GetGUIThreadInfo 결과만 추가했다. 기존 입력/종료 동작은 유지했다. 앱 SHA256 `f81d0cf8d60adb78da743085119c8e79fc20fcd31625fc37a5d6ed22fd7b5384`, 빌드 exit0. 두 메뉴 방식에서 같은 바이너리를 사용했다.
+
+- Alt+Space의 WM_SYSCHAR는 wParam32, lParam536870913, `send_flags=1`이었다. WM_SYSCOMMAND와 메뉴 진입도 같은 전송 문맥이었다. `ISMEX_SEND`가 있고 `ISMEX_REPLIED`가 없으므로 다른 스레드가 응답을 기다리는 상태라는 것은 [InSendMessageEx 문서](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-insendmessageex)로 해석할 수 있다. 이 API는 송신 PID를 알려주지 않으므로 송신 프로세스를 확정하지 않는다.
+- 제목 표시줄 메뉴 진입/종료는 `send_flags=0`이었다. 두 실행 모두 포커스는 `Chrome_WidgetWin_1`, 포커스 thread는 앱 UI thread와 다르고, 포커스 PID는 소유 receipt에 기록된 해당 실행의 msedgewebview2 프로세스였다. 단순히 WebView에 포커스가 있다는 사실만으로 실패를 설명할 수 없다. HWND/PID가 같은 실행이라는 뜻은 아니며 각 실행의 신원과 대조했다.
+- Alt+Space는 화면에서 메뉴가 사라진 후 tick/ack0/0, 메뉴 종료 이벤트 없음, 정상 종료15초 실패였다. 제목 표시줄 메뉴는 실제 메뉴 종료 이벤트, 이후 tick11/ack5, exit0/descendant audit verified였다.
+
+이후 `artifacts/phase5-syschar-defer-20261023/`의 별도 복사본에서 **응답을 기다리는 다른 스레드의 Alt+Space WM_SYSCHAR만** PostMessageW로 같은 HWND와 인자에 큐잉하고 현재 호출을 반환하는 실험을 했다. 조건은 WM_SYSCHAR, wParam32, Alt context bit, `(InSendMessageEx & 9)==1`이고, 큐잉 실패 시 기존 처리를 유지한다. 나중에 큐에서 꺼낸 메시지는 send_flags0이므로 다시 큐잉하지 않는다. 문맥 계측 복사본과 비교해 `event_loop.rs` 한 파일만 다르다. 앱 SHA256 `97128802034de786bd54555e5b4d8919a7208cfff2eb1c8fca6eb0e404035986`, 빌드 exit0. 제품 파일과 전역 registry는 그대로다.
+
+`check-menu-recovery.mjs`를 먼저 작성해 변경 전 실행에서 `menu_loop_exit_missing`으로 실패하는 것을 확인했다. 검사는 실제 메뉴 종료 이벤트, 화면상 메뉴가 사라진 뒤의 양방향 응답, 최종 Exit/exit0/정상 자식 정리를 요구한다. 변경 후에도 **같은 검사에서 실패**했다.
+
+첫 변경 후 실행 `menu`는 메뉴 열린 screenshot을 확인한 직후 사용자 사용량 한도로 진행이 끊겼다. marker/Escape/정상 닫기 절차를 마치지 못해 실행기가 `menu_not_observed`로 제한시간 종료했다. `interruption-note.json`에 제외 사유를 기록했고, 이 실행의 계속되는 tick 로그를 회복 통과로 사용하지 않았다. 사용자의 명시적 재개 요청 후 같은 바이너리·새 `menu-complete` 디렉터리에서 미완료 검증을 수행했다. 이 실행기 hash는 `continuation-harness.json`에 실행 전 기록했다.
+
+| 변경 후 완결 실행 관측 | 결과 |
+|---|---|
+| WM_SYSCHAR 처리 | send_flags1 → 큐잉 성공1회 → send_flags0, 로그 간격2ms |
+| 메뉴 진입 문맥 | send_flags0, 포커스는 해당 실행의 WebView 창 유지 |
+| 화면상 메뉴가 사라진 뒤 닫기 요청 전 응답 | JS tick11 / eval ack6 |
+| 실제 메뉴 루프 종료 | WM_EXITMENULOOP 없음 |
+| 정상 앱 종료 | 종료 허용1ms, 최종 Exit 없음, 15초 대기 실패 |
+| 강제 정리 후 | 소유 root/WebView 잔류0 |
+
+따라서 동기 전달 경로는 이 환경의 응답 중단에 기여하며 이를 분리하면 응답은 유지된다. 그러나 **큐 전달만으로 메뉴 루프와 정상 종료는 해결되지 않는다.** 이를 완성된 수정안으로 채택하지 않는다. 두 현상이 완전히 독립적인 근본 원인이라는 주장도 하지 않는다. 다음은 Escape/키 해제/메뉴 취소 메시지의 전달과 실제 메뉴 루프 종료를 구분하는 조사다. WebView2 callback 재진입이나 특정 라이브러리 결함을 확정한 상태가 아니다.
+
+문맥 진단 `analyze.mjs`가 원시 메시지 순번, 로그 제한 미도달, 문맥 필드와 소유 WebView 신원, 소스/바이너리/registry hash, 단일 파일 변경 범위, continuation 실행기 hash, 종료 전 동일 root/WebView7개 생존 및 사후 잔류0을 검증했다. 변경 후 summary SHA256 `46cbc049f7f5864feb83f2e12a9a18e5e37092d763897a0519541a83565fdf75`, Tao log SHA256 `6b83a3b7b94af745f51a1fcd5b3d7234aa4178284f336d9585faf3372ca24af5`. 모든 로그 파일 I/O와 자동 입력의 영향은 남아 있다.
+
+문맥 진단의 Alt+Space 실패 실행에서는 supervisor 정리 뒤 `process.json`이 없고 `.partial`만 남아 summary의 최종 process 필드도 없었다. 종료 전 `summary.beforeClose`와 `exit-plus2.json`의 신원을 사용해 소유 프로세스 잔류0을 확인했으며, 최종 receipt 부재를 정상 종료로 보정하지 않았다. 제목 표시줄 및 변경 후 완결 실행은 최종 receipt를 확인했다. 불완전 실행 포함 이번 네 실행 정리 완료, 제품/fuzz 변경 및 N/F/M 재실행 없음. Phase 5 출시 차단 유지.
