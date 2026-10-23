@@ -1,6 +1,6 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
-2026-10-23 갱신. **Baton의 SSH/MCP/heartbeat 감시를 실행하지 않는 최소 Tauri 창에서도 메뉴 후 Rust 응답 중단·정상 종료 실패를 재현했다.** 메뉴 없는 대조는 정상 종료했다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
+2026-10-23 갱신. **최소 Tauri 창의 Alt+Space 경로에서 Windows 메뉴 처리 호출이 반환되지 않는 경계를 확인했다. 같은 바이너리의 제목 표시줄 우클릭 메뉴는 정상 응답·종료했다.** 화면에서 메뉴가 사라졌다는 관측은 메뉴 루프 종료를 뜻하지 않았다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
 
@@ -112,3 +112,47 @@
 두 실행은 동일 바이너리 `ea5fbca3ba85c6226ecf691d499fea8048b7339be1e2c8b048281b7cbe2738a4`, 동일 WebView `155.0.4283.62`를 사용했다. `analyze.mjs`로 원시 trace/표본, 전체 소스와 실행기·수집기·바이너리 hash를 검증했다. 메뉴 summary SHA256은 `aea53220f4669ea14fdb286bb34309510f0ac181f6444b719ac736fe7c9fe8f9`, trace SHA256은 `bcd16a7c6a75bee7f3b3cf01fcf5e23db594168817196a0715de0955fa62a41e`다. `cleanup-check.json`에서 PID와 시작 시각을 대조한 소유 잔류 0을 확인했다. 메뉴 실패는 supervisor 정리/job kill-on-close를 거쳤으며 정상 종료가 아니다.
 
 **이 조건에서 종료 실패를 만들기 위해 Baton watchdog timeout이나 SSH/MCP 서비스는 필요하지 않다.** 기존 제품의 frontend timeout은 실제 관측된 후속 정지 경로지만 이번 최소 재현에는 없다. 다음 조사 지점은 동일 Windows 창/이벤트 루프의 메시지 전달·종료 진행 경계다. Tauri/Tao의 특정 결함으로 확정하지 않으며, 같은 native automation·job supervisor·창 설정·WebView 조합의 영향도 아직 분리하지 않았다. 하위 루프의 상태/메시지 계측 또는 스택을 확보해 이 경계를 구분한다. Phase 5 인수와 N/F/M 상태는 변경하지 않는다.
+
+## 2026-10-23: Windows 메시지 경계와 메뉴 진입 경로 비교
+
+증거는 `artifacts/phase5-tao-loop-20261023/`와 `artifacts/phase5-tao-paint-20261023/`다. 최소 앱 소스를 각각 별도로 복사하고 Tao 0.35.3의 로컬 복사본에 로그만 추가했다. 제품 작업 파일과 전역 Cargo registry는 수정하지 않았다. 각 manifest는 전체 복사본 hash와 원본 registry hash를 기록한다. 기존 최소 앱 대비 Rust 소스/HTML은 동일하며, 복사본의 Cargo.toml/lockfile 변경은 같은 버전 Tao를 로컬 경로로 연결하는 내용뿐이다. Tao 변경은 `event_loop.rs`, `event_loop/runner.rs` 두 파일이다. 네이티브 조작은 computer-use, 런타임 SSH/MCP/watchdog/CDP는 모두 없다.
+
+첫 계측은 GetMessage/DispatchMessage 전후, runner 상태, callback 전후를 기록했다. 메뉴 없는 control은 `Idle` → `pump.exit.break` → Exit로 정상 종료했다. Alt+Space 실행은 바깥 루프의 `DispatchMessageW(WM_PAINT)` 시작 뒤 반환이 없었다. 같은 UI thread 안에서 UserEvent는 계속 처리되고 `ExitWithCode(0)`도 설정됐지만, `HandlingMainEvents`에 머물러 바깥 루프 종료 검사로 돌아오지 못했다. 로그 12,355건, 정상 종료 15초 대기 실패. 이 두 실행은 한도 중단 전에 완료됐고 재개 시 재실행 없이 결과를 검증했다.
+
+후속 계측은 그 WM_PAINT 내부의 `flush_paint_messages`, PeekMessageW 전후, 선택한 Windows 기본 창 처리 전후만 추가했다. 빌드 exit 0, 앱 SHA256 `60e58d2df3bb6f382b19efbf630fd1449ff0ce1b5347b7d5e913a3612813ca94`. 대조/control, Alt+Space/menu, 제목 표시줄 우클릭/title-menu는 모두 이 바이너리와 WebView 155.0.4283.62를 사용했다. title-menu 실행기는 별도 파일과 `title-menu-harness.json`으로 고정했으며 기존 실행기와 증거를 덮어쓰지 않았다.
+
+| 관측 | Alt+Space | 제목 표시줄 우클릭 |
+|---|---|---|
+| 메뉴 진입 이벤트 | WM_ENTERMENULOOP 1회 | WM_ENTERMENULOOP 1회 |
+| Escape 후 화면 | 메뉴 안 보임, JS 카운터 22→37 | 메뉴 안 보임, JS 카운터 20→36 |
+| 실제 메뉴 종료 이벤트 | WM_EXITMENULOOP 0회 | WM_EXITMENULOOP 1회 |
+| 메뉴 처리 중 Rust 응답 | 마지막 tick19/ack9 이후 중단 | 실제 메뉴 구간 15.580초 동안 tick16/ack8 |
+| 화면에서 메뉴가 사라진 관측 이후 | tick/ack 0/0, WM_ENTERIDLE 16회 지속 | 닫기 요청 전 tick11/ack6 |
+| 정상 창 닫기 | 종료 허용 1ms, Exit 없음, 15초 대기 실패 | Exit까지 6ms, exit0, descendant audit verified |
+| 종료 후 소유 root/WebView | 강제 정리 뒤 잔류0 | 정상 종료 뒤 잔류0 |
+
+Alt+Space 실행의 원시 호출 순서는 다음과 같다. 이것은 로그와 계측 소스의 경계 순서이며 디버거가 수집한 전체 네이티브 스택은 아니다.
+
+```text
+Tao 바깥 DispatchMessageW(WM_PAINT)
+  thread_event_target_callback → flush_paint_messages
+    PeekMessageW(실제 창, WM_PAINT 범위) 시작
+      WM_SYSCHAR(262) → DefWindowProcW 시작
+        WM_SYSCOMMAND(274) → DefWindowProcW 시작
+          WM_ENTERMENULOOP(529), 이후 UserEvent/WM_ENTERIDLE 처리
+          [WM_EXITMENULOOP(530) 없음]
+        [기본 처리 반환 없음]
+      [기본 처리 반환 없음]
+    [PeekMessageW 반환 없음]
+  [바깥 DispatchMessageW 반환 없음]
+```
+
+`PeekMessageW`가 nonqueued 메시지를 내부에서 처리할 수 있다는 것은 [Microsoft 문서](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-peekmessagew)에 명시돼 있다. [WM_EXITMENULOOP](https://learn.microsoft.com/en-us/windows/win32/menurc/wm-exitmenuloop)는 메뉴 modal loop 종료 알림이다. 따라서 앞선 “메뉴 닫힘” marker는 **화면에서 메뉴가 사라진 관측**으로만 해석해야 한다. 이 실행에서 내부 메뉴 처리가 끝난 뒤에도 고장 났다는 해석은 철회한다. 메뉴 처리가 끝나지 않은 상태에서 다른 메시지와 종료 요청이 중첩 처리된 것이 현재 증거다.
+
+제목 표시줄 메뉴는 같은 자동화 도구의 Escape와 같은 supervisor/창/바이너리에서도 정상 종료했다. 따라서 모든 시스템 메뉴 또는 Escape 도구 자체가 언제나 고장 난다는 설명은 배제된다. 그러나 진입 경로에 따른 focus/키 전달 차이, WebView의 시스템 키 전달 방식은 아직 분리하지 않았다. WebView2는 callback 내부의 동기 중첩 메시지 루프를 지원하지 않는다고 [Microsoft가 설명](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/threading-model#reentrancy)하지만, 이번 WM_SYSCHAR를 보낸 주체와 호출 스택이 확인되지 않았으므로 **WebView2 재진입이 근본 원인이라는 것은 아직 가설**이다. 특정 Tao/Wry 결함이나 수정 방법을 확정하지 않는다.
+
+검증은 두 루트의 `analyze.mjs` 및 후속 루트의 `analyze-title-menu.mjs`로 수행했다. 원시 로그의 순번 연속성·100,000건 로그 제한 미도달·메뉴 경계 수치·전체 소스/바이너리/registry hash·소유 자원 정리를 대조했다. 후속 Alt+Space 로그 12,759건, 제목 표시줄 로그 65,318건. 로그 파일 I/O에 따른 타이밍 영향은 남는다. 후속 Alt+Space summary SHA256 `46c3612d6bfcebed7606421b75370f9ce365cf04abba10c691cc97715ff26b6c`, Tao log SHA256 `dae7307a5a80b4bb12e77175493b1151aaacd55080565614e84c9d4140290b39`. 제목 표시줄 summary SHA256 `68c1237b0a155125114833dc7a174ed938a902776c9c862c5fb9e31d8d990778`.
+
+첫 소스 준비 스크립트는 교체 대상이 유일하지 않아 실행 전에 assertion으로 두 차례 중단했다. 범위를 좁혀 수정한 뒤 빌드했으며 실패한 준비 단계에서 앱은 실행하지 않았다. 후속 control 정리 검사는 기존 WebView PID가 `svchost`로 재사용되어 StartTime 조회가 불가능한 경우에 처음 실패했다. 다른 프로세스 이름으로 신원을 구분하고, 신원을 판정할 수 없으면 실패하도록 검사한 뒤 잔류0을 확인했다. 해당 프로세스에는 종료나 변경 작업을 하지 않았다.
+
+다음 조사는 Alt+Space/WM_SYSCHAR의 송신·focus·동기 전달 경계를 확인하는 것이다. 메뉴를 강제 종료하거나 heartbeat 제한을 늘리는 우회는 적용하지 않았다. 이번 다섯 실행의 소유 자원 정리 완료, 제품/fuzz 변경 없음. N 독립 사례0/2, 정식 F/M 미실행 및 Phase 5 출시 차단 유지.

@@ -205,3 +205,7 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 ### 2026-10-23 최소 Tauri 창 재현
 
 `artifacts/phase5-minimal-window-20261023`에서 Baton SSH/MCP/watchdog를 실행하지 않는 최소 UI를 비교했다. 같은 의존성/설정, 별도 source/dist만 변경했다. 메뉴 없는 대조는 JS tick/eval ack, Exit 이벤트, exit0/정상 자식 정리 통과. 메뉴 조건은 화면 카운터 27→47에도 Rust tick/ack 수신이 중단되고, 종료 허용 후 Exit 이벤트 없이 15초 대기 실패. 2.686초 생존 표본에서 동일 root/WebView6을 확인했다. 원시 분석과 전체 소스/실행기/바이너리 해시, 소유 잔류0 검증 완료. 따라서 watchdog timeout과 제품 SSH/MCP 서비스는 이 재현의 필요 조건이 아니다. 동일 native automation/job supervisor/창 설정의 영향과 특정 Tauri/Tao 원인은 미확정이며 다음은 하위 Windows 이벤트 전달·종료 경계 계측이다. 제품 변경/N/F/M 재실행 없음. 상세는 조사 보고서 마지막 절.
+
+### 2026-10-23 Windows 내부 경계와 진입 방식 대조
+
+`phase5-tao-loop-20261023`의 대조/Alt+Space 결과를 회수하고, 추가 경계 계측을 한 `phase5-tao-paint-20261023`에서 대조/Alt+Space/제목 표시줄 우클릭을 비교했다. 별도 Tao 복사본 2파일의 로그와 경로 patch만 변경했으며 제품/registry/fuzz는 보존했다. Alt+Space는 WM_PAINT → PeekMessageW → WM_SYSCHAR/WM_SYSCOMMAND의 DefWindowProcW 안에서 반환되지 않았고, 화면상 메뉴가 사라져도 WM_EXITMENULOOP가 없었다. 종료 허용과 ExitWithCode(0)은 중첩 처리됐지만 바깥 루프로 복귀하지 않았다. 동일 바이너리의 제목 표시줄 메뉴는 실제 15.580초 메뉴 구간에서 tick16/ack8, 메뉴 종료 이벤트, exit0/정상 자식 정리를 확인했다. 따라서 이전 메뉴 닫힘 marker를 실제 메뉴 루프 종료로 보는 해석은 철회한다. 원시 로그/소스/앱/registry hash 및 다섯 실행 소유 잔류0 검증 완료. 다음은 Alt+Space/WM_SYSCHAR 송신·focus·동기 전달 경계 조사이며 WebView2 재진입은 아직 가설이다. N/F/M 및 Phase 5 차단 유지. 세부 수치/한계/검사 오류 기록은 조사 보고서 마지막 절.

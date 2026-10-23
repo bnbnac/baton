@@ -4,6 +4,8 @@
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
+최신 추가 조사: Alt+Space는 Tao의 WM_PAINT → PeekMessageW 안에서 Windows 기본 메뉴 처리로 진입한 뒤 반환되지 않았다. Escape 후 화면에서 메뉴가 사라져도 실제 메뉴 종료 이벤트는 없었다. 같은 진단 바이너리의 제목 표시줄 우클릭 메뉴는 Rust 응답을 유지하고 실제 메뉴 종료 및 정상 앱 종료를 확인했다. 따라서 다음 조사 범위는 Alt+Space/WM_SYSCHAR의 송신·focus·동기 전달 경계다. 상세와 이전 해석 정정은 위 조사 보고서 마지막 절을 따른다. N/F/M 상태는 변하지 않았다.
+
 ## 범위
 
 | Scope | 정식 실행 | 사전 검사 | 통과의 의미 |
