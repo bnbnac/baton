@@ -1,6 +1,6 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
-2026-10-23 갱신. **Alt+Space의 동기 메시지 전달을 확인했다. 이를 큐로 넘기는 진단 실험은 JS↔Rust 응답을 회복시켰지만 메뉴 루프와 앱 종료 실패는 해결하지 못했다.** 제목 표시줄 메뉴는 정상 응답·종료했다. 화면에서 메뉴가 사라진 관측을 메뉴 루프 종료로 해석하지 않는다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
+2026-10-23 갱신. **Escape 두 번째 입력에서 실제 메뉴 루프가 끝났고, 동기 전달 원본과 큐 전달 진단 앱 모두 응답 복구·정상 종료했다.** 첫 Escape로 팝업이 사라져도 메뉴 모드는 남아 있었다. 앞선 종료 실패를 영구 교착 또는 별도의 종료 결함으로 확정하지 않는다. 원본은 메뉴 루프 동안 Rust 수신이 멈추고 큐 전달 실험은 응답을 유지한다는 차이는 남는다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
 
@@ -185,3 +185,31 @@ Tao 바깥 DispatchMessageW(WM_PAINT)
 문맥 진단 `analyze.mjs`가 원시 메시지 순번, 로그 제한 미도달, 문맥 필드와 소유 WebView 신원, 소스/바이너리/registry hash, 단일 파일 변경 범위, continuation 실행기 hash, 종료 전 동일 root/WebView7개 생존 및 사후 잔류0을 검증했다. 변경 후 summary SHA256 `46cbc049f7f5864feb83f2e12a9a18e5e37092d763897a0519541a83565fdf75`, Tao log SHA256 `6b83a3b7b94af745f51a1fcd5b3d7234aa4178284f336d9585faf3372ca24af5`. 모든 로그 파일 I/O와 자동 입력의 영향은 남아 있다.
 
 문맥 진단의 Alt+Space 실패 실행에서는 supervisor 정리 뒤 `process.json`이 없고 `.partial`만 남아 summary의 최종 process 필드도 없었다. 종료 전 `summary.beforeClose`와 `exit-plus2.json`의 신원을 사용해 소유 프로세스 잔류0을 확인했으며, 최종 receipt 부재를 정상 종료로 보정하지 않았다. 제목 표시줄 및 변경 후 완결 실행은 최종 receipt를 확인했다. 불완전 실행 포함 이번 네 실행 정리 완료, 제품/fuzz 변경 및 N/F/M 재실행 없음. Phase 5 출시 차단 유지.
+
+## 2026-10-23 Escape 2회: 메뉴 종료 해석 정정
+
+가설은 첫 Escape가 팝업만 닫고 메뉴 모드를 남긴다는 것이다. 새 소스나 바이너리를 만들지 않고 위 두 바이너리에 각각 Alt+Space → Escape → 화면/로그 관측 → Escape를 수행했다. 기존 실행기의 출력 디렉터리만 `menu-two-escape`로 바꾸고 두 번째 Escape 관측 뒤에만 닫힘 marker를 작성했다. 기존 recovery predicate는 수정하지 않았다. 메뉴가 화면에서 사라진 시각은 관측 marker이고, 실제 메뉴 종료 시각은 WM_EXITMENULOOP 기본 처리 완료 로그를 사용한다.
+
+| 항목 | 동기 전달 원본 | 큐 전달 진단 |
+|---|---|---|
+| 증거 루트 | `phase5-syschar-context-20261023/menu-two-escape` | `phase5-syschar-defer-20261023/menu-two-escape` |
+| 실행 UTC | 07:48:03.921–07:49:16.487 | 07:46:35.305–07:47:50.788 |
+| 첫 Escape 화면 | 팝업 숨김, tick36 | 팝업 숨김, tick39 |
+| 첫 Escape 뒤 실제 메뉴 종료 | 없음 | 없음 |
+| 두 번째 Escape 화면 | 숨김 유지, tick47 | 숨김 유지, tick52 |
+| 두 번째 Escape 뒤 실제 메뉴 종료 | WM_EXITMENULOOP 1회 | WM_EXITMENULOOP 1회 |
+| 실제 메뉴 루프 구간 | 27.383초 | 25.648초 |
+| 해당 구간 Rust 수신 tick/ack | 0/0 | 25/13 |
+| 두 번째 관측 marker 뒤 닫기 전 tick/ack | 11/6 | 11/6 |
+| 메뉴 종료 → 다음 Rust tick | 11ms | 307ms |
+| 창 닫기 요청 → 최종 Exit | 5ms | 5ms |
+| 정상 종료 / 자식 audit | true / verified | true / verified |
+| 사후 소유 프로세스 잔류 | 0 | 0 |
+
+원본 바이너리 SHA256은 `f81d0cf8d60adb78da743085119c8e79fc20fcd31625fc37a5d6ed22fd7b5384`, 큐 전달은 `97128802034de786bd54555e5b4d8919a7208cfff2eb1c8fca6eb0e404035986`로 이전과 같다. 원본 summary SHA256 `56e421c476ccf038d1762fd445196a9171bfb2ae3ff790f757b7df85ae939be4`, 큐 전달 summary SHA256 `bb992a00613c2d6aeaa78ed886f9455b7e30385e0d6f5b8489a469efaeff711f`. 원본 루트의 `analyze-two-escape.mjs`와 `two-escape-analysis.json`이 전체 snapshot 소스/바이너리 해시, 연속 로그 순번·cap 미도달, marker와 실제 종료 순서, 응답 수, exit0/정상 종료/audit/잔류0을 검증한다. 기존 `check-menu-recovery.mjs`도 두 조건 모두 통과했다.
+
+이 결과로 앞선 **“메뉴가 끝난 뒤에도 영구적으로 응답/종료가 멈춘다”는 해석은 철회한다.** 앞선 실행에서 실제 메뉴 루프가 끝나지 않은 채 닫기를 요청했고 정상 종료 제한시간을 넘긴 사실은 유지한다. 큐 전달이 별도의 종료 결함을 남겼다는 해석도 확정할 수 없다. 원본까지 두 번째 Escape로 복구됐으므로 이번 통과를 큐 전달 수정의 고유 효과로 주장하지 않는다. 큐 전달의 관측 효과는 메뉴 모드 중 양방향 응답 유지다.
+
+한계: 두 실행은 서로 다른 시간의 단회 진단이며 메뉴 유지 시간도 같지 않다. 모두 30초보다 짧고 제품 watchdog/SSH/MCP가 없으므로 실제 Baton의 timeout 또는 기존 N 실패가 해결됐다는 증거가 아니다. 키 down/up과 Escape의 내부 소비 지점을 직접 계측하지 않았으므로 특정 키 해제 버그를 확정하지 않는다. 기존 자동 입력/로그 I/O 영향도 남는다. 큐 전달 실행의 menu-open marker에 tick23을 잘못 기재했으며 실제 화면은27이다. 원본 marker를 덮어쓰지 않고 `menu-open-correction.json`에 정정했고 수치 분석은 해당 tick 전사를 사용하지 않는다.
+
+다음은 최소 앱의 종료 결함 수정을 계속 추가하는 대신, 실제 메뉴 루프 종료를 관측하는 시험 절차와 메뉴 유지 중 제품 heartbeat 정지 문제를 분리하여 검증한다. 제품 후보에 대한 bounded 검증과 변경 범위 검토 전에는 진단 patch를 채택하지 않는다. 제품/fuzz 변경, N/F/M 본시험 재실행 없음. 기존 2시간 실패와 Phase 5 출시 차단 유지.

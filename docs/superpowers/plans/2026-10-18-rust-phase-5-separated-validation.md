@@ -213,3 +213,7 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 ### 2026-10-23 동기 전송 문맥과 큐 전달 실험
 
 `phase5-syschar-context-20261023`에서 Alt+Space send_flags1/제목 표시줄0과 양쪽의 소유 WebView 포커스를 확인했다. 송신 PID는 이 API로 확정하지 않았다. `phase5-syschar-defer-20261023`는 별도 진단 복사본 한 파일에 동기 Alt+Space를 큐잉하는 개입만 추가했다. 먼저 작성한 회복 검사는 변경 전후 모두 menu_loop_exit_missing으로 실패했다. 변경 후 send_flags1→0, 양방향 응답 유지(tick11/ack6)는 확인했으나 실제 메뉴 종료/앱 정상 종료 실패는 남아 제품 수정안으로 채택하지 않는다. 첫 개입 실행은 사용량 중단으로 제외하고, 명시적 재개 후 같은 바이너리의 새 menu-complete 증거에서 마무리했다. 원시 로그/전체 소스·바이너리·registry/단일 변경 범위 및 네 실행 소유 잔류0 검증 완료. 한 실패 실행은 최종 process.json 부재를 별도로 기록하고 beforeClose/생존 표본으로 신원을 검증했다. 다음은 Escape/키 해제/메뉴 취소 경로 조사. 제품/fuzz 변경 및 N/F/M 재실행 없음, Phase 5 출시 차단 유지.
+
+### 2026-10-23 Escape 2회 비교와 해석 정정
+
+동일 원본/큐 전달 진단 바이너리의 새 `menu-two-escape` 증거에서 첫 Escape는 팝업만 숨기고 두 번째 Escape가 실제 메뉴 루프를 종료함을 확인했다. 두 조건 모두 기존 recovery predicate 통과, 정상 exit0/자식 audit verified/소유 잔류0. 원본은 27.383초 메뉴 구간 tick/ack0/0, 실제 종료11ms 뒤 Rust tick 재개. 큐 전달은 25.648초 메뉴 구간25/13으로 응답 유지. 따라서 앞선 1회 Escape 실행의 정상 종료 실패를 영구 교착으로 해석하지 않으며, 이번 원본까지의 복구를 큐 전달의 고유 효과로 주장하지 않는다. 전체 snapshot 소스/앱 해시와 원시 로그·marker·수치 재계산은 `phase5-syschar-context-20261023/analyze-two-escape.mjs`로 검증했다. 제품 watchdog이 없는 30초 미만 단기 진단이므로 실제 제품 app_offline 해결은 미검증이다. 다음은 실제 메뉴 종료를 관측하는 시험 절차와 메뉴 유지 중 제품 heartbeat 정지를 분리한 bounded 검증이다. 새 제품 수정이나 N/F/M 본시험 없이 이번 두 진단만 완료, Phase 5 차단 유지.
