@@ -1,5 +1,7 @@
 # Phase 5: Windows 창 메뉴와 app_offline 조사
 
+최신 제품 경계 검증(2026-10-23): Alt+Space 메뉴 중 마지막 heartbeat 응답 후30초에 FrontendLost가 발생했고 실제 메뉴 종료 뒤에도 offline을 유지했다. 메뉴 종료 후 앱 자체는 정상 종료했다. 같은 바이너리의 제목 표시줄 메뉴는62.594초 동안 pong13회/online을 유지했다. 상세·절차 변경·한계는 마지막 절을 따른다.
+
 2026-10-23 갱신. **Escape 두 번째 입력에서 실제 메뉴 루프가 끝났고, 동기 전달 원본과 큐 전달 진단 앱 모두 응답 복구·정상 종료했다.** 첫 Escape로 팝업이 사라져도 메뉴 모드는 남아 있었다. 앞선 종료 실패를 영구 교착 또는 별도의 종료 결함으로 확정하지 않는다. 원본은 메뉴 루프 동안 Rust 수신이 멈추고 큐 전달 실험은 응답을 유지한다는 차이는 남는다. 제품 수정이나 N 본시험 재실행은 하지 않았다. 앞선 결과와 가설은 당시 기록이며, 마지막 절에서 확인 범위를 갱신한다.
 
 ## 출발점과 범위
@@ -213,3 +215,23 @@ Tao 바깥 DispatchMessageW(WM_PAINT)
 한계: 두 실행은 서로 다른 시간의 단회 진단이며 메뉴 유지 시간도 같지 않다. 모두 30초보다 짧고 제품 watchdog/SSH/MCP가 없으므로 실제 Baton의 timeout 또는 기존 N 실패가 해결됐다는 증거가 아니다. 키 down/up과 Escape의 내부 소비 지점을 직접 계측하지 않았으므로 특정 키 해제 버그를 확정하지 않는다. 기존 자동 입력/로그 I/O 영향도 남는다. 큐 전달 실행의 menu-open marker에 tick23을 잘못 기재했으며 실제 화면은27이다. 원본 marker를 덮어쓰지 않고 `menu-open-correction.json`에 정정했고 수치 분석은 해당 tick 전사를 사용하지 않는다.
 
 다음은 최소 앱의 종료 결함 수정을 계속 추가하는 대신, 실제 메뉴 루프 종료를 관측하는 시험 절차와 메뉴 유지 중 제품 heartbeat 정지 문제를 분리하여 검증한다. 제품 후보에 대한 bounded 검증과 변경 범위 검토 전에는 진단 patch를 채택하지 않는다. 제품/fuzz 변경, N/F/M 본시험 재실행 없음. 기존 2시간 실패와 Phase 5 출시 차단 유지.
+
+## 2026-10-23 제품 서비스 경계 검증
+
+증거: `artifacts/phase5-product-menu-20261023`. 기존 `phase5-exit-trace-20261022/source/rust`의 제품 기능/dist에 `phase5-syschar-context-20261023/source/tao`의 로그 계측을 연결했다. 기존 제품 trace 대비 Rust 차이는 Cargo.toml의 Tao path patch와 lock의 해당 source/checksum 제거뿐이다. 큐 전달 개입은 없다. offline/locked release build 통과(43.29초). 앱 SHA256 `bb312a38255deff850509554d15edf968610577529051a282bf7123bfed80d2c`, adapter SHA256 `09823dd5d51cd3b33f286540fe43a03570b3eee81497607a1b5b67336fcb754c`. 세 실행의 WebView receipt 경로 버전은 모두155.0.4283.62다. SSH0/adapter1/CDP0, 별도 데이터 디렉터리와 소유 job을 사용했다. 출시 바이너리의 합격 시험은 아니다.
+
+| 실행 | 실제 메뉴 구간 | 수락 pong | 마지막 pong→timeout | timeout→메뉴 종료 | 메뉴 종료 뒤 상태 | 정상 종료 |
+|---|---:|---:|---:|---:|---|---|
+| short-menu: Alt+Space | 27.395초 | 0 | 30.054초 | 1.035초 | 20.605초/21표본 offline | exit0·EOF0·audit verified |
+| short-control: 중단 실행 | 28.987초 | 0 | 30.063초 | 0.175초 | 107.090초/107표본 offline | 판정 제외 |
+| title-long: 제목 표시줄 우클릭 | 62.594초 | 13 | timeout 없음 | 해당 없음 | 19.804초/20표본 online | exit0·EOF0·audit verified |
+
+Alt+Space는 send_flags1, 제목 표시줄은0이었다. 실제 메뉴 종료 뒤 두 Alt+Space 로그에는 `pong.state stopping=true`가 나타나고 수락 pong은 없었다. 완결된 두 실행의 창 닫기 요청→최종 Exit는 각각10ms다. 제목 표시줄 실행은 최초 online 이후 모든 status가 online이었다. **메뉴 루프를 종료하면 앱 자체는 정상 종료할 수 있지만, 이미 발생한 FrontendLost를 자동으로 되돌리지는 않는다.**
+
+`lifecycle.rs`의 소스도 이 순서와 일치한다. 마지막 수락 pong 이후30초에 FrontendLost를 호출하고 stop이 stopping=true를 설정한다. 이후 pong은 stopping이면 거부한다. 기준은 메뉴 진입부터30초가 아니다. 마지막 pong과 메뉴 진입 사이의 시간 때문에 메뉴 구간이30초 미만이어도 제한을 넘는다. 제목 표시줄에서는 더 긴 메뉴 구간에도 응답하므로 메뉴가 오래 열려 있는 것만으로 항상 heartbeat가 멈추는 것도 아니다.
+
+절차 변경: 첫 실행은 짧은 대조로 의도했지만 관측/입력 사이 지연으로 제한을 넘었다(`timing-note.json`). 두 번째도 제한을 넘었고 사용량 중단으로 두 번째 Escape 화면 뒤 최종 marker를 쓰지 못했다. 실행기는 incomplete_menu_observation으로 종료했다. 실제 메뉴 종료 로그는 있으나 정상 종료 판정으로 보정하지 않았다(`interruption-note.json`). 단순 재시도 대신 제목 표시줄 장시간 대조로 입력 경로를 비교했다. **제한 전 제품 Alt+Space 복귀 대조는 아직 미검증**이고 동일 유지 시간으로 통제한 비교도 아니다. 기존 자동 입력/로그 I/O 영향과 SSH0의 한계가 남는다.
+
+`analyze.mjs`/`analysis.json`이 snapshot 전체 소스·앱·실행기·adapter 해시, 로그 연속 순번/cap 미도달, 실제 메뉴 이벤트와 pong/timeout/status 시각, 동일 WebView 경로 버전, 완결 실행 exit/EOF/audit, 세 실행 소유 잔류0을 검증했다. 원시 파일별 해시는 analysis에 보존했다. 완결 Alt+Space summary SHA256 `97309db49ef962d577989ecd962f3a2ed969243a1945b6ca2ac83d281bc8cdbe`, 제목 표시줄 summary SHA256 `e025f2cdf871bded3158e7dd4e8139fea857f025d5750c0cbdda717868e1b98d`.
+
+다음 후보는 동기 Alt+Space 큐 전달을 제품 계측 복사본에만 적용해30초보다 충분히 긴 메뉴 동안 pong/online 유지, 실제 메뉴 종료, 정상 종료 및 제목 표시줄 회귀를 검증하는 것이다. watchdog 연장이나 stopping 자동 해제는 이번 근거로 제안하지 않는다. 제품 patch 채택과 SSH/소유권 포함 N 본시험은 별도 검증이 필요하다. 제품/fuzz 변경 없음, N/F/M 및 기존2시간 실패·출시 차단 유지.

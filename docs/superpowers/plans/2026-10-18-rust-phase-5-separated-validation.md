@@ -216,4 +216,6 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 
 ### 2026-10-23 Escape 2회 비교와 해석 정정
 
+후속 제품 경계 검증 완료: `phase5-product-menu-20261023`은 제품 trace 소스에 기존 Tao 로그만 결합했다. Alt+Space 메뉴27.395초에서 pong0/마지막 응답 후30.054초 timeout, 실제 메뉴 종료 뒤21표본 offline. 앱은 정상 종료했다. 제목 표시줄 메뉴62.594초 대조는 pong13/online 유지·정상 종료. 짧은 대조 재시도는 사용량 중단으로 정상 종료 판정에서 제외했고 증거를 보존했다. 원시 로그/전체 소스·앱·adapter 해시/동일 WebView 경로 버전/소유 잔류0 검증 완료. 제한 전 제품 복귀는 미검증이다. 다음은 동기 Alt+Space 큐 전달을 제품 계측 복사본에만 적용한 장시간 메뉴·제목 표시줄·종료 검증이다. 제품/fuzz 수정 및 N/F/M 재실행 없음, Phase5 차단 유지.
+
 동일 원본/큐 전달 진단 바이너리의 새 `menu-two-escape` 증거에서 첫 Escape는 팝업만 숨기고 두 번째 Escape가 실제 메뉴 루프를 종료함을 확인했다. 두 조건 모두 기존 recovery predicate 통과, 정상 exit0/자식 audit verified/소유 잔류0. 원본은 27.383초 메뉴 구간 tick/ack0/0, 실제 종료11ms 뒤 Rust tick 재개. 큐 전달은 25.648초 메뉴 구간25/13으로 응답 유지. 따라서 앞선 1회 Escape 실행의 정상 종료 실패를 영구 교착으로 해석하지 않으며, 이번 원본까지의 복구를 큐 전달의 고유 효과로 주장하지 않는다. 전체 snapshot 소스/앱 해시와 원시 로그·marker·수치 재계산은 `phase5-syschar-context-20261023/analyze-two-escape.mjs`로 검증했다. 제품 watchdog이 없는 30초 미만 단기 진단이므로 실제 제품 app_offline 해결은 미검증이다. 다음은 실제 메뉴 종료를 관측하는 시험 절차와 메뉴 유지 중 제품 heartbeat 정지를 분리한 bounded 검증이다. 새 제품 수정이나 N/F/M 본시험 없이 이번 두 진단만 완료, Phase 5 차단 유지.
