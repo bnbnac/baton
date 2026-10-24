@@ -1,7 +1,11 @@
 [workspace]
 resolver = "3"
+exclude = ["vendor/tao-0.35.3"]
 members = ["experiments/ssh-probe", "experiments/mcp-probe", "experiments/terminal-probe/src-tauri", "crates/baton-core", "crates/baton-ssh", "crates/baton-ipc", "crates/baton-adapter", "app/src-tauri"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.88"
+
+[patch.crates-io]
+tao = { path = "vendor/tao-0.35.3" }

@@ -308,3 +308,11 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 - shutdownFailure `normal_exit`; 최종 cleanup `normalExit:false, forcedCleanup:true`, 잔류 프로세스/컨테이너 0. 07:47 UTC에 소유 신원 42건을 PID+startedTicks로 다시 대조했고 일치 잔류 0, runner 없음, owner label 컨테이너 없음이다. `post-exit-check.json`에 저장했다. process.log는 비어 있고 해당 시각의 Baton/WebView Application 충돌/멈춤 이벤트 조회에서 일치 항목을 얻지 못했다. 이것만으로 충돌 여부나 단절 원인을 확정하지 않는다.
 - 독립 verifier는 audit-observations 부재로 무효, casePassed/scopePassed false, verified.json 없음. `failure-analysis.json`에서 소스 23개/바이너리 2개 현재 해시 일치를 확인했다. summary SHA256 `54e69688beba5418e3cecfee89e721fc822d3819435e6e6e102b32202676e748`.
 - 독립 사례 0/2. 최대화 설정만 준비했으며 실행하지 않았다. 자동 재실행하지 않고 먼저 app_offline 원인을 조사한다. 원시 증거·기존 실패 및 Phase 5 출시 차단을 유지한다.
+
+### 2026-10-24 제품 Tao patch와 비계측 창 smoke
+
+승인한 저장소 내부 Tao 0.35.3 override를 구현했다. upstream 119파일 원본 hash/라이선스를 보존하고 Windows event_loop.rs 1개 수정 + helper/test 1개 추가로 제한했다. stub RED 2실패 뒤 predicate4, 전체Rust185, frontend15 및 offline/locked release build 통과. sandbox의 기존 IPC 시험 실패는 같은 기준 버전을 sandbox 밖에서 실행해 통과했으며 원시 실패도 보존했다.
+
+`artifacts/phase5-product-patch-20261024/native1`은 사용량 중단으로 driver 미완료/시간 제한 종료라 정상 종료 판정에서 제외했다. 명시적 재개 후 같은 비계측 제품의 `native2`에서 메뉴 표시46.223초, 반복 열기/최대화·복원/제목 표시줄 메뉴/웹 입력란 포커스/메뉴 Close를 확인했다. 종료 전143상태 online·동일연결, app exit0/adapter EOF0/정상종료/audit verified/소유 잔류0 및 소스·바이너리hash 검증. 제품 SHA256 `2e2911c3eb830fc8f207ce3c41852015417c75f1c34ed23f7f8dcab006772316`.
+
+정적 review는 현재 고정 Tauri 사용 방식에 차단 결함을 찾지 못했다. 재전달로 raw Tao IME 이벤트가 중복될 수 있으나 현재 런타임은 이를 사용하지 않는다는 제한을 기록했다. 창파괴-before-replay 정밀 경합과 정식 N(SSH 포함) 검증은 남아 있다. 기존 N 0/2, F/M 및 Phase5 출시 차단은 유지한다. 상세 결과·중단/관측 정정·범위는 `docs/testing/rust-tao-system-menu-patch.md`를 참조한다.
