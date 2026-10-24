@@ -316,3 +316,19 @@ N 독립 verifier는 필수 `audit-observations.json` 부재로 `evidenceValid:f
 `artifacts/phase5-product-patch-20261024/native1`은 사용량 중단으로 driver 미완료/시간 제한 종료라 정상 종료 판정에서 제외했다. 명시적 재개 후 같은 비계측 제품의 `native2`에서 메뉴 표시46.223초, 반복 열기/최대화·복원/제목 표시줄 메뉴/웹 입력란 포커스/메뉴 Close를 확인했다. 종료 전143상태 online·동일연결, app exit0/adapter EOF0/정상종료/audit verified/소유 잔류0 및 소스·바이너리hash 검증. 제품 SHA256 `2e2911c3eb830fc8f207ce3c41852015417c75f1c34ed23f7f8dcab006772316`.
 
 정적 review는 현재 고정 Tauri 사용 방식에 차단 결함을 찾지 못했다. 재전달로 raw Tao IME 이벤트가 중복될 수 있으나 현재 런타임은 이를 사용하지 않는다는 제한을 기록했다. 창파괴-before-replay 정밀 경합과 정식 N(SSH 포함) 검증은 남아 있다. 기존 N 0/2, F/M 및 Phase5 출시 차단은 유지한다. 상세 결과·중단/관측 정정·범위는 `docs/testing/rust-tao-system-menu-patch.md`를 참조한다.
+
+### 2026-10-25 회수한 새 제품 사전시험 및 N 중단 기록
+
+증거 루트 `artifacts/phase5-followup-20261024`, 제품 커밋 `6b4324a`.
+새 제품 SHA `2e2911c3eb830fc8f207ce3c41852015417c75f1c34ed23f7f8dcab006772316`로 M preflight 180.072초 및 F preflight 17회가 각각 독립 검증을 통과했다. 둘 다 `preflightPassed:true`, `phase5Acceptance:false`다. 기존 바이너리의 사전시험을 새 제품에 대입하지 않았다. M/F 원시 기록과 `verified.json`은 보존한다.
+
+| N 사례 | 검증된 부분 | 중단 | 종료·정리 |
+|---|---|---|---|
+| `n-restored` | 복원 상태, 세션 선택, 102×17→100×17, 사용자 회수(epoch 2) | `choose_connection` 입력 120초 만료 | 정상 종료, 강제 정리 없음, 어댑터 EOF 32, 프로세스/컨테이너 잔류 0 |
+| `n-maximized` | 복원 상태, 세션 선택, 최대화 102×17→274×52 | `reclaim` 완료 receipt 없이 입력 120초 만료 | 정상 종료, 강제 정리 없음, 어댑터 EOF 32, 프로세스/컨테이너 잔류 0 |
+
+UTC 종료 시각은 각각 2026-10-24 12:05:44.274와 12:11:36.561이다. 최대화 사례는 사용자 보고 사용량 중단 후 회수했다. 복원 사례에서는 연결 선택 중 대화와 도구 작업이 입력 기한 안에 완료되지 않았다. 두 실패 모두 `input_expired`; 이전 `app_offline` 실패와 구분한다. 두 verifier는 audit-observations 부재로 무효이며, 완료 사례 0/2다. 늦은 receipt를 기록하거나 일부 결과를 전체 통과로 바꾸지 않았다.
+
+진행 중 자동 승인 검토가 별도 회귀시험의 Probe 수명 결함을 N 실행 위험으로 연결해 시작 기록 명령을 거부했다. 해당 코드가 제품에 포함되지 않는 독립 workspace임과 실행 바이너리 hash 불변을 확인해 제출했고 재검토 후 승인됐다. 수명 결함 자체는 ProbeGuard로 수정했으며 패치 3/3 통과, upstream 대조의 예상 2실패 및 재검토를 별도로 완료했다. 제품과 N 시험 소스는 변경하지 않았다.
+
+정식 F/M, N 두 사례 완주, 공개 경계 완전성, 결합 전환 메모리 및 Phase 5 출시 차단은 아직 남는다. 새 N 실행은 기존 실패와 별도 경로에 보존한다.

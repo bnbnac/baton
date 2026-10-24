@@ -78,7 +78,38 @@ screen observations.
 
 UI observations do not measure WM_ENTERMENULOOP/WM_EXITMENULOOP boundaries or
 accepted frontend pong counts. The prior instrumented experiment supplies
-those separate observations. A deterministic window-destruction-before-replay
-race is not established by manual UI closing. SSH traffic and the independent
-N cases still require formal validation. F/M and the Phase 5 release block
-remain unchanged.
+those separate observations. The fixture below covers one deterministic
+destruction order; manual UI closing alone does not establish that order.
+The independent N cases still require complete formal validation. F/M and
+the Phase 5 release block remain unchanged.
+
+## Owned-window callback regression (2026-10-25 record)
+
+`rust/tests/tao-window-race` is a standalone test workspace using the vendored
+Tao callback on hidden HWNDs created by the test. It is not linked into Baton.
+An outer subclass sends the synchronous WM_SYSCHAR through the real Tao
+handler. One case observes an exact matching queued message with PM_NOREMOVE
+before synchronously destroying the window; no replay reaches the destroyed
+receiver. Another observes eight sends and exactly eight matching queued
+deliveries. This verifies a selected ordering, not every destruction race or
+HWND reuse scenario. The receiver probe consumes replay before Tao/default
+processing, so replay recursion and menu behavior require separate evidence.
+The six-second pump deadline is cooperative, not a hard interrupt of callbacks.
+
+Review found the first fixture freed its Probe after Window drop, although Tao
+only posts its destruction message. `ProbeGuard` now removes the subclass and
+synchronously destroys the owned HWND while Probe remains alive, including
+assertion unwinding. If both operations fail while the HWND remains live, it
+retains the callback data rather than freeing a referenced allocation. An
+unwind test checks that the fixture HWND is gone. Follow-up review found no
+remaining material lifecycle defect.
+
+Evidence: `artifacts/phase5-followup-20261024/race-cleanup-green.log` reports
+3/3 passing with the patch. The identical test source against upstream Tao
+0.35.3 in `race-cleanup-control.log` passes cleanup and fails both expected
+regression assertions (no queued replay; zero versus eight deliveries), exit
+101. Earlier fixture logs remain preserved and are superseded by these runs.
+The standalone lockfile is separate from the product dependency graph.
+
+Run with `CARGO_TARGET_DIR=rust/target` and
+`cargo test --manifest-path rust/tests/tao-window-race/Cargo.toml --offline --locked --release -- --test-threads=1`.
