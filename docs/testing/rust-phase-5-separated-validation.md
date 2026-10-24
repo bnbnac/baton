@@ -332,3 +332,17 @@ UTC 종료 시각은 각각 2026-10-24 12:05:44.274와 12:11:36.561이다. 최�
 진행 중 자동 승인 검토가 별도 회귀시험의 Probe 수명 결함을 N 실행 위험으로 연결해 시작 기록 명령을 거부했다. 해당 코드가 제품에 포함되지 않는 독립 workspace임과 실행 바이너리 hash 불변을 확인해 제출했고 재검토 후 승인됐다. 수명 결함 자체는 ProbeGuard로 수정했으며 패치 3/3 통과, upstream 대조의 예상 2실패 및 재검토를 별도로 완료했다. 제품과 N 시험 소스는 변경하지 않았다.
 
 정식 F/M, N 두 사례 완주, 공개 경계 완전성, 결합 전환 메모리 및 Phase 5 출시 차단은 아직 남는다. 새 N 실행은 기존 실패와 별도 경로에 보존한다.
+
+### 2026-10-25 명시적 재개 — 메모리 수집 process_missing
+
+커밋 `0ad0ed4`에서 동일 제품·환경·기존 M/F preflight를 사용해 `n-restored-resume`를 한 번 실행했다. 공통 입력/시험 소스 동일성 검사를 통과했고, 복원 상태·세션 선택·102×17→100×17 resize가 검증됐다. 다음 reclaim을 시작하기 전에 메모리 수집기 `sample-test-process-roles.ps1:14`의 Get-Process 조회가 `process_missing`으로 실패했다. 사용량 중단이나 입력 만료와 다른 실패다. 종료 시각은 UTC 2026-10-24 17:18:43.886(한국 시각 10월 25일 02:18:43)이다.
+
+마지막 성공 메모리 표본은 측정 76.199초다. 다음 `memory-input.json`에는 새 WebView 하위 PID 43776/startTicks `639284591167742949`가 추가돼 있지만, 기존 예외에는 실패 PID가 없어 이 프로세스가 원인인지는 확인할 수 없다. 마지막 성공 renderer는 PID 29440/startTicks `639284589969098976`이다. 마지막 online 상태는 UTC 17:18:27.644, geometry 100×17이다. 종료 후 offline 응답은 실행기의 종료 절차에서 나온 것으로, 실패 전에 앱이 끊겼다는 증거로 사용하지 않는다.
+
+실행기가 reclaim 시작을 승인하지 않아 `inputAllowed:false`를 반환했다. 당시 드라이버가 같은 호출 묶음에서 UI 입력을 시도한 운영 오류가 있었으나 도구는 foreground process 부재 오류를 냈고 성공한 입력·완료 receipt는 없다. 이후 입력을 중단했다. 향후 시작 결과를 확인한 별도 호출에서만 UI 입력을 진행해야 한다.
+
+앱 exit0, 어댑터 EOF32, descendant audit verified, 정상 종료/강제 정리 없음, 잔류0. `post-exit-check.json`도 기록된 PID+시작 시각 및 owner label로 잔류 프로세스/컨테이너0을 확인했다. `interruption-analysis.json`은 수집기 수정 전에 세 N 실행의 소스23개·바이너리2개 hash 및 부분 결과를 대조했다. 이번 summary SHA256은 `80910bdc2c52fd4b5631317db9fc65973d76e1eb485eac848f4086ff6d854070`이다. verifier는 audit 부재로 무효이며 N 완료 사례는 여전히 0/2다. 최대화 새 실행은 시작하지 않았다.
+
+원인 관측을 위해 수집기의 `process_missing` 예외에 PID, 기대 startedTicks, kind(app/adapter/webview), stage=lookup만 추가했다. 누락 프로세스 건너뛰기·불완전 표본 허용·동일성 기준 변경은 하지 않았다. 종료된 자체 하위 프로세스를 세 역할에 넣는 회귀시험은 변경 전 `missing PID diagnostic`으로 실패했고 변경 후 기존 신원/소유권/중복 검사를 포함해 2/2 통과했다. 로그는 `sampler-diagnostic-red.log`와 `sampler-diagnostic-green.log`; 독립 검토에 material finding 없음.
+
+**다음 단계:** 진단 보완은 원래 누락 원인의 수정이 아니다. 수집기 소스 hash가 변경됐으므로 기존 M/F 통과 기록은 이전 구성의 증거로 보존하며, 변경된 구성의 N gate에 그대로 사용할 수 없다. 새 사전시험에서 구체적인 누락 신원을 얻거나 통과를 확인한 후 N 재개를 판단한다. 이번 작업에서 추가 실행이나 기준 완화는 하지 않았다. 정식 F/M, 공개 경계·결합 메모리 및 Phase 5 출시 차단은 유지한다.

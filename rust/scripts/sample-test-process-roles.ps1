@@ -11,7 +11,10 @@ $identities+=@($r.descendants|Where-Object {$VerifyExited -or !$_.exited}|ForEac
 if(@($identities|Group-Object pid|Where-Object Count -gt 1).Count){throw 'duplicate_pid'}
 $rows=@(foreach($i in $identities){
  $p=Get-Process -Id $i.pid -ErrorAction SilentlyContinue
- if(!$p){if($VerifyExited){continue};throw 'process_missing'}
+ if(!$p){
+  if($VerifyExited){continue}
+  throw "process_missing pid=$($i.pid) kind=$($i.kind) expectedStartedTicks=$($i.startedTicks) stage=lookup"
+ }
  if($p.StartTime.ToUniversalTime().Ticks.ToString() -ne $i.startedTicks){if($VerifyExited){continue};throw 'identity_changed'}
  if($VerifyExited){[pscustomobject]@{pid=$i.pid;startedTicks=$i.startedTicks};continue}
  $role=$i.kind

@@ -7,6 +7,29 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 const execute=promisify(execFile),pwsh='C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe';
 const script=resolve('rust/scripts/sample-test-process-roles.ps1');
+
+test('missing process diagnostics identify the expected app, adapter or WebView without accepting an incomplete sample',async()=>{
+ const dead=JSON.parse((await execute(pwsh,['-NoProfile','-Command',`@{pid=$PID;startedTicks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString()}|ConvertTo-Json -Compress`],{windowsHide:true})).stdout);
+ const ticks=(await execute(pwsh,['-NoProfile','-Command',`(Get-Process -Id ${process.pid}).StartTime.ToUniversalTime().Ticks.ToString()`],{windowsHide:true})).stdout.trim();
+ const dir=await mkdtemp(join(tmpdir(),'baton-missing-role-')),file=join(dir,'receipt.json');
+ try{
+  for(const kind of ['app','adapter','webview']){
+   const evidence={pid:process.pid,startedTicks:ticks,adapters:[],descendants:[]};
+   if(kind==='app')Object.assign(evidence,dead);
+   if(kind==='adapter')evidence.adapters.push(dead);
+   if(kind==='webview')evidence.descendants.push({...dead,exited:false,dataDirectoryMatch:true});
+   await writeFile(file,JSON.stringify(evidence));
+   await assert.rejects(execute(pwsh,['-NoProfile','-File',script,'-Evidence',file],{windowsHide:true,timeout:15000}),e=>{
+    assert.ok(e.stderr.includes('process_missing'));
+    assert.ok(e.stderr.includes(`pid=${dead.pid}`),'missing PID diagnostic');
+    assert.ok(e.stderr.includes(`kind=${kind}`),'missing role diagnostic');
+    assert.ok(e.stderr.includes(`expectedStartedTicks=${dead.startedTicks}`),'missing start-time diagnostic');
+    assert.ok(e.stderr.includes('stage=lookup'),'missing lookup-stage diagnostic');
+    assert.equal(e.stdout.trim(),'','failure must not emit a partial memory sample');return true;
+   });
+  }
+ }finally{await rm(file,{force:true});await rmdir(dir);}
+});
 test('sampler verifies start time, ownership and duplicate identity; exited check only reports matching live identities',async()=>{
  const ticks=(await execute(pwsh,['-NoProfile','-Command',`(Get-Process -Id ${process.pid}).StartTime.ToUniversalTime().Ticks.ToString()`],{windowsHide:true})).stdout.trim();
  const dir=await mkdtemp(join(tmpdir(),'baton-memory-roles-')),file=join(dir,'receipt.json');
