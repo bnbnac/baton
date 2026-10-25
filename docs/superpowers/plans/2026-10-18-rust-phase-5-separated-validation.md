@@ -1,6 +1,6 @@
 # Phase 5 Separated Validation Implementation Plan
 
-**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 증거는 `artifacts/phase5-sampler-diagnostic-20261025`, N 집계는 `n-aggregate.json`의 `native_cases_passed`다. 최초 최대화 실행은 승인 검토 사용량 한도로 입력 시작 전 만료됐고, 사용자 재개 후 `n-maximized-resume`만 실행했다. 정식 F120/M7200 실행 결정과 공개 경계·결합 메모리 검증은 남으며 Phase 5 인수는 아니다. 아래 날짜별 미완료 기록은 당시 상태다.
+**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 이후 사용자 승인으로 `832b165`에서 정식 F120회를 실행해 285.489초/1920 audit 효과/정상 종료·잔류0 및 독립 `transition_cycles_passed`를 확인했다. 정식 M7200초는 PID50188, UTC06:21:45.782 launch/06:22:04.457 측정 시작으로 실행 중이며 `baton-2`가 완료 검증을 담당한다. 증거 루트는 `artifacts/phase5-sampler-diagnostic-20261025`, F는 `f-full`, M은 `m-full`, N 집계는 `n-aggregate.json`이다. M 결과와 공개 경계·결합 메모리 검증은 남으며 Phase 5 인수는 아니다. 아래 날짜별 미완료 기록은 당시 상태다.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
