@@ -1,6 +1,6 @@
 # Phase 5 Separated Validation Implementation Plan
 
-**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 이후 사용자 승인으로 `832b165`에서 정식 F120회와 M7204.240초를 완료했다. 독립 판정은 각각 `transition_cycles_passed`, `detached_static_load_passed`이며 정상 종료·소유 잔류0이다. M의 마지막/첫 안정 구간 메모리 비율은 private 1.000101, working set 0.903132로 기존 각각1.2 이하 기준을 통과했다. 증거 루트는 `artifacts/phase5-sampler-diagnostic-20261025`, F는 `f-full`, M은 `m-full`, N 집계는 `n-aggregate.json`이다. 공개 경계 완전성·결합 전환 메모리는 미검증이며 Phase 5 출시 차단은 유지한다. 아래 날짜별 미완료 기록은 당시 상태다.
+**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 이후 사용자 승인으로 `832b165`에서 정식 F120회와 M7204.240초를 완료했다. 독립 판정은 각각 `transition_cycles_passed`, `detached_static_load_passed`이며 정상 종료·소유 잔류0이다. M의 마지막/첫 안정 구간 메모리 비율은 private 1.000101, working set 0.903132로 기존 각각1.2 이하 기준을 통과했다. 증거 루트는 `artifacts/phase5-sampler-diagnostic-20261025`, F는 `f-full`, M은 `m-full`, N 집계는 `n-aggregate.json`이다. 2026-10-25 사용자 결정으로 회수 시 미수신 출력 꼬리 폐기를 허용하므로 그 완전 전달은 보장 대상에서 제외한다. 기존 unverified 기록은 보존하며, 권한/출력 격리 검증과 결합 전환 메모리 등 나머지 인수 요건 및 Phase 5 출시 차단은 유지한다. 아래 날짜별 미완료 기록은 당시 상태다.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -243,3 +243,7 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 - 출력1159.845~1160.976 B/s, 측정 debugger연결0/GC0/JS조회0/정적binding, ACK 정상1310720바이트 대조와 차단 시 대상닫힘·다른15세션생존, 정상exit0/EOF32/소유잔류0, 소스23/바이너리2/사전시험 동일환경 검증 완료.
 - 증거 `m-full/verified.json`, `m-full/completion-analysis.json`; summary SHA `7c7a5e9c555d2e4ff9d08432ed06c692b20ed0aa650a075acb8c6e4b8860db0c`. 보존image는 삭제하지 않았다. 완료 보고 후 baton-2를 PAUSED로 전환한다.
 - 정식 M/F 및 독립 N2/2가 통과했지만 공개 경계 완전성·결합 전환 메모리는 미검증이다. 기존 실패·Phase5 출시 차단과 phase5Acceptance:false를 유지한다. 새 시험을 자동 시작하지 않는다.
+
+### 2026-10-25 회수 계약 유지 결정
+
+사용자가 회수 직전 미수신 출력 꼬리 폐기를 허용하고 기존 동작 유지를 승인했다. [설계 결정](../specs/2026-10-18-rust-phase-5-separated-validation-design.md#2026-10-25-승인-결정-즉시-권한-회수-유지)에 대안·한계·기존 테스트 매핑을 기록했다. 꼬리 완전 전달은 보장 대상에서 제외하며 과거 unverified를 소급 통과시키지 않는다. 권한 차단·비공개 격리·새 stream 분리는 필수이며 응답 commit 이전/이후를 구별한다. 이번 변경은 문서만이며 신규 시험 통과나 Phase5 완료가 아니다. 다음은 기존 격리 증거의 인수 매핑과 결합 전환 메모리 검증 방법 검토다.

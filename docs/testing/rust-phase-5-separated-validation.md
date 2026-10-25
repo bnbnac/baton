@@ -1,6 +1,6 @@
 # Phase 5 목적별 시험 운영
 
-**최신 상태(2026-10-25):** 제품 Tao patch와 진단 수집기 보완 구성에서 M/F 사전시험, N 복원·최대화 독립 사례 2/2, 정식 F 120회 및 정식 M 7204.240초가 통과했다. M 독립 판정은 `detached_static_load_passed`이며 마지막/첫 안정 구간 메모리 비율은 private 1.000101, working set 0.903132다. 공개 경계 완전성·결합 전환 메모리는 미검증이며 Phase 5 출시 차단은 유지한다. 실제 결과와 중단 기록은 아래 날짜별 절을 따른다. 이하 날짜별 기록은 당시 상태를 보존한다.
+**최신 상태(2026-10-25):** 제품 Tao patch와 진단 수집기 보완 구성에서 M/F 사전시험, N 복원·최대화 독립 사례 2/2, 정식 F 120회 및 정식 M 7204.240초가 통과했다. M 독립 판정은 `detached_static_load_passed`이며 마지막/첫 안정 구간 메모리 비율은 private 1.000101, working set 0.903132다. 2026-10-25 사용자 결정으로 회수 시 미수신 출력 꼬리 폐기를 허용하므로 그 완전 전달은 보장 대상에서 제외한다. 기존 unverified 기록은 보존하며, 권한/출력 격리 검증과 결합 전환 메모리 등 나머지 인수 요건 및 Phase 5 출시 차단은 유지한다. 실제 결과와 중단 기록은 아래 날짜별 절을 따른다. 이하 날짜별 기록은 당시 상태를 보존한다.
 
 상태(2026-10-23 당시): N 사례별 독립 완료 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 app_offline으로 실패, 독립 사례 통과 0/2, 최대화 미실행이다. 후속 최소 Tauri 창에서도 SSH/MCP/watchdog 없이 메뉴 후 Rust 응답 중단·정상 종료 실패를 재현했다. 화면 JS 카운터는 증가하지만 Rust 수신은 멈췄고 종료 허용 후에도 같은 앱·WebView가 살아 있었다. 메뉴 없는 동일 바이너리 대조는 정상 종료했다. [조사 결과](rust-phase-5-offline-investigation.md)에 원시 근거와 하위 이벤트 처리 조사 범위를 기록했다. 현재 소유 잔류 0. 기존 실패와 정식 F/M·Phase 5 출시 차단은 유지한다.
 
@@ -410,3 +410,11 @@ UTC 종료 시각은 각각 2026-10-24 12:05:44.274와 12:11:36.561이다. 최�
 현재 소스23개/바이너리2개 hash 및 M preflight의 소스·바이너리·image·환경 동일성을 검증했다. 제품 SHA `2e2911c3eb830fc8f207ce3c41852015417c75f1c34ed23f7f8dcab006772316`, adapter SHA `09823dd5d51cd3b33f286540fe43a03570b3eee81497607a1b5b67336fcb754c`, image `sha256:7270e924b7597cbece5eb6886a47c3383502f31d8a253763774f3b8c6b4f810a`. Windows10.0.26200 x64 / Node22.17.0 / WebView155.0.4283.62 / Playwright1.62.1이다.
 
 **해석 한계:** 자동화 연결을 분리한 고정 UI 부하의 2시간 기준 통과다. 이전 실패와 직접 통제 비교가 아니므로 제품 누수 부재나 계측 영향의 단일 원인을 입증하지 않는다. M은 공개 경계를 `not_exercised`로 기록하며, F/N의 공개 경계 완전성 및 결합 전환 메모리는 계속 `unverified`다. `phase5Acceptance:false`와 기존 2시간 실패 기록·Phase 5 출시 차단을 유지한다. 제품·Cargo·fuzz 변경이나 추가 실행 없이 이 실행을 마감한다.
+
+### 2026-10-25 회수 의미 확정 — 미수신 꼬리 폐기 허용
+
+사용자가 기존 회수를 유지하기로 승인했다. 에이전트의 읽기 완료를 기다리거나 회수 후 읽기 유예를 제공하지 않는다. 미수신 꼬리 완전 전달은 보장 대상이 아니므로 그 미입증만을 추가 제품 수정/출시 차단 사유로 요구하지 않는다. 과거 publicBoundaryCompleteness:unverified를 통과로 바꾸지는 않는다. [승인 결정과 경계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md#2026-10-25-승인-결정-즉시-권한-회수-유지).
+
+정적 확인한 기존 회귀 범위: baton-core/tests/output.rs의 public_history_never_comes_from_ui_and_reemitted_private_text_is_public 및 decoder_carry_never_crosses_handoff_or_reclaim은 UI 이력 보존/공개 이력 격리/옛 epoch·stream 거부/디코더 경계 분리를 검사한다. tests/races.rs의 read_rechecks_after_wakeup_before_return은 OLD 수신→회수→PRIVATE 수신→재전달 후 대기 read의 StaleControlEpoch 및 새 stream 빈 출력을 검사한다. queued_write_never_reaches_transport_after_reclaim은 이미 시작된 쓰기와 미시작 대기 입력을 구별한다. 이번 문서 작업에서는 테스트를 재실행하지 않았으므로 신규 통과 결과로 세지 않는다.
+
+코어 commit_agent_response는 응답 commit과 회수를 같은 registry 잠금 아래 직렬화하며 앱 agent_bridge가 이를 사용한다. 이미 commit된 응답의 지연 도착은 취소할 수 없다. 이 코드 확인을 IPC 경쟁의 새 실증 결과로 대신하지 않는다. 후속 인수에서는 기존 권한/격리 증거와 실제 요구를 대조하고 부족한 부분만 보완한다. 제품·Cargo·fuzz·기존 판정기 변경 없음, 결합 전환 메모리와 나머지 인수 요건은 계속 남는다.
