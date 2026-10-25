@@ -1,5 +1,7 @@
 # Phase 5 Separated Validation Implementation Plan
 
+**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 증거는 `artifacts/phase5-sampler-diagnostic-20261025`, N 집계는 `n-aggregate.json`의 `native_cases_passed`다. 최초 최대화 실행은 승인 검토 사용량 한도로 입력 시작 전 만료됐고, 사용자 재개 후 `n-maximized-resume`만 실행했다. 정식 F120/M7200 실행 결정과 공개 경계·결합 메모리 검증은 남으며 Phase 5 인수는 아니다. 아래 날짜별 미완료 기록은 당시 상태다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 동일 후보에 대한 고정 UI 2시간 부하(M), 자동 전환 120회(F), 짧은 네이티브 UI(N)를 독립 실행·검증하고 각 결과의 한계를 보존한다.
@@ -162,8 +164,8 @@
 
 - [ ] 운영 문서에 새 schema/config 예제와 명시적 test 목록을 쓴다. `node --test rust/tests/phase5/separated/*.test.mjs`를 기본 새 unit 명령으로 제공하되 shell wildcard가 펼쳐지지 않으면 파일명을 나열한다. broad phase5 glob이나 cargo는 사용하지 않는다.
 - [ ] 신규 증거 루트 `artifacts/phase5-separated-20261018/`와 config를 준비한다(이미 있으면 덮어쓰지 않고 새 suffix). app/adapter 경로와 hash는 승인 설계 시 후보로 고정: app `artifacts/phase5-ui-stability-20261016/baton.exe` / `1ae03f6b7fc0d3d17eb5571c81ba0c11d73ad9cfc39e37c2c520a9393aa0df0e`, adapter `artifacts/phase5-harness-fixes-probe3-20261013/candidate/baton-adapter.exe` / `09823dd5d51cd3b33f286540fe43a03570b3eee81497607a1b5b67336fcb754c`. image `sha256:7270e924b7597cbece5eb6886a47c3383502f31d8a253763774f3b8c6b4f810a`는 실제 존재/태그 ID를 확인하며 불일치 시 재빌드로 대체하지 않는다.
-- [ ] 구현 검토 후 승인된 실행 범위 내에서 M preflight 180초, F preflight 17회를 각각 한 번 수행한다. 명령: `node rust/tests/phase5/separated/launch.mjs artifacts/phase5-separated-20261018/m-preflight artifacts/phase5-separated-20261018/config.json M preflight` (F는 `f-preflight`, `F`). 각 finishedUtc 후 `node rust/tests/phase5/separated/verify.mjs <evidence-dir>`. 실패하면 다음 단계 자동 진행 없이 원인·소유 정리 결과를 기록한다.
-- [ ] 같은 입력으로 N full 두 사례를 active computer-use와 수행하고 검증한다. 명령은 `.../launch.mjs .../n-cases .../config.json N full`; native CLI로 요청·receipt만 교환한다. 실제 조작과 캡처는 컴퓨터 제어 도구로 수행한다. 서로 겹치는 실행은 하지 않는다.
+- [x] 구현 검토 후 승인된 실행 범위 내에서 M preflight 180초, F preflight 17회를 각각 한 번 수행한다. 명령: `node rust/tests/phase5/separated/launch.mjs artifacts/phase5-separated-20261018/m-preflight artifacts/phase5-separated-20261018/config.json M preflight` (F는 `f-preflight`, `F`). 각 finishedUtc 후 `node rust/tests/phase5/separated/verify.mjs <evidence-dir>`. 실패하면 다음 단계 자동 진행 없이 원인·소유 정리 결과를 기록한다. 최신 구성 결과: 2026-10-25 증거 루트의 M/F `verified.json`.
+- [x] 같은 입력으로 N full 두 사례를 active computer-use와 수행하고 검증한다. 명령은 `.../launch.mjs .../n-cases .../config.json N full`; native CLI로 요청·receipt만 교환한다. 실제 조작과 캡처는 컴퓨터 제어 도구로 수행한다. 서로 겹치는 실행은 하지 않는다. 승인된 독립 사례 방식의 최신 결과: 2026-10-25 `n-restored` + `n-maximized-resume`, 집계 `n-aggregate.json`.
 - [ ] 사전 검사와 N의 독립 결과·소스/바이너리/이미지/환경 비교·cleanup을 보고하고 정식 F/M의 준비 상태를 검토한다. 정식 실행은 별도 실행 결정 후 `.../f-full .../config.json F full`, `.../m-full .../config.json M full` 순서로 각각 한 번 시작한다. 실행 간 코드가 바뀌지 않았다면 이유 없이 이미 통과한 검사를 반복하지 않는다. 새 heartbeat는 별도 필요가 생긴 경우에만 설정하고 불변 상태 알림은 하지 않는다.
 - [ ] 정식 실행 후 각 검증 결과·M 다섯 중앙값/비율·F 회차 소요시간/횟수·N 실제 창 관측·원시 증거 경로·제약을 기록한다. 보존 image는 최종 사용 종료 시 owner 대상 컨테이너 0 및 현재 tag ID 일치 확인 뒤 정리하고 `final-cleanup.json`에 남긴다. 문서만 명시 stage하여 로컬 커밋한다. 세 scope가 통과해도 결합 메모리 항목/출시 차단은 유지한다.
 

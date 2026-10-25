@@ -1,6 +1,8 @@
 # Phase 5 목적별 시험 운영
 
-상태(2026-10-23 최신): N 사례별 독립 완료 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 app_offline으로 실패, 독립 사례 통과 0/2, 최대화 미실행이다. 후속 최소 Tauri 창에서도 SSH/MCP/watchdog 없이 메뉴 후 Rust 응답 중단·정상 종료 실패를 재현했다. 화면 JS 카운터는 증가하지만 Rust 수신은 멈췄고 종료 허용 후에도 같은 앱·WebView가 살아 있었다. 메뉴 없는 동일 바이너리 대조는 정상 종료했다. [조사 결과](rust-phase-5-offline-investigation.md)에 원시 근거와 하위 이벤트 처리 조사 범위를 기록했다. 현재 소유 잔류 0. 기존 실패와 정식 F/M·Phase 5 출시 차단은 유지한다.
+**최신 상태(2026-10-25):** 제품 Tao patch와 진단 수집기 보완 구성에서 M/F 사전시험 및 N 복원·최대화 독립 사례 2/2가 통과했다. 집계는 `native_cases_passed`, `scopePassed:true`다. 정식 F 120회/M 7200초, 공개 경계 완전성·결합 전환 메모리는 미검증이며 Phase 5 출시 차단은 유지한다. 실제 결과와 한도 중단 기록은 아래 「2026-10-25 사전시험 갱신과 N 독립 사례 완료」를 따른다. 이하 날짜별 기록은 당시 상태를 보존한다.
+
+상태(2026-10-23 당시): N 사례별 독립 완료 구현과 관련 테스트 131개·독립 리뷰를 마쳤다. 새 복원 사례는 app_offline으로 실패, 독립 사례 통과 0/2, 최대화 미실행이다. 후속 최소 Tauri 창에서도 SSH/MCP/watchdog 없이 메뉴 후 Rust 응답 중단·정상 종료 실패를 재현했다. 화면 JS 카운터는 증가하지만 Rust 수신은 멈췄고 종료 허용 후에도 같은 앱·WebView가 살아 있었다. 메뉴 없는 동일 바이너리 대조는 정상 종료했다. [조사 결과](rust-phase-5-offline-investigation.md)에 원시 근거와 하위 이벤트 처리 조사 범위를 기록했다. 현재 소유 잔류 0. 기존 실패와 정식 F/M·Phase 5 출시 차단은 유지한다.
 
 [승인 설계](../superpowers/specs/2026-10-18-rust-phase-5-separated-validation-design.md), [구현 계획](../superpowers/plans/2026-10-18-rust-phase-5-separated-validation.md).
 
@@ -346,3 +348,35 @@ UTC 종료 시각은 각각 2026-10-24 12:05:44.274와 12:11:36.561이다. 최�
 원인 관측을 위해 수집기의 `process_missing` 예외에 PID, 기대 startedTicks, kind(app/adapter/webview), stage=lookup만 추가했다. 누락 프로세스 건너뛰기·불완전 표본 허용·동일성 기준 변경은 하지 않았다. 종료된 자체 하위 프로세스를 세 역할에 넣는 회귀시험은 변경 전 `missing PID diagnostic`으로 실패했고 변경 후 기존 신원/소유권/중복 검사를 포함해 2/2 통과했다. 로그는 `sampler-diagnostic-red.log`와 `sampler-diagnostic-green.log`; 독립 검토에 material finding 없음.
 
 **다음 단계:** 진단 보완은 원래 누락 원인의 수정이 아니다. 수집기 소스 hash가 변경됐으므로 기존 M/F 통과 기록은 이전 구성의 증거로 보존하며, 변경된 구성의 N gate에 그대로 사용할 수 없다. 새 사전시험에서 구체적인 누락 신원을 얻거나 통과를 확인한 후 N 재개를 판단한다. 이번 작업에서 추가 실행이나 기준 완화는 하지 않았다. 정식 F/M, 공개 경계·결합 메모리 및 Phase 5 출시 차단은 유지한다.
+
+### 2026-10-25 사전시험 갱신과 N 독립 사례 완료
+
+증거 루트는 `artifacts/phase5-sampler-diagnostic-20261025`, 실행 커밋은 `9cd3ccbf1936c83bbc5faaa3b88fc85bf9d7d139`다. 진단 수집기 변경 후 사용자 승인으로 M/F 사전시험을 갱신했다. 제품 바이너리는 기존 Tao patch 후보와 동일하며 제품·미완성 fuzz는 변경하지 않았다.
+
+| 실행 | 실제 측정/회수 | 독립 판정 | 주요 근거 |
+|---|---|---|---|
+| `m-preflight` | 180.100198초, OS 6표본 | `preflightPassed:true` | audit 3회, 정상 출력과 과부하 대조 |
+| `f-preflight` | 17회, 41.071700초 | `preflightPassed:true` | 17전환·17audit·17health |
+| `n-restored` | 275.189838초, OS 8표본 | `casePassed:true` | 6개 UI receipt, 102×17→100×17, 원격 `17 100` |
+| `n-maximized-resume` | 252.163411초, OS 8표본 | `casePassed:true` | 6개 UI receipt, 102×17→274×52, 원격 `52 274` |
+
+각 실행은 32연결/16세션/2서버다. N 두 사례는 각각 audit 1회로 16개 서버 효과와 health 32연결을 확인했다. 두 사례 모두 adapter0→16 전달, epoch1→2→3, 회수 시 user_owned/stream null, 새 stream 발급, 이전 owner의 빈 세션 목록을 원시 기록과 대조했다. N 공개 구간의 세션별 출력률은 복원 1162.107~1166.969 B/s, 최대화 1158.475~1174.981 B/s다. N은 이 출력률 자체를 1 KiB/s 인수 gate로 쓰지 않는다. M/F 사전시험 출력률은 각각 1166.712~1167.850 및 1137.352~1180.423 B/s였다.
+
+각 `verify.mjs <dir>`와 두 사례의 `verify.mjs --native-cases .../n-aggregate.json .../n-restored .../n-maximized-resume`가 통과했다. 집계는 `scopePassed:true`, `resultName:native_cases_passed`, 독립 사례 2/2다. 소스23개·바이너리2개 현재 hash, 공통 입력·서버 image·OS/Node/WebView/Playwright 동일성이 검증됐다. M/N 측정 중 Playwright 분리, 강제 GC·JS probe·raw CDP 0을 확인했다. 준비 단계의 Playwright 사용과 debug listener는 남으므로 완전 무계측 시험으로 부르지 않는다. 모든 통과 실행은 exit0, 어댑터 EOF32, descendant audit verified, 정상 종료, 강제 정리 없음, 소유 프로세스/컨테이너 잔류0이다.
+
+원시 결과의 SHA256:
+
+| summary | SHA256 |
+|---|---|
+| M | `36cb3c311b7edd389f84f6560eb9724b7be001cd457fca07daded4caa329481c` |
+| F | `e6215770ea6f29ba46ecfd06c0adc5f3e6f78bb0d801544799ee56b48a6e7ed6` |
+| N 복원 | `07f0dcccb5ba4c59033db570a77a1f87d83a5b7f434755543bb854beac5b425b` |
+| N 최대화 재개 | `70258281685d0ab99628318a581dd99973fd6a49cd722605ab5af4f783aa323a` |
+
+제품 SHA256은 `2e2911c3eb830fc8f207ce3c41852015417c75f1c34ed23f7f8dcab006772316`, adapter는 `09823dd5d51cd3b33f286540fe43a03570b3eee81497607a1b5b67336fcb754c`, image는 `sha256:7270e924b7597cbece5eb6886a47c3383502f31d8a253763774f3b8c6b4f810a`다. 환경은 Windows 10.0.26200, Node v22.17.0, WebView 155.0.4283.62, Playwright 1.62.1이다. 후속 동일 구성 시험용 image는 보존했다.
+
+**중단과 도구 한계:** 최초 `n-maximized`는 자동 승인 검토의 사용량 한도로 window_mode 시작 기록 명령이 실행되지 않았다. 안전성 거부 판정이 아니며 우회하지 않았다. UI receipt 0, 준비 포함 900초 제한 `run_expired`, 측정 881.462525초, UTC 2026-10-24 23:24:51.685 종료다. audit 부재로 독립 증거 무효이고 통과 기록을 만들지 않았다. 이 실행도 exit0/EOF32/descendant audit verified/강제 정리 없음/잔류0이다. 사용자의 명시적 재개 후 최대화 사례만 새 경로에서 실행했으며 통과한 M/F/복원은 반복하지 않았다.
+
+최대화 재개 중 컴퓨터 제어 Node 런타임이 최대화 입력 후 재시작됐다. 입력을 반복하지 않고 새 창 신원·실제 최대화·복원 버튼을 다시 관측했다. 캡처 `screenshot-0`은 15×15 아이콘, `screenshot-1`이 2560×1392 전체 창이라 후자를 receipt에 사용했다. 첫 접근성 회수 클릭은 상태를 바꾸지 않아 화면을 새로 관측한 좌표 클릭으로 회수했고, 이후 실제 사용자/에이전트 상태와 runner 검증을 기준으로 기록했다. 응답 지연은 `not_measured`이며 입력120초/검증45초/전체900초 기준은 변경하지 않았다.
+
+이번 구성에서는 `process_missing`이 재현되지 않았지만 기존 누락 원인이 해결됐다는 증거는 아니다. `phase5Acceptance:false`, `publicBoundaryCompleteness:unverified`, `combinedTransitionMemory:unverified`를 유지한다. **다음은 정식 F 120회와 M 7200초의 실행 준비/별도 실행 결정**이며, 기존 2시간 실패와 Phase 5 출시 차단은 해제하지 않는다.
