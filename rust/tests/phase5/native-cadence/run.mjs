@@ -52,7 +52,7 @@ export async function checkBaselines(root,paths,summary){
 }
 
 export function createCadenceRuntime(options,deps={}){
- const r=createRuntime({...options,contract:CADENCE},deps);installCadenceGuard(r);
+ const r=createRuntime({...options,contract:CADENCE},deps);r.summary.clockEpoch=performance.timeOrigin;installCadenceGuard(r);
  const manifest=r.manifest.bind(r);r.manifest=async()=>{
   await manifest();const dir='rust/tests/phase5/native-cadence';
   for(const file of (await readdir(join(r.root,dir))).filter(f=>f.endsWith('.mjs')&&!f.endsWith('.test.mjs')&&f!=='test-fixture.mjs'))r.summary.sources[dir+'/'+file]=await sha256(join(r.root,dir,file));
