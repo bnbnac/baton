@@ -1,6 +1,6 @@
 # Phase 5 Separated Validation Implementation Plan
 
-**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 이후 사용자 승인으로 `832b165`에서 정식 F120회를 실행해 285.489초/1920 audit 효과/정상 종료·잔류0 및 독립 `transition_cycles_passed`를 확인했다. 정식 M7200초는 PID50188, UTC06:21:45.782 launch/06:22:04.457 측정 시작으로 실행 중이며 `baton-2`가 완료 검증을 담당한다. 증거 루트는 `artifacts/phase5-sampler-diagnostic-20261025`, F는 `f-full`, M은 `m-full`, N 집계는 `n-aggregate.json`이다. M 결과와 공개 경계·결합 메모리 검증은 남으며 Phase 5 인수는 아니다. 아래 날짜별 미완료 기록은 당시 상태다.
+**최신 실행 상태(2026-10-25):** `9cd3ccb` 구성의 M 180.100초/F 17회 사전시험과 N 복원·최대화 독립 사례 2/2 검증 완료. 이후 사용자 승인으로 `832b165`에서 정식 F120회와 M7204.240초를 완료했다. 독립 판정은 각각 `transition_cycles_passed`, `detached_static_load_passed`이며 정상 종료·소유 잔류0이다. M의 마지막/첫 안정 구간 메모리 비율은 private 1.000101, working set 0.903132로 기존 각각1.2 이하 기준을 통과했다. 증거 루트는 `artifacts/phase5-sampler-diagnostic-20261025`, F는 `f-full`, M은 `m-full`, N 집계는 `n-aggregate.json`이다. 공개 경계 완전성·결합 전환 메모리는 미검증이며 Phase 5 출시 차단은 유지한다. 아래 날짜별 미완료 기록은 당시 상태다.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -235,3 +235,11 @@ N 재실행 대신 고정 후보·SSH 0·MCP 1로 원인을 조사했다. 메뉴
 `artifacts/phase5-product-patch-20261024/native1`은 사용량 중단으로 driver 미완료/시간 제한 종료라 정상 종료 판정에서 제외했다. 명시적 재개 후 같은 비계측 제품의 `native2`에서 메뉴 표시46.223초, 반복 열기/최대화·복원/제목 표시줄 메뉴/웹 입력란 포커스/메뉴 Close를 확인했다. 종료 전143상태 online·동일연결, app exit0/adapter EOF0/정상종료/audit verified/소유 잔류0 및 소스·바이너리hash 검증. 제품 SHA256 `2e2911c3eb830fc8f207ce3c41852015417c75f1c34ed23f7f8dcab006772316`.
 
 정적 review는 현재 고정 Tauri 사용 방식에 차단 결함을 찾지 못했다. 재전달로 raw Tao IME 이벤트가 중복될 수 있으나 현재 런타임은 이를 사용하지 않는다는 제한을 기록했다. 창파괴-before-replay 정밀 경합과 정식 N(SSH 포함) 검증은 남아 있다. 기존 N 0/2, F/M 및 Phase5 출시 차단은 유지한다. 상세 결과·중단/관측 정정·범위는 `docs/testing/rust-tao-system-menu-patch.md`를 참조한다.
+
+### 2026-10-25 정식 M 완료 기록
+
+- 실행 커밋832b165, owner `da8358ca-8e57-4fea-b4f6-082c50a6d321`, 완료 UTC08:22:24.474. 7204.240초/32연결16세션2서버/120audit·1920효과/120health/OS240표본을 검증했다.
+- verifier 1회 실행으로 evidenceValid/scopePassed true, `detached_static_load_passed`. 원시 메모리 별도 계산과 summary·verified 중앙값 일치, 마지막/첫 구간 private1.000100652·working0.903132063으로 기존 각각1.2 이하 기준 통과. 구간별 값·인접 비교는 [결과 보고서](../../testing/rust-phase-5-separated-validation.md#2026-10-25-정식-m-2시간-완료--고정-ui-부하-범위-통과)에 기록했다.
+- 출력1159.845~1160.976 B/s, 측정 debugger연결0/GC0/JS조회0/정적binding, ACK 정상1310720바이트 대조와 차단 시 대상닫힘·다른15세션생존, 정상exit0/EOF32/소유잔류0, 소스23/바이너리2/사전시험 동일환경 검증 완료.
+- 증거 `m-full/verified.json`, `m-full/completion-analysis.json`; summary SHA `7c7a5e9c555d2e4ff9d08432ed06c692b20ed0aa650a075acb8c6e4b8860db0c`. 보존image는 삭제하지 않았다. 완료 보고 후 baton-2를 PAUSED로 전환한다.
+- 정식 M/F 및 독립 N2/2가 통과했지만 공개 경계 완전성·결합 전환 메모리는 미검증이다. 기존 실패·Phase5 출시 차단과 phase5Acceptance:false를 유지한다. 새 시험을 자동 시작하지 않는다.
