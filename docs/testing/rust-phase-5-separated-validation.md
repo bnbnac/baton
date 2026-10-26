@@ -418,3 +418,7 @@ UTC 종료 시각은 각각 2026-10-24 12:05:44.274와 12:11:36.561이다. 최�
 정적 확인한 기존 회귀 범위: baton-core/tests/output.rs의 public_history_never_comes_from_ui_and_reemitted_private_text_is_public 및 decoder_carry_never_crosses_handoff_or_reclaim은 UI 이력 보존/공개 이력 격리/옛 epoch·stream 거부/디코더 경계 분리를 검사한다. tests/races.rs의 read_rechecks_after_wakeup_before_return은 OLD 수신→회수→PRIVATE 수신→재전달 후 대기 read의 StaleControlEpoch 및 새 stream 빈 출력을 검사한다. queued_write_never_reaches_transport_after_reclaim은 이미 시작된 쓰기와 미시작 대기 입력을 구별한다. 이번 문서 작업에서는 테스트를 재실행하지 않았으므로 신규 통과 결과로 세지 않는다.
 
 코어 commit_agent_response는 응답 commit과 회수를 같은 registry 잠금 아래 직렬화하며 앱 agent_bridge가 이를 사용한다. 이미 commit된 응답의 지연 도착은 취소할 수 없다. 이 코드 확인을 IPC 경쟁의 새 실증 결과로 대신하지 않는다. 후속 인수에서는 기존 권한/격리 증거와 실제 요구를 대조하고 부족한 부분만 보완한다. 제품·Cargo·fuzz·기존 판정기 변경 없음, 결합 전환 메모리와 나머지 인수 요건은 계속 남는다.
+
+### 2026-10-26 네이티브 60초 주기 진단
+
+별도 NC 진단을 한 번 실행했다. 첫 회차 60.026초에 중단되어 완료 0/3회이며, 증거 유효·정상 종료/EOF32/소유 잔류0을 독립 검증했다. 실제 UI 세션 선택은 검증됐고 최대화는 관측했지만 기한 내 완료 receipt가 없어 다음 단계로 진행하지 않았다. 도구 왕복과 조회 helper 오류를 포함한 운영 결과이며 제품 지연이나 모든 네이티브 방식의 한계로 일반화하지 않는다. [상세 증거·한계·시험 후 helper 수정](rust-native-cadence-feasibility.md#2026-10-26-single-live-result). 기존 M/F/N 통과 범위와 결합 전환 메모리 미검증, Phase5 출시 차단은 유지한다. 2시간 시험 및 자동 재시도 없음.

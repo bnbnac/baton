@@ -8,9 +8,9 @@
 
 **Tech Stack:** Node.js ESM/node:test, 기존 PowerShell 프로세스 감독/OS sampler, Docker SSH fixture, Computer Use `node_repl` + `@oai/sky`.
 
-**Spec:** [승인된 준비안](../specs/2026-10-25-rust-native-transition-feasibility-design.md), 준비 커밋 `868493e`. 구현 계획 검토 전이며 이번 문서 작성으로 구현/실행하지 않는다.
+**Spec:** [승인된 준비안](../specs/2026-10-25-rust-native-transition-feasibility-design.md), 준비 커밋 `868493e`. 사용자 승인 후 구현과 단일 실제 진단까지 마감했다. 결과는 아래 기록을 따른다.
 
-**진행 기록(2026-10-26):** 사용량 중단 후 작성 중인 계획을 회수해 자체 검토했다. 설계 선택은 승인됐으며 이 계획의 실행 방식은 기존 사용자 선호대로 현재 세션에서 직접 구현한다. 구현 코드·새 실제 시험·heartbeat는 아직 시작하지 않았다.
+**진행 기록(2026-10-26):** 현재 세션에서 직접 구현하고 독립 최종 리뷰의 3건을 수정했다. 단일 실제 진단은 첫 회차 시간 초과로 종료됐고 증거 유효성과 정상 정리를 검증했다. 추가 실행·heartbeat·2시간 시험은 시작하지 않았다.
 
 ## Global Constraints
 
@@ -85,10 +85,10 @@
 
 ## Task 4: 준비 확인 후 한 번 실행·마감
 
-- [ ] 구현 검토 및 단위 검증이 끝난 뒤 실행 준비 상태를 보고한다. Computer Use 런타임·현재도구규칙을 먼저 확인한다. 지정 앱이 아닌 창에는 입력하지 않는다. 아직 실행을 시작하지 않았다면 이 계획을 실제 시험 완료로 표시하지 않는다.
-- [ ] 승인된 실행 범위 안에서 launch를 한 번 수행한다. 각 pending→start승인→관측→단일입력→재관측→done→runner검증을 따른다. 첫 회차60초초과/입력기한만료/관측불일치 시 입력을 멈추고 runner 정상 종료를 확인한다. 사용량 중단 시 자동 재개·늦은 입력을 하지 않는다.
-- [ ] finished 이후 verifier를 한 번 실행하고 raw시간/완료수/정리결과와 대조한다. 시험 원인과 운영 원인을 분리하고 문서만 결과 커밋한다. owner label+이름/ID 및 PID+시작시각이 일치하는 소유자원만 정리하며 보존image는 삭제하지 않는다.
-- [ ] 3회완료 여부와 회차시간을 보고하고 종료한다. 성공이어도 2시간 시험/heartbeat를 자동 시작하지 않는다. 실패면 그 증거를 보존하고 새 방법을 별도로 검토한다.
+- [x] 구현 검토 및 단위 검증이 끝난 뒤 실행 준비 상태를 보고한다. Computer Use 런타임·현재도구규칙을 먼저 확인한다. 지정 앱이 아닌 창에는 입력하지 않는다. 아직 실행을 시작하지 않았다면 이 계획을 실제 시험 완료로 표시하지 않는다.
+- [x] 승인된 실행 범위 안에서 launch를 한 번 수행한다. 각 pending→start승인→관측→단일입력→재관측→done→runner검증을 따른다. 첫 회차60초초과/입력기한만료/관측불일치 시 입력을 멈추고 runner 정상 종료를 확인한다. 사용량 중단 시 자동 재개·늦은 입력을 하지 않는다.
+- [x] finished 이후 verifier를 한 번 실행하고 raw시간/완료수/정리결과와 대조한다. 시험 원인과 운영 원인을 분리하고 문서만 결과 커밋한다. owner label+이름/ID 및 PID+시작시각이 일치하는 소유자원만 정리하며 보존image는 삭제하지 않는다.
+- [x] 3회완료 여부와 회차시간을 보고하고 종료한다. 성공이어도 2시간 시험/heartbeat를 자동 시작하지 않는다. 실패면 그 증거를 보존하고 새 방법을 별도로 검토한다.
 
 ## Self-review
 
@@ -97,3 +97,9 @@
 ## 2026-10-26 구현 검증
 
 Task 1~3 구현 완료. 독립 최종 리뷰의 duration 경계, 부분 audit 양방향 대조, 중첩 sampler 누락 3건을 각각 RED→GREEN으로 수정했다. 기존 separated를 포함한 118개 단위 테스트 통과. Task 4 실제 진단은 아직 시작하지 않았다. 제품·Cargo·fuzz·기존 M/F/N 파일은 변경하지 않았다.
+
+## 2026-10-26 Task 4 마감
+
+위 구현 검증 이후 `a511479`에서 `artifacts/phase5-native-cadence-20261025/run1`을 한 번 실행했다. 회차 60.0260851초에 중단, 완료 0/3회, 후속 회차 없음. 세션 선택 검증 후 최대화 화면을 관측했으나 기한 내 resize receipt를 제출하지 못했다. `cadence-verification.json`은 한 번만 생성됐으며 `evidenceValid:true`, `cadenceObserved:false`, errors 0이다. 정상 exit, EOF32, 강제 정리 없음, 소유 잔류0, 보존 image 유지. [상세 결과와 운영 한계](../../testing/rust-native-cadence-feasibility.md#2026-10-26-single-live-result).
+
+원시 시간·표본·출력률·summary/hash·정리 결과의 별도 대조는 `completion-analysis.json`에 남겼다. 장기 메모리 판정과 Phase5 인수는 해제하지 않는다. 실행 중 발생한 빈 mailbox 조회 TypeError는 시험 종료 및 검증 후 별도 회귀 테스트로 수정했고(3e1de15), 진단 단위 30/30 통과. 원본 helper는 `ui-at-run.mjs` 및 실행 커밋에 보존했다. 재실행이나 기존 receipt 덮어쓰기는 하지 않았다.

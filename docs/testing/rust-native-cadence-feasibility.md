@@ -4,9 +4,10 @@ This diagnostic is scoped to three native UI transitions, visiting sessions
 0 → 1 → 0, on the existing 32-connection / 16-session / 2-server fixture.
 It does not accept combined transition memory or release Phase 5.
 
-Implementation status: policy, runner and raw-evidence verifier are implemented;
-115 targeted and existing separated tests passed on 2026-10-26. Whole-change
-review and one live run remain. No live result is claimed here.
+Implementation status: implemented and reviewed. Before the live run, 118
+targeted and existing separated tests passed on 2026-10-26. The single live
+attempt stopped at the first 60-second deadline, with valid negative evidence
+and normal cleanup. Details and limitations follow below.
 
 ## Fixed inputs and preparation
 
@@ -91,3 +92,58 @@ name/ID, and PID plus start identity, before removing any owned resource. Keep
 the preserved image. Never infer cleanup success or automatically launch a
 replacement run. `longRunReadiness:unproven`, `memoryAcceptance:not_evaluated`
 and `phase5Acceptance:false` remain in every result.
+
+## 2026-10-26 single live result
+
+Evidence: `artifacts/phase5-native-cadence-20261025/run1`, execution commit
+`a511479584ec12158a8d341dfc4da01fd4183b31`, owner
+`ae90a3f3-ce19-435d-9844-fdbfd49863b6`. Launch UTC 03:41:12.482;
+finished UTC 03:43:37.257. The independent verifier ran once, before any
+post-run source edit. Its saved result is **evidenceValid=true,
+completedRounds=0, cadenceObserved=false**, with no evidence errors.
+Summary SHA-256: `520399762fbea3b1eac0a1fc8a7d55bf6a40cf51e2f30a2fa2643b3531fe38f2`.
+
+The first round's deadline was observed after **60.0260851 seconds**. That
+26.0851 ms detection overrun was not accepted as grace or a completed round.
+Session selection completed 36.1783591 seconds after round start. The next
+request was maximize/resize: the window was visibly maximized, but no completion
+receipt was submitted before expiry. Its request is retained as
+`native_abandoned`. No reclaim, connection selection, handoff, round audit or
+round health completed; no later round started. All 16 audit files were captured
+and had zero effects. No late input or completion receipt was sent.
+
+Measurement lasted 67.2361246 seconds, including the initial OS sample before
+round start. There were two natural samples at 7.206459 and 42.5083193 seconds;
+largest boundary-inclusive gap was 35.3018603 seconds. Both had debugger
+established=0 with matching process identities; forced GC/JS/raw CDP counts
+were zero. Public output rates were 1144.474–1219.582 B/s. These short samples
+are not a memory acceptance result.
+
+Normal app exit and EOF32/32 were verified. Cleanup reported no forced action,
+no failures, zero processes and zero containers remaining. An additional
+read-only owner-label query returned no containers; the preserved image still
+had the recorded ID. The verifier checked 29 sources (23 unchanged common
+sources plus 6 diagnostic sources), two binaries, saved M/F preflight receipts
+and environment identity. `completion-analysis.json` independently cross-checks
+raw boundary arithmetic, rates, sample intervals, hashes and cleanup fields;
+the verifier was not repeated.
+
+### Operational limitations and post-run fix
+
+This attempt includes model/tool round trips and two helper issues. An attempted
+ESM import in the Computer Use REPL failed because that environment has no
+`process` global; the existing shell CLI was then used. A `peek` between requests
+also threw on null pending/active state. This was a read-only inspection failure,
+not a granted input permission. No execution source was edited during the run.
+
+After the final verification, the null-inspection bug was reproduced by a failing
+unit test and fixed in `3e1de15`; the diagnostic unit suite passed 30/30. The old
+`ui.mjs` is preserved as `ui-at-run.mjs`, whose hash matches the run manifest;
+the run's original committed source remains at `a511479`. Current helper source
+is therefore intentionally different from this historical run. No live rerun
+was performed and the saved verdict was not overwritten.
+
+The observation establishes only that this attempt did not meet one transition
+per minute. It does not identify an app latency defect or prove that every native
+automation method is too slow. Combined transition memory remains unverified;
+the historical M/F/N evidence and Phase 5 release block remain unchanged.
