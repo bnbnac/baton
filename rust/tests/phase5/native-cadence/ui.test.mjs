@@ -7,3 +7,6 @@ test('UI permission expires independently of a delayed runner and rejects retire
  for(const change of [s=>{s.active.inputDeadline=59000;},s=>{s.pending=null;},s=>{s.summary.finishedUtc='done';},s=>{s.active.owner='other';},s=>{s.active.responseReceivedAt=1;},s=>{s.stopped=true;}]){const s=state();change(s);assert.equal(inputPermission(s,'a',159999),false);}
  assert.equal(inputPermission(state(),'a',160001),false);assert.equal(inputPermission(state(),'wrong',159999),false);
 });
+test('peek between requests returns no permission instead of dereferencing null',()=>{
+ const s=state();s.pending=null;s.active=null;assert.equal(inputPermission(s,undefined,150000),false);
+});

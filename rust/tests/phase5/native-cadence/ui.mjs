@@ -8,7 +8,7 @@ import {publishNative} from '../separated/native.mjs';
 // This is a pre-input check, not a promise that a later tool call will be timely.
 // Always re-read immediately before each observed UI action; stop on expiry.
 export function inputPermission({summary,pending,active,stopped},id,nowEpoch){
- return Boolean(!stopped&&summary&&!summary.finishedUtc&&['preparing','running'].includes(summary.status)&&
+ return Boolean(typeof id==='string'&&id.length>0&&pending&&active&&!stopped&&summary&&!summary.finishedUtc&&['preparing','running'].includes(summary.status)&&
   pending?.id===id&&active?.id===id&&pending.owner===summary.owner&&active.owner===summary.owner&&
   active.responseReceivedAt===undefined&&Number.isFinite(summary.clockEpoch)&&Number.isFinite(active.inputDeadline)&&Number.isFinite(active.expiresAt)&&
   nowEpoch<=summary.clockEpoch+Math.min(active.inputDeadline,active.expiresAt));
