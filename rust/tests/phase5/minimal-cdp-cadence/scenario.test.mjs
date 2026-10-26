@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import * as scenario from './scenario.mjs';
 const {runCdpCadence,performRound,ui}=scenario;
 import {installCadenceGuard} from '../native-cadence/run.mjs';
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+import {runInNewContext} from 'node:vm';
 function fake(){
  let time=0;const events=[],calls=[];const r={born:0,now:()=>time,sleep:async ms=>{time+=ms;},summary:{instrumentation:{}},sessions:Array.from({length:16},(_,index)=>({index,id:'s'+index,adapter:index,epoch:1,stream:'p'+index})),event:async(type,value)=>{const e={type,...value};events.push(e);return e;},checkStop:async()=>{},service:async()=>{},tool:async()=>{},disconnectBrowser:async()=>{},sampleMemory:async()=>calls.push('sample'),elapsed:()=> (time-(r.loadStart??time))/1000,startMeasurement:async()=>{r.loadStart=time;},freeze:async()=>{r.frozen=(r.frozen??0)+1;},verifyAudits:async()=>{calls.push('audits');},save:async()=>{},outputRates:()=>[]};
  installCadenceGuard(r);const overrides={prepare:async()=>{r.cdp={state:'open',close:async()=>calls.push('close')};},performRound:async()=>{time+=1000;}};return {r,events,calls,overrides,advance:ms=>{time+=ms;}};
@@ -39,4 +42,19 @@ test('response followed by host deadline has a separate aborted action',async()=
 test('failure sweep records current ownership and bounded query failures without adopting it',async()=>{
  const {r,events,advance}=fake();r.connections=Array.from({length:32},(_,i)=>'c'+i);r.status=async index=>{advance(5000);if(index===1)throw Error('mcp_timeout');return {connection_id:'c'+index,sessions:[{session_id:'s0',state:'user_owned',control_epoch:2,stream_id:null}]};};
  await scenario.observeFailureState(r);assert.equal(events.filter(v=>v.type==='failure_status').length,32);assert.equal(r.summary.failureObservation.observed,2);assert.equal(r.summary.failureObservation.complete,false);assert.equal(r.sessions[0].epoch,1);assert.equal(r.now(),15000);
+});
+test('preparation identity agrees with shared setup selecting soak-00, not the last created session',async t=>{
+ // This source guard pins the shared setup boundary without changing its
+ // historical hash. The real preparation/DOM expression run below uses it.
+ const shared=await readFile(new URL('../separated/runtime.mjs',import.meta.url),'utf8');
+ assert.ok(shared.includes("await this.page.getByRole('button',{name:'soak-00 에이전트 제어',exact:true}).click();"),'shared initial-selection contract changed');
+ const {r}=fake(),calls=[];let target;
+ const server=createServer((_req,res)=>{res.setHeader('Connection','close');res.end(JSON.stringify([target]));});
+ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});t.after(()=>new Promise(resolve=>server.close(resolve)));
+ r.port=server.address().port;target={id:'page',type:'page',url:'http://tauri.localhost/',webSocketDebuggerUrl:`ws://127.0.0.1:${r.port}/devtools/page/page`};
+ r.root='.';r.config={pwsh:'unused'};r.receipt=async()=>({descendants:[{pid:1,startedTicks:'2',exited:false}]});r.execute=async()=>({stdout:JSON.stringify({port:r.port,listeners:[{pid:1,startedTicks:'2',localPort:r.port,localAddress:'127.0.0.1'}],connections:[]})});r.during=op=>op();
+ const button={textContent:'세션 ID 복사',disabled:false,isConnected:true,getClientRects:()=>[{}],getAttribute:()=>r.sessions[0].id};
+ const context={document:{querySelectorAll:()=>[button]},getComputedStyle:()=>({display:'block',visibility:'visible'})};
+ await scenario.prepareCdp(r,async()=>({send:async(method,params)=>{calls.push([method,params._action]);return method==='Network.disable'?{}:{result:{value:runInNewContext(params.expression,context)}};}}));
+ assert.deepEqual(calls,[['Network.disable',undefined],['Runtime.evaluate','identity']]);assert.equal(r.loadStart,undefined);
 });

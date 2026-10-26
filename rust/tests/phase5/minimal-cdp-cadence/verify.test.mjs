@@ -68,3 +68,18 @@ test('partial ownership observations remain separate from acknowledged bindings'
 test('dispatch cannot exceed remaining deadline or disappear behind a response',()=>{
  for(const change of [e=>{e.events.find(v=>v.kind==='dispatch'&&v.timeout).timeout=900001;},e=>{e.events.splice(e.events.findIndex(v=>v.kind==='dispatch'),1);}]){const e=cdpEvidence();change(e);resequence(e);assert.equal(verifyCdpCadenceEvidence(e).evidenceValid,false);}
 });
+test('initial identity must be session zero even if a different session is internally consistent',()=>{
+ const e=cdpEvidence(),q=e.events.find(v=>v.kind==='request'&&v.action==='identity');q.args.sessionId='s15';q.expressionSha256=digest(domExpression(q.action,q.args));
+ e.events.find(v=>v.kind==='response'&&v.id===q.id).result.result.value.sessionId='s15';const a=e.events.find(v=>v.type==='cdp_action'&&v.round===-1);a.args.sessionId='s15';a.result.sessionId='s15';syncTrace(e);assert.equal(verifyCdpCadenceEvidence(e).evidenceValid,false);
+});
+test('response error details are bounded, typed failure evidence, never action success',()=>{
+ const e=cdpEvidence(true),base={owner:e.summary.owner,scope:'CC',round:0},args={sessionId:'s0',label:'soak-00'};
+ e.events.push({...base,type:'cdp',kind:'request',id:3,t:2000,at:2000,deadline:3000,timeout:1000,method:'Runtime.evaluate',action:'select',args,expressionSha256:digest(domExpression('select',args))},
+ {...base,type:'cdp',kind:'dispatch',id:3,t:2000,at:2000,timeout:1000},
+ {...base,type:'cdp',kind:'failure',id:3,t:2001,at:2001,reason:'cdp_response_error',uncertain:true,details:{kind:'javascript',text:'Uncaught',description:'Error: dom_session',lineNumber:4,columnNumber:8,truncated:false}},
+ {...base,type:'cdp_action_aborted',action:'select',args,t:2002,reason:'Error: cdp_response_error'});
+ e.summary.instrumentation.evaluateCalls++;e.summary.instrumentation.domActions++;resequence(e);let v=verifyCdpCadenceEvidence(e);assert.equal(v.evidenceValid,true,v.errors.join());assert.equal(v.cadenceObserved,false);
+ const f=e.events.find(v=>v.kind==='failure');f.details.description='x'.repeat(5000);syncTrace(e);assert.equal(verifyCdpCadenceEvidence(e).evidenceValid,false);
+ f.details={kind:'protocol',code:-32602,message:'Invalid parameters',truncated:false};syncTrace(e);v=verifyCdpCadenceEvidence(e);assert.equal(v.evidenceValid,true,v.errors.join());
+ delete f.details;syncTrace(e);assert.equal(verifyCdpCadenceEvidence(e).evidenceValid,false);
+});

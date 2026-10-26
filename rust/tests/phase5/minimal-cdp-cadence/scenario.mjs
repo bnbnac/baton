@@ -23,7 +23,9 @@ export async function prepareCdp(r,connect=connectCdp){
   const i=r.summary.instrumentation;if(row.kind==='open')i.rawCdpSessions++;if(row.kind==='request'&&row.method==='Runtime.evaluate'){i.evaluateCalls++;if(row.action==='identity')i.domQueries++;else i.domActions++;}
  }});
  await r.cdp.send('Network.disable',{},Math.min(r.cadenceGuard.deadline,r.now()+15000));
- await ui(r,'identity',{sessionId:r.sessions.at(-1).id},-1);await r.cadenceGuard.check();
+ // Shared Runtime.setup selects soak-00 after creating all sixteen sessions.
+ const initial=r.sessions.find(s=>s.index===0);assert.ok(initial,'initial_session_missing');
+ await ui(r,'identity',{sessionId:initial.id},-1);await r.cadenceGuard.check();
 }
 export async function ui(r,action,args,round){
  await r.cadenceGuard.check();const deadline=Math.min(r.cadenceGuard.deadline,r.now()+15000),params=evaluateParams(action,args,Math.max(1,deadline-r.now()));

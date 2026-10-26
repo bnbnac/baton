@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {domExpression} from './dom.mjs';
 export const digest=text=>createHash('sha256').update(text).digest('hex');
+function responseErrorDetails(message){
+ let truncated=false;
+ const text=(value,limit)=>{if(typeof value!=='string')return '';if(value.length>limit)truncated=true;return value.slice(0,limit);};
+ const position=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+ if(message.error){const error=message.error;return {kind:'protocol',code:Number.isSafeInteger(error.code)?error.code:null,message:text(error.message,512),truncated};}
+ const error=message.result.exceptionDetails;
+ return {kind:'javascript',text:text(error.text,128),description:text(error.exception?.description,384),lineNumber:position(error.lineNumber),columnNumber:position(error.columnNumber),truncated};
+}
 export function selectOwnedTarget(targets,port){
  const pages=targets.filter(v=>v.type==='page'&&v.url==='http://tauri.localhost/');assert.equal(pages.length,1,'cdp_target');
  const t=pages[0],u=new URL(t.webSocketDebuggerUrl);assert.ok(t.id&&u.protocol==='ws:'&&u.hostname==='127.0.0.1'&&Number(u.port)===port&&!u.username&&!u.password&&u.pathname==='/devtools/page/'+t.id&&!u.search&&!u.hash,'cdp_endpoint');return {...t};
@@ -39,9 +47,9 @@ class Client{
   try{await Promise.race([this.opened,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('cdp_connect_timeout')),Math.max(1,deadline-this.now()));})]);assert.ok(this.now()<=deadline,'cdp_deadline');await this.log({kind:'open',target:this.target});}
   finally{clearTimeout(timer);}
  }
- fail(reason){
+ fail(reason,details){
   if(this.state==='closed')return;this.state='failed';this.rejectOpen(Error(reason));
-  const p=this.pending;if(p){this.pending=null;clearTimeout(p.timer);void this.log({kind:'failure',id:p.id,reason,uncertain:p.sent}).then(()=>p.reject(Error(reason)),p.reject);}
+  const p=this.pending;if(p){this.pending=null;clearTimeout(p.timer);void this.log({kind:'failure',id:p.id,reason,uncertain:p.sent,...(details?{details}:{})}).then(()=>p.reject(Error(reason)),p.reject);}
  }
  async send(method,params,deadline){
   const {wire,meta}=validateCommand(method,params);assert.equal(this.state,'open','cdp_not_open');assert.equal(this.pending,null,'cdp_busy');assert.ok(this.now()<deadline,'cdp_deadline');
@@ -69,7 +77,7 @@ class Client{
   if(m.id===undefined){if(m.method)await this.log({kind:'event',method:String(m.method).slice(0,128)});else this.fail('cdp_invalid_message');return;}
   const p=this.pending;if(!p||p.id!==m.id){this.fail('cdp_response_id');return;}
   if(this.now()>p.deadline){this.fail('cdp_deadline');return;}
-  if(m.error||m.result?.exceptionDetails){this.fail('cdp_response_error');return;}
+  if(m.error||m.result?.exceptionDetails){this.fail('cdp_response_error',responseErrorDetails(m));return;}
   const result=m.result??{};if(JSON.stringify(result).length>4096){this.fail('cdp_result_size');return;}
   // Keep the request pending until the evidence write settles; a disk error
   // must never become a successful UI action.

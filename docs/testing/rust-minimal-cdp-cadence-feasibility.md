@@ -1,6 +1,6 @@
 # Minimal CDP cadence feasibility
 
-Status: implementation unit suite **180/180 passed**, but the first authorized live run on 2026-10-27 KST **failed during preparation, before measurement or any cadence round**. No automatic retry was made. This is a three-round diagnostic, not a long-run memory acceptance test.
+Status: the first authorized live run on 2026-10-27 KST **failed during preparation, before measurement or any cadence round**. The preparation follow-up fix now passes **185/185 unit tests**; it has not been rerun live. No automatic retry was made. This is a three-round diagnostic, not a long-run memory acceptance test.
 
 ## First live result — preparation failure
 
@@ -14,7 +14,15 @@ Evidence: `artifacts/phase5-minimal-cdp-cadence-20261026/run1/`, launch/log sibl
 
 The directory verifier ran **once** and returned `evidenceValid:false`: `normal-boundary.json` does not exist because measurement never started. This is a preparation failure with no cadence measurement, not valid completed-round or deadline-negative evidence. `cadenceObserved:false`, `longRunReadiness:unproven`, `memoryAcceptance:not_evaluated`, and `phase5Acceptance:false` remain. Summary SHA256: `35f3debebb4a3af848a028aa8216fbb7f61c30614d551376ede804e956882650`.
 
-Next corrective work: align the preparation identity expectation with shared setup, add an integration regression covering that boundary, and retain bounded CDP error details. Do not alter this run, repeat its verifier or launch another run automatically. Product and diagnostic sources were not modified during or after this live attempt; only analysis artifacts and result documents were added.
+At the end of that attempt, the next corrective work was to align the preparation identity expectation with shared setup, add a regression covering that boundary, and retain bounded CDP error details. Product and diagnostic sources were unchanged during execution and the post-run analysis. Do not alter this run, repeat its verifier or launch another run automatically.
+
+## Preparation follow-up fix — unit verified, not live verified
+
+On 2026-10-27 the user authorized the corrective work. `prepareCdp` now locates session index 0 explicitly; the independent verifier and synthetic evidence use the same initial-selection contract. The regression checks shared setup's `soak-00` selection statement, then exercises real target discovery, preparation and the DOM expression against a mocked DOM already showing session 0. It failed with `dom_session` before the fix and passed afterward. This is a guarded integration boundary with fake CDP/OS/DOM responses, not a complete real WebView test.
+
+CDP response failures now retain bounded diagnostic fields on the failure record: protocol code/message (message at most 512 characters), or JavaScript text/description/line/column (128/384 characters). Missing positions are null. The record includes `truncated`; arbitrary remote object values, object IDs, stack objects and protocol data are omitted. The serialized details are limited to 4096 UTF-8 bytes by their field bounds and verifier checks. The existing 16384-character incoming-message ceiling still applies before error extraction; larger frames remain `cdp_message_size` failures. Errors still stop execution and cannot become successful actions.
+
+Error-detail and preparation regressions were observed failing before their fixes. The explicit new/shared suite then passed **185/185**, including rejection of internally consistent but wrong session-15 preparation evidence and oversized/missing error details. Logs: `artifacts/phase5-cdp-preparation-fix-20261027/`. Existing `run1` evidence/verifier output was not rewritten. Product, shared historical harness, candidates, Cargo and fuzz were not changed. A fresh live attempt remains a separate next step; the actual exception from `run1` cannot be recovered retroactively.
 
 ## Inputs and execution scope
 

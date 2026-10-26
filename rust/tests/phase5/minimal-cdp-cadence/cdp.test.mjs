@@ -46,3 +46,14 @@ test('execution timeout is capped at dispatch after slow request recording',asyn
  const {c,s,set,trace}=await setup();c.record=async row=>{trace.push(row);if(row.kind==='request')set(75);};
  const p=c.send('Runtime.evaluate',evaluateParams('identity',{sessionId:'s'},100),100);await new Promise(r=>setImmediate(r));const sentTimeout=s.sent[0].params.timeout;s.reply({result:{value:{sessionId:'s'}}});await p;await c.close();assert.equal(sentTimeout,25);assert.equal(trace.find(v=>v.kind==='dispatch').timeout,25);
 });
+test('protocol and JavaScript errors retain bounded diagnostic fields and still reject',async()=>{
+ for(const error of [{error:{code:-32602,message:'Invalid parameters',data:'omit'}},{result:{exceptionDetails:{text:'Uncaught',lineNumber:4,columnNumber:8,exception:{description:'Error: dom_session',objectId:'omit',value:'omit'},stackTrace:{secret:'omit'}}}}]){
+  const {c,s,trace}=await setup();const pending=c.send('Runtime.evaluate',evaluateParams('identity',{sessionId:'s'},1000),1000),rejected=assert.rejects(pending,/cdp_response_error/);await new Promise(r=>setImmediate(r));
+  s.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id:s.sent[0].id,...error})}));await rejected;await c.close();const d=trace.find(v=>v.kind==='failure').details;
+  if(error.error)assert.deepEqual(d,{kind:'protocol',code:-32602,message:'Invalid parameters',truncated:false});else assert.deepEqual(d,{kind:'javascript',text:'Uncaught',description:'Error: dom_session',lineNumber:4,columnNumber:8,truncated:false});
+ }
+});
+test('large error text is marked truncated without retaining arbitrary remote objects',async()=>{
+ const {c,s,trace}=await setup();const pending=c.send('Network.disable',{},1000),rejected=assert.rejects(pending);await new Promise(r=>setImmediate(r));s.reply({exceptionDetails:{text:'x'.repeat(1000),exception:{description:'\u0001'.repeat(1000),value:{ignored:true}}}});await rejected;await c.close();
+ const d=trace.find(v=>v.kind==='failure').details;assert.equal(d.truncated,true);assert.equal(d.text.length,128);assert.equal(d.description.length,384);assert.ok(Buffer.byteLength(JSON.stringify(d))<=4096);assert.equal(d.exception,undefined);
+});

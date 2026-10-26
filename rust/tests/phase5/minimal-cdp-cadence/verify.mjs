@@ -15,6 +15,12 @@ import {compareIdentity} from '../separated/contract.mjs';
 const only=(rows,label)=>{assert.equal(rows.length,1,label);return rows[0];};
 const same=assert.deepEqual;
 const binding=s=>({session:s.id,adapter:s.adapter,epoch:s.epoch,stream:s.stream});
+function errorDetails(d){
+ assert.ok(d&&typeof d==='object'&&!Array.isArray(d),'missing_cdp_error_details');assert.equal(typeof d.truncated,'boolean');assert.ok(Buffer.byteLength(JSON.stringify(d))<=4096,'cdp_error_size');
+ const text=(v,n)=>assert.ok(typeof v==='string'&&v.length<=n,'cdp_error_text');
+ if(d.kind==='protocol'){same(Object.keys(d).sort(),['kind','code','message','truncated'].sort());assert.ok(d.code===null||Number.isSafeInteger(d.code));text(d.message,512);}
+ else{assert.equal(d.kind,'javascript');same(Object.keys(d).sort(),['kind','text','description','lineNumber','columnNumber','truncated'].sort());text(d.text,128);text(d.description,384);for(const key of ['lineNumber','columnNumber'])assert.ok(d[key]===null||(Number.isSafeInteger(d[key])&&d[key]>=0));}
+}
 
 function cdpEvidence(e,start,end,starts){
  const {events,summary:s}=e,trace=events.filter(v=>v.type==='cdp');same(e.cdp,trace,'raw_cdp_mismatch');
@@ -31,7 +37,7 @@ function cdpEvidence(e,start,end,starts){
   assert.ok(!reqs.some(v=>v.seq>d.seq),'request_after_abort');
  }
  assert.ok(trace.filter(v=>v.kind==='disconnected').length<=1,'duplicate_disconnect');
- const expected=[];expected.push({method:'Network.disable',round:-1});expected.push({action:'identity',round:-1,args:{sessionId:s.sessions.find(v=>v.index===15).id}});
+ const expected=[];expected.push({method:'Network.disable',round:-1});expected.push({action:'identity',round:-1,args:{sessionId:s.sessions.find(v=>v.index===0).id}});
  for(const r of starts)for(const action of ['select','identity','resize','reclaim','choose_connection','handoff'])expected.push({action,round:r.round});
  assert.ok(reqs.length>=2&&reqs.length<=expected.length,'cdp_request_count');
  for(const [i,q] of reqs.entries()){
@@ -51,7 +57,7 @@ function cdpEvidence(e,start,end,starts){
   if(dispatch){assert.ok(dispatch.seq>q.seq&&dispatch.at>=q.at&&dispatch.at<q.deadline&&dispatch.at<=s.clockOrigin+dispatch.t,'dispatch_time');if(q.action)assert.ok(dispatch.timeout>0&&dispatch.timeout<=Math.min(q.timeout,q.deadline-dispatch.at),'dispatch_timeout');}
   if(response||failure?.uncertain)assert.ok(dispatch,'missing_dispatch');
   for(const out of [...responses,...failures])assert.ok(out.seq>(dispatch??q).seq&&out.seq<closed.seq&&out.at>=(dispatch??q).at&&out.at<=s.clockOrigin+out.t,'cdp_outcome_time');
-  if(failure){assert.ok(typeof failure.uncertain==='boolean'&&failure.reason);failed=true;assert.equal(i,reqs.length-1,'request_after_failure');}
+  if(failure){assert.ok(typeof failure.uncertain==='boolean'&&failure.reason);if(failure.reason==='cdp_response_error')errorDetails(failure.details);else assert.equal(failure.details,undefined,'unexpected_cdp_error_details');failed=true;assert.equal(i,reqs.length-1,'request_after_failure');}
   if(response){assert.ok(response.at<=q.deadline,'late_cdp_response');assert.ok(!response.result?.exceptionDetails&&!response.result?.error,'cdp_exception');}
   const matches=actions.filter(v=>v.action===q.action&&v.round===q.round),abort=aborts.find(v=>v.action===q.action&&v.round===q.round);
   if(abort){assert.equal(matches.length,0);same(abort.args,q.args);assert.ok(abort.seq>(failure??response).seq&&abort.seq<closed.seq);failed=true;previous=abort.seq;assert.equal(i,reqs.length-1);}
@@ -61,7 +67,7 @@ function cdpEvidence(e,start,end,starts){
    previous=a.seq;
   }else{assert.equal(matches.length,0,'action_without_response');previous=(failure??response).seq;}
  }
- for(const a of aborts)if(!reqs.some(q=>q.action===a.action&&q.round===a.round)){const ex=expected[reqs.length];assert.ok(ex&&ex.action===a.action&&ex.round===a.round,'orphan_abort');assert.ok(a.seq>previous);domExpression(a.action,a.args);assert.equal(a.args.sessionId,starts[a.round]?.binding.session??s.sessions[15].id);}
+ for(const a of aborts)if(!reqs.some(q=>q.action===a.action&&q.round===a.round)){const ex=expected[reqs.length];assert.ok(ex&&ex.action===a.action&&ex.round===a.round,'orphan_abort');assert.ok(a.seq>previous);domExpression(a.action,a.args);assert.equal(a.args.sessionId,starts[a.round]?.binding.session??s.sessions.find(v=>v.index===0).id);}
  for(const t of trace){assert.ok(['open','closed','request','dispatch','response','failure','event','disconnected'].includes(t.kind),'cdp_kind');if(['dispatch','response','failure'].includes(t.kind))assert.ok(reqs.some(q=>q.id===t.id),'orphan_response');if(t.kind==='event')assert.ok(!t.method.startsWith('Network.'),'unexpected_network_event');}
  for(const a of actions)assert.ok(reqs.some(q=>q.action===a.action&&q.round===a.round),'orphan_action');
  assert.equal(s.instrumentation.evaluateCalls,evals);assert.equal(s.instrumentation.domQueries,queries);assert.equal(s.instrumentation.domActions,evals-queries);

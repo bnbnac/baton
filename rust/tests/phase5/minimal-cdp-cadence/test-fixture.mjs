@@ -16,7 +16,7 @@ export function cdpEvidence(timeout=false){
   trace('response',t+1,{id:req,round,result:action?{result:{value}}:{}});
   if(action)emit('cdp_action',t+2,{round,action,args,result:value});
  }
- trace('open',40,{round:-1,target});command(null,null,-1,50);command('identity',{sessionId:'s15'},-1,60);
+ trace('open',40,{round:-1,target});command(null,null,-1,50);command('identity',{sessionId:'s0'},-1,60);
  for(const n of native){
   const q=n.request;if(q.round<0)continue;const args={sessionId:q.session};if(q.action==='select')args.label=`soak-${String([0,1,0][q.round]).padStart(2,'0')}`;
   if(q.action==='resize')args.width=720;if(['choose_connection','handoff'].includes(q.action))args.connectionId=q.targetConnection;
