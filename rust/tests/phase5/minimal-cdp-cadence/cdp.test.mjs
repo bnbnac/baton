@@ -36,3 +36,6 @@ test('socket errors, protocol errors, JS exceptions and record failure reject',a
   await failure;await c.close().catch(()=>{});
  }
 });
+test('unanswered request times out and concurrent send is rejected',async()=>{
+ const {c,s,trace}=await setup();const p=c.send('Network.disable',{},10);const rejected=assert.rejects(p,/timeout/);await assert.rejects(c.send('Network.disable',{},10),/busy/);await rejected;assert.equal(s.sent.length,1);assert.ok(trace.some(r=>r.kind==='failure'&&r.uncertain));await c.close();
+});
