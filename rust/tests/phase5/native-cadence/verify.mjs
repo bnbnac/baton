@@ -99,6 +99,20 @@ function transitions(e,starts,ends,native){
 
 function auditsAndHealth(e,starts,ends){
  const {events,summary:s}=e;assert.equal(e.audits.length,16);assert.equal(new Set(e.audits.map(v=>v.index)).size,16);const partial=[];
+ // Compare from RPCs to fixture effects as well as fixture effects to RPCs.
+ // Otherwise a missing effect in an unfinished round would vanish silently.
+ const pending=[];
+ for(const start of starts)for(const session of s.sessions){
+  const token=`AUDIT_${session.index}_${start.round}`,text=`printf '%s\\n' '${token}' >> /tmp/soak-audit-${session.index}`;
+  const limit=starts[start.round+1]?.seq??events.find(v=>v.type==='measurement_end').seq;
+  const sends=events.filter(v=>v.type==='mcp'&&v.name==='send_text'&&v.args.session_id===session.id&&v.args.text===text&&v.seq>start.seq&&v.seq<limit);
+  if(!sends.length)continue;
+  const nextText=events.find(v=>v.type==='mcp'&&v.name==='send_text'&&v.args.session_id===session.id&&v.seq>sends.at(-1).seq);
+  const enter=events.find(v=>v.type==='mcp'&&v.name==='send_key'&&v.args.session_id===session.id&&v.args.key==='Enter'&&v.seq>sends.at(-1).seq&&v.seq<Math.min(limit,nextText?.seq??Infinity));
+  const actual=e.audits.find(a=>a.index===session.index)?.actual??[];
+  if(enter?.response.result==='delivered')assert.ok(actual.includes(token),'delivered_audit_effect_missing');
+  else{assert.ok(!actual.includes(token),'unproven_audit_effect');pending.push({index:session.index,round:start.round,token,textResponses:sends.length,enterResult:enter?.response??null,effect:'not_observed'});}
+ }
  for(const a of e.audits){assert.equal(a.session,s.sessions.find(v=>v.index===a.index)?.id);assert.equal(new Set(a.actual).size,a.actual.length,'duplicate_audit');
   for(let round=0;round<ends.length;round++)assert.ok(a.actual.includes(`AUDIT_${a.index}_${round}`),'missing_audit');
   for(const token of a.actual){
@@ -121,7 +135,7 @@ function auditsAndHealth(e,starts,ends){
   }
   for(const session of s.sessions){const b=events.filter(v=>v.type==='binding'&&v.session===session.id&&v.seq<health.seq).at(-1)?.after??events.find(v=>v.type==='session_ready'&&v.id===session.id);const p=health.values[b.adapter].sessions.find(v=>v.session_id===session.id);assert.ok(p?.state==='agent_owned'&&p.control_epoch===b.epoch&&p.stream_id===b.stream,'health_binding');}
  }
- return partial;
+ return {partial,pending};
 }
 
 function outputEvidence(e,start,end){
@@ -185,7 +199,7 @@ export function verifyCadenceEvidence(e){
   }
   if(ends.length<3){assert.equal(s.status,'failed');const stop=only(events.filter(v=>v.type==='cadence_stopped'),'missing_stop');assert.equal(stop.completedRounds,ends.length);assert.equal(stop.reason,s.stopReason);assert.ok(stop.seq<end.seq);}
   else{assert.equal(s.status,'finished');assert.equal(s.stopReason,null);}
-  const native=nativeEvidence(e,starts);const rounds=transitions(e,starts,ends,native);v.metrics.partialAudits=auditsAndHealth(e,starts,ends);v.metrics.rates=outputEvidence(e,start,end);memoryEvidence(e,s.elapsedSeconds);
+  const native=nativeEvidence(e,starts);const rounds=transitions(e,starts,ends,native);const audit=auditsAndHealth(e,starts,ends);v.metrics.partialAudits=audit.partial;v.metrics.pendingAudits=audit.pending;v.metrics.rates=outputEvidence(e,start,end);memoryEvidence(e,s.elapsedSeconds);
   for(const d of events.filter(v=>v.type==='cadence_deadline')){assert.ok(d.observedAt>d.deadline);assert.ok(d.observedAt<=s.clockOrigin+d.t);assert.ok(!events.some(v=>v.seq>d.seq&&v.seq<end.seq&&['transition','cadence_round_end'].includes(v.type)),'success_after_deadline');}
   const shutdown=only(events.filter(v=>v.type==='shutdown'),'shutdown');assert.ok(shutdown.seq>end.seq);assert.equal(shutdown.exit.code,0);same(shutdown.process,e.process);validateShutdown(e.process,shutdown.eofs);
   assert.equal(e.cleanup.owner,s.owner);same(e.cleanup.process,e.process);same(e.cleanup.fixtures,s.fixtures);same(e.cleanup.remaining,[]);same(e.cleanup.containers,[]);

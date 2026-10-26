@@ -53,6 +53,19 @@ export async function checkBaselines(root,paths,summary){
 
 export function createCadenceRuntime(options,deps={}){
  const r=createRuntime({...options,contract:CADENCE},deps);r.summary.clockEpoch=performance.timeOrigin;installCadenceGuard(r);
+ // Use the emitted timestamps themselves for both boundaries. The shared
+ // runtime samples its clock separately for elapsed() and event(), so exact
+ // arithmetic over those different instants would reject real evidence.
+ r.startMeasurement=async()=>{
+  const row=await r.event('measurement_start');r.measurementStartT=row.t;r.loadStart=r.born+row.t;
+  for(const s of r.sessions){s.startCount=s.oracle.count;s.privateMs=0;}
+  r.summary.loadStartedUtc=row.utc;r.summary.status='running';await r.save();
+ };
+ r.freeze=async()=>{
+  r.measurementFrozen=true;const row=await r.event('measurement_end');
+  r.summary.elapsedSeconds=(row.t-r.measurementStartT)/1000;r.summary.loadFinishedUtc=row.utc;
+  await r.json('normal-boundary.json',{elapsedSeconds:r.summary.elapsedSeconds,finishedUtc:row.utc,eventSeq:row.seq,samples:r.summary.samples.length});await r.save();
+ };
  const manifest=r.manifest.bind(r);r.manifest=async()=>{
   await manifest();const dir='rust/tests/phase5/native-cadence';
   for(const file of (await readdir(join(r.root,dir))).filter(f=>f.endsWith('.mjs')&&!f.endsWith('.test.mjs')&&f!=='test-fixture.mjs'))r.summary.sources[dir+'/'+file]=await sha256(join(r.root,dir,file));

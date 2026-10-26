@@ -19,3 +19,10 @@ test('late action or late verification prevents completion and subsequent rounds
   assert.equal(rounds,1);assert.equal(r.summary.completedRounds,0);assert.equal(events.filter(e=>e.type==='cadence_round_end').length,0);assert.equal(r.frozen,1);
  }
 });
+test('nested service and health RPCs share the sampler schedule without reentry',async()=>{
+ const {r,advance}=fake(),samples=[];r.tool=async()=>{};r.sampleMemory=async()=>{samples.push(r.now());await r.service();};
+ await assert.rejects(runCadence(r,null,{prepare:async()=>{},performRound:async()=>{
+  for(let i=0;i<6;i++){advance(10000);await (i%2?r.tool():r.service());}advance(1);await r.checkStop();
+ },retire:async()=>{}}),/round_deadline/);
+ assert.ok(samples.length>=2);assert.ok(samples[0]<=30000);for(let i=1;i<samples.length;i++)assert.ok(samples[i]-samples[i-1]<=30000);assert.ok(r.now()-samples.at(-1)<=30000);
+});

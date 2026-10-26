@@ -11,10 +11,19 @@ export async function retireMailbox(r,mailbox){
 }
 
 export async function runCadence(r,mailbox,overrides={}){
- const g=r.cadenceGuard;let nextSample=0,previousStartedAt;
+ const g=r.cadenceGuard;let nextSample=0,previousStartedAt,sampling=false;
  r.summary.completedRounds=0;r.summary.nativeTimingVersion=2;r.summary.nativeResponseLatency='not_measured';
  r.summary.longRunReadiness='unproven';r.summary.memoryAcceptance='not_evaluated';r.summary.cadenceObserved=false;
- const tick=async()=>{await r.checkStop();await r.service();if(r.loadStart!==undefined&&r.elapsed()>=nextSample){await r.sampleMemory();nextSample=r.elapsed()+30;}await g.check();};
+ const sampleIfDue=async()=>{
+  if(sampling||r.loadStart===undefined||r.measurementFrozen||r.elapsed()<nextSample)return;
+  sampling=true;try{await g.check();await r.sampleMemory();nextSample=r.elapsed()+30;}finally{sampling=false;}
+ };
+ // Nested geometry waits and audit/health RPC loops need the same sampler as
+ // mailbox polling. Sampling never starts another service or sample recursively.
+ const originals=new Map();for(const name of ['service','tool'])if(r[name]){
+  const original=r[name];originals.set(name,original);r[name]=async(...args)=>{const value=await original.apply(r,args);await sampleIfDue();return value;};
+ }
+ const tick=async()=>{await r.checkStop();await r.service();await sampleIfDue();await g.check();};
  async function action(request,verify,onStart){
   await g.check();await mailbox.issue({...request,appExecutable:r.summary.binaries.app.path},g.deadline);
   await r.event('native_request',{request:{...mailbox.active}});let received=false;
@@ -47,7 +56,7 @@ export async function runCadence(r,mailbox,overrides={}){
   await r.event('transition',record);await r.audit(round);await r.health();
  });
  try{
-  await r.disconnectBrowser();await prepare();await g.check();await r.startMeasurement();
+  await r.disconnectBrowser();await prepare();await g.check();await r.startMeasurement();await sampleIfDue();
   for(let round=0;round<CADENCE.maxRounds;round++){
    g.betweenRounds();while(previousStartedAt!==undefined&&r.now()<nextStart(previousStartedAt)){await tick();await r.sleep(Math.min(100,Math.max(0,nextStart(previousStartedAt)-r.now())));}
    await g.check();const startedAt=r.now(),window=roundWindow({round,startedAt,previousStartedAt,runDeadline:g.globalDeadline}),s=r.sessions[window.index];g.beginRound(window.deadline);
@@ -62,6 +71,7 @@ export async function runCadence(r,mailbox,overrides={}){
   // Revoke UI permission before releasing limits for fixture-only audit capture
   // and normal shutdown. No terminal input is sent after the failed deadline.
   try{await (overrides.retire??retireMailbox)(r,mailbox);}finally{
+   for(const [name,original] of originals)r[name]=original;
    g.finish();if(r.loadStart!==undefined)await r.freeze();
    try{await r.verifyAudits();}catch(e){r.summary.auditFailure=String(e);}
    await r.save();

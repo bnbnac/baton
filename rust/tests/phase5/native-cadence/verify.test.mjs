@@ -35,3 +35,11 @@ test('directory verifier preserves the first receipt even for incomplete evidenc
   await assert.rejects(verifyCadenceDirectory(dir),{code:'EEXIST'});assert.equal(await readFile(join(dir,'cadence-verification.json'),'utf8'),first);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('partial delivered audit must be present in the server file, not silently omitted',()=>{
+ const e=cadenceEvidence(true),args={session_id:'s0',control_epoch:1,request_id:'partial-text',text:"printf '%s\\n' 'AUDIT_0_0' >> /tmp/soak-audit-0"};
+ const base={owner:e.summary.owner,scope:'NC',type:'mcp',index:0};
+ e.events.push(...[0,1].map(i=>({...base,t:2000+i,name:'send_text',args:structuredClone(args),response:{result:'delivered'}})),{...base,t:2002,name:'send_key',args:{session_id:'s0',control_epoch:1,request_id:'partial-enter',key:'Enter'},response:{result:'delivered'}});
+ e.events.sort((a,b)=>a.t-b.t);e.events.forEach((v,i)=>v.seq=i+1);e.boundary.eventSeq=e.events.find(v=>v.type==='measurement_end').seq;
+ assert.equal(verifyCadenceEvidence(e).evidenceValid,false);
+ e.audits[0].actual=['AUDIT_0_0'];const v=verifyCadenceEvidence(e);assert.equal(v.evidenceValid,true,JSON.stringify(v.errors));assert.equal(v.metrics.partialAudits.length,1);
+});

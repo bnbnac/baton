@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {installCadenceGuard,executeCadence} from './run.mjs';
+import {installCadenceGuard,executeCadence,createCadenceRuntime} from './run.mjs';
 
 test('late RPC is settled, recorded, then blocks the next RPC until cleanup',async()=>{
  let time=0,calls=0;const events=[];
@@ -19,4 +19,10 @@ test('setup and interruption failures still shut down, clean up and check hashes
 test('wait and setup budgets cannot extend past the global deadline',async()=>{
  let time=899990,timeout;const r={born:0,now:()=>time,event:async()=>{},checkStop:async()=>{},waitFor:async(_c,_l,t)=>{timeout=t;time+=11;return true;}};
  installCadenceGuard(r);await assert.rejects(r.waitFor(()=>true,'probe',45000),/run_expired/);assert.equal(timeout,10);
+});
+test('measurement duration uses exactly the emitted boundaries with an advancing clock',async()=>{
+ let time=0,calls=0;const events=[];const r=createCadenceRuntime({root:'.',out:'.',config:{}},{now:()=>{time+=++calls;return time;}});
+ r.event=async(type)=>{const row={seq:events.length+1,type,t:r.now()-r.born,utc:'test'};events.push(row);return row;};r.save=async()=>{};let boundary;r.json=async(_path,value)=>{boundary=value;};
+ await r.startMeasurement();time+=100;await r.freeze();
+ assert.equal(r.summary.elapsedSeconds,(events[1].t-events[0].t)/1000);assert.equal(boundary.elapsedSeconds,r.summary.elapsedSeconds);
 });
