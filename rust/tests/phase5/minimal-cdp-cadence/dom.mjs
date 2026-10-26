@@ -6,7 +6,7 @@ function operate(action,args){
  const one=nodes=>{if(nodes.length!==1)throw Error('dom_ambiguous');const n=nodes[0];if(n.disabled||!visible(n))throw Error('dom_unavailable');return n;};
  const button=text=>one([...document.querySelectorAll('button')].filter(n=>n.textContent.trim()===text));
  const identity=()=>{const id=button('세션 ID 복사').getAttribute('title');if(id!==args.sessionId)throw Error('dom_session');return id;};
- if(action==='select')button(args.label+' 에이전트 제어').click();
+ if(action==='select')one([...document.querySelectorAll('button')].filter(n=>n.querySelector('strong')?.textContent.trim()===args.label&&n.querySelector('small')?.textContent.trim()==='에이전트 제어')).click();
  const sessionId=identity();
  if(action==='resize'){const n=one([...document.querySelectorAll('.terminal-workspace')]);n.style.width=args.width+'px';return {sessionId,width:args.width};}
  if(action==='reclaim')button('내가 제어하기').click();
