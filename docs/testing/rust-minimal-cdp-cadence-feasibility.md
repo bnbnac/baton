@@ -1,6 +1,20 @@
 # Minimal CDP cadence feasibility
 
-Status: implementation, final independent review and its regression fixes completed on 2026-10-27. Full explicit unit suite: **180/180 passed**. **No live run has been started.** This is a three-round diagnostic, not a long-run memory acceptance test.
+Status: implementation unit suite **180/180 passed**, but the first authorized live run on 2026-10-27 KST **failed during preparation, before measurement or any cadence round**. No automatic retry was made. This is a three-round diagnostic, not a long-run memory acceptance test.
+
+## First live result — preparation failure
+
+Evidence: `artifacts/phase5-minimal-cdp-cadence-20261026/run1/`, launch/log siblings, `verify-run1.log`, `post-run-analysis.json` and `post-run-resources.json`. The planned directory date was retained; actual start was 2026-10-26 22:17:44.564 UTC (2026-10-27 07:17:44.564 KST), finish 22:18:15.861 UTC, wall duration 31.297 seconds. Runner PID 19752, commit `f0be5b9c3c5b22fb723afae0a8cc46beebf20674`, owner `3eec5f12-5ef8-4f41-860f-935c2619ecab`.
+
+- Setup established 32 connections / 16 sessions / 2 fixture servers and matched the M/F baseline identities. Playwright disconnected and the raw CDP connection successfully returned from `Network.disable`.
+- The first `Runtime.evaluate` was the preparation-only `identity` query. It failed with `cdp_response_error`. No DOM action, measurement-start event, OS measurement sample or cadence round followed. Completed rounds: **0**.
+- A concrete harness inconsistency was found: shared `Runtime.setup()` ends by selecting `soak-00`, but `prepareCdp()` expects `r.sessions.at(-1).id` (session 15). Using the run's saved IDs and the unchanged DOM expression, an offline selected-session-0 fixture throws `dom_session` for the recorded session-15 expectation and succeeds for session 0. This reproduces the code defect, not the lost live browser exception: the CDP client recorded only a generic error and did not retain the protocol/JavaScript error details. Therefore the exact live exception remains unconfirmed.
+- The failure sweep returned all 32 status responses; their recorded session owner/epoch/stream bindings match the acknowledged initial bindings. All 16 audit files are empty. Normal app exit, 32 adapter EOFs, no forced cleanup and zero owned process/container remnants were recorded. A separate PID/start-time and owner-label check after exit also found no remnants. The preserved image ID still matches.
+- Current source hashes **37/37**, candidate binaries **2/2**, M/F baseline receipts and environment identities match. Read-only analysis is saved separately from the original verifier result; it does not convert this run into a cadence pass.
+
+The directory verifier ran **once** and returned `evidenceValid:false`: `normal-boundary.json` does not exist because measurement never started. This is a preparation failure with no cadence measurement, not valid completed-round or deadline-negative evidence. `cadenceObserved:false`, `longRunReadiness:unproven`, `memoryAcceptance:not_evaluated`, and `phase5Acceptance:false` remain. Summary SHA256: `35f3debebb4a3af848a028aa8216fbb7f61c30614d551376ede804e956882650`.
+
+Next corrective work: align the preparation identity expectation with shared setup, add an integration regression covering that boundary, and retain bounded CDP error details. Do not alter this run, repeat its verifier or launch another run automatically. Product and diagnostic sources were not modified during or after this live attempt; only analysis artifacts and result documents were added.
 
 ## Inputs and execution scope
 
@@ -12,7 +26,7 @@ Use the existing `rust-phase-0` worktree and copy `artifacts/phase5-sampler-diag
 
 The runtime compares the exact 23 common source keys, binaries, image and Windows/Node/WebView/Playwright versions with the saved M/F preflight receipts. Extra diagnostic sources (including the reused native-cadence modules and new PowerShell sampler) are hashed separately. A mismatch rejects the run; do not rewrite receipts to match new inputs.
 
-Only after implementation checks/review and live-run authorization:
+Historical command for the consumed first attempt (do not execute it again):
 
 ```powershell
 node rust/tests/phase5/minimal-cdp-cadence/launch.mjs artifacts/phase5-minimal-cdp-cadence-20261026/run1 artifacts/phase5-minimal-cdp-cadence-20261026/config.json
