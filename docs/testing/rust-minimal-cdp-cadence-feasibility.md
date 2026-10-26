@@ -1,6 +1,28 @@
 # Minimal CDP cadence feasibility
 
-Status: the first authorized live run on 2026-10-27 KST **failed during preparation, before measurement or any cadence round**. The preparation follow-up fix now passes **185/185 unit tests**; it has not been rerun live. No automatic retry was made. This is a three-round diagnostic, not a long-run memory acceptance test.
+Status: the separately authorized second live attempt on 2026-10-27 KST **passed all three cadence rounds and independent evidence verification**. The first attempt's preparation failure remains preserved. The implementation suite passed **185/185** before run2. This is a three-round diagnostic, not a long-run memory acceptance test; Phase 5 acceptance remains blocked.
+
+## Second live result — cadence observed, long-run readiness unproven
+
+The user explicitly authorized the corrected attempt. Evidence: `artifacts/phase5-minimal-cdp-cadence-20261026/run2/`, `run2.launch.json`, `run2.log`, `verify-run2.log` and `post-run2-resources.json`. Execution commit `b977593dba5b81762f3331ea64cae933063db178`, runner PID 45960, owner `735aa6f9-f6a7-4ca6-bec2-103b17af7587`. Started 2026-10-26T23:24:47.888Z (2026-10-27 08:24:47.888 KST), finished 23:27:24.507Z; total wall time 156.619 seconds, measured interval 127.4864214 seconds.
+
+The verifier ran once and returned `evidenceValid:true`, `completedRounds:3`, `cadenceObserved:true`, no errors. Raw round-start/end and transition records were also directly compared:
+
+| Round | Session index | Owner adapter | Control epoch | Duration | Start interval | Resulting PTY columns × rows |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0 | 0 → 16 | 1 → 3 | 2.2892128 s | — | 86 × 17 |
+| 1 | 1 | 1 → 17 | 1 → 3 | 2.6419873 s | 60.0006299 s | 121 × 16 |
+| 2 | 0 | 16 → 0 | 3 → 5 | 2.4272944 s | 60.0017989 s | 86 × 17 |
+
+All rounds completed within 60 seconds and starts were at least 60 seconds apart. The revisited session used its current owner and stream, rather than its initial binding. Independent MCP status, remote `stty`, old-owner release and new-stream output agree with the transitions.
+
+- Load: 32 MCP connections, 16 SSH sessions, 2 fixture servers; 3 audit cycles / **48 actual effects**, 3 health sweeps / 96 status responses; no partial/pending audits. Per-session verified output rates 1149.730–1162.424 B/s, all above 1024 B/s, using the documented public-interval accounting.
+- Instrumentation: one raw CDP connection, **19 evaluates = 15 DOM actions + 4 identity queries**; forced GC, heap diagnostics and memory JS probes all zero. This does not mean zero JavaScript execution.
+- Four OS samples at elapsed 2.3655776, 37.5148318, 72.2367573 and 106.9913337 seconds, all `minimal_cdp_attached`, with an open client and one owned server-side established connection. Largest adjacent gap 35.1492542 seconds; final boundary gap 20.4950877 seconds, within 45 seconds. Four short-run samples are not a memory-growth acceptance result.
+- Normal app exit, **32 adapter EOFs**, no forced cleanup, zero owned process/container remnants. Separate post-exit PID/start-time and owner-label checks also found no remnants. The preserved fixture image is unchanged.
+- Verifier matched current **37 source hashes / 2 candidate binaries**, exact 23 common sources and M/F baseline receipts/environment. Environment: Windows 10.0.26200 x64, Node v22.17.0, WebView 155.0.4283.62, Playwright 1.62.1. Summary SHA256 `ba1507fb32802f7aefc186c945b7a92bcd707325a12ae09223a7fa7782982372`; raw-file hashes are in the immutable verification result.
+
+This establishes short cadence feasibility for this DOM/CDP harness and candidate on this host. It does not establish native keyboard/mouse behavior, complete public-boundary correctness, two-hour combined-transition memory stability or absence of CDP influence. `longRunReadiness:unproven`, `memoryAcceptance:not_evaluated`, `phase5Acceptance:false` remain. The next step is to design the longer memory experiment with a matched static-CDP control. No further or two-hour run was started automatically, and no source changes occurred during run2.
 
 ## First live result — preparation failure
 
@@ -16,13 +38,13 @@ The directory verifier ran **once** and returned `evidenceValid:false`: `normal-
 
 At the end of that attempt, the next corrective work was to align the preparation identity expectation with shared setup, add a regression covering that boundary, and retain bounded CDP error details. Product and diagnostic sources were unchanged during execution and the post-run analysis. Do not alter this run, repeat its verifier or launch another run automatically.
 
-## Preparation follow-up fix — unit verified, not live verified
+## Preparation follow-up fix — unit verification before run2
 
 On 2026-10-27 the user authorized the corrective work. `prepareCdp` now locates session index 0 explicitly; the independent verifier and synthetic evidence use the same initial-selection contract. The regression checks shared setup's `soak-00` selection statement, then exercises real target discovery, preparation and the DOM expression against a mocked DOM already showing session 0. It failed with `dom_session` before the fix and passed afterward. This is a guarded integration boundary with fake CDP/OS/DOM responses, not a complete real WebView test.
 
 CDP response failures now retain bounded diagnostic fields on the failure record: protocol code/message (message at most 512 characters), or JavaScript text/description/line/column (128/384 characters). Missing positions are null. The record includes `truncated`; arbitrary remote object values, object IDs, stack objects and protocol data are omitted. The serialized details are limited to 4096 UTF-8 bytes by their field bounds and verifier checks. The existing 16384-character incoming-message ceiling still applies before error extraction; larger frames remain `cdp_message_size` failures. Errors still stop execution and cannot become successful actions.
 
-Error-detail and preparation regressions were observed failing before their fixes. The explicit new/shared suite then passed **185/185**, including rejection of internally consistent but wrong session-15 preparation evidence and oversized/missing error details. Logs: `artifacts/phase5-cdp-preparation-fix-20261027/`. Existing `run1` evidence/verifier output was not rewritten. Product, shared historical harness, candidates, Cargo and fuzz were not changed. A fresh live attempt remains a separate next step; the actual exception from `run1` cannot be recovered retroactively.
+Error-detail and preparation regressions were observed failing before their fixes. The explicit new/shared suite then passed **185/185**, including rejection of internally consistent but wrong session-15 preparation evidence and oversized/missing error details. Logs: `artifacts/phase5-cdp-preparation-fix-20261027/`. Existing `run1` evidence/verifier output was not rewritten. Product, shared historical harness, candidates, Cargo and fuzz were not changed. The user subsequently authorized run2, reported above; the actual exception from `run1` cannot be recovered retroactively.
 
 ## Inputs and execution scope
 
