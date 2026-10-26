@@ -39,3 +39,10 @@ test('socket errors, protocol errors, JS exceptions and record failure reject',a
 test('unanswered request times out and concurrent send is rejected',async()=>{
  const {c,s,trace}=await setup();const p=c.send('Network.disable',{},10);const rejected=assert.rejects(p,/timeout/);await assert.rejects(c.send('Network.disable',{},10),/busy/);await rejected;assert.equal(s.sent.length,1);assert.ok(trace.some(r=>r.kind==='failure'&&r.uncertain));await c.close();
 });
+test('idle disconnect survives intentional cleanup in the trace',async()=>{
+ for(const mode of ['close','error']){const {c,s,trace}=await setup();if(mode==='close')s.close();else s.dispatchEvent(new Event('error'));await new Promise(r=>setImmediate(r));await c.close();assert.equal(trace.filter(v=>v.kind==='disconnected').length,1);assert.equal(trace.at(-1).kind,'closed');}
+});
+test('execution timeout is capped at dispatch after slow request recording',async()=>{
+ const {c,s,set,trace}=await setup();c.record=async row=>{trace.push(row);if(row.kind==='request')set(75);};
+ const p=c.send('Runtime.evaluate',evaluateParams('identity',{sessionId:'s'},100),100);await new Promise(r=>setImmediate(r));const sentTimeout=s.sent[0].params.timeout;s.reply({result:{value:{sessionId:'s'}}});await p;await c.close();assert.equal(sentTimeout,25);assert.equal(trace.find(v=>v.kind==='dispatch').timeout,25);
+});

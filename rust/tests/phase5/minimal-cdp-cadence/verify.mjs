@@ -23,7 +23,14 @@ function cdpEvidence(e,start,end,starts){
  const endpoint=only(events.filter(v=>v.type==='cdp_endpoint'),'cdp_endpoint');assert.ok(endpoint.seq<opened.seq);assertProcessIdentity(e.process,endpoint.ownership);
  for(const p of endpoint.ownership.descendants)assert.ok(e.process.descendants.some(v=>v.pid===p.pid&&String(v.startedTicks)===String(p.startedTicks)&&v.dataDirectoryMatch),'foreign_endpoint_owner');
  validateDebugger(endpoint.debugPort,endpoint.ownership,s.debugPort,0);
- const reqs=trace.filter(v=>v.kind==='request'),actions=events.filter(v=>v.type==='cdp_action');let previous=opened.seq,evals=0,queries=0,failed=false;
+ const reqs=trace.filter(v=>v.kind==='request'),actions=events.filter(v=>v.type==='cdp_action'),aborts=events.filter(v=>v.type==='cdp_action_aborted');let previous=opened.seq,evals=0,queries=0,failed=false;
+ assert.ok(aborts.length<=1,'multiple_action_aborts');
+ for(const d of [...trace.filter(v=>v.kind==='disconnected'),...aborts]){
+  assert.equal(s.status,'failed','connection_or_action_failure');assert.ok(d.reason&&d.seq>opened.seq&&d.seq<closed.seq);
+  assert.ok(!events.some(v=>v.seq>d.seq&&['cdp_action','transition','cadence_round_end','cadence_round_start'].includes(v.type)),'success_after_abort');
+  assert.ok(!reqs.some(v=>v.seq>d.seq),'request_after_abort');
+ }
+ assert.ok(trace.filter(v=>v.kind==='disconnected').length<=1,'duplicate_disconnect');
  const expected=[];expected.push({method:'Network.disable',round:-1});expected.push({action:'identity',round:-1,args:{sessionId:s.sessions.find(v=>v.index===15).id}});
  for(const r of starts)for(const action of ['select','identity','resize','reclaim','choose_connection','handoff'])expected.push({action,round:r.round});
  assert.ok(reqs.length>=2&&reqs.length<=expected.length,'cdp_request_count');
@@ -32,7 +39,7 @@ function cdpEvidence(e,start,end,starts){
   const ex=expected[i];assert.equal(q.round,ex.round);assert.equal(q.method,ex.method??'Runtime.evaluate','cdp_method');assert.equal(q.action,ex.action);
   const round=starts[q.round],cap=round?.deadline??s.clockOrigin+900000;assert.ok(q.deadline<=cap,'cdp_deadline');if(round)assert.ok(q.seq>round.seq,'cdp_before_round');
   if(q.method==='Runtime.evaluate'){
-   evals++;if(q.action==='identity')queries++;assert.equal(q.expressionSha256,digest(domExpression(q.action,q.args)),'expression_hash');assert.ok(q.timeout>0&&q.timeout<=q.deadline-q.at,'evaluate_timeout');
+   evals++;if(q.action==='identity')queries++;assert.equal(q.expressionSha256,digest(domExpression(q.action,q.args)),'expression_hash');assert.ok(Number.isFinite(q.timeout)&&q.timeout>0,'evaluate_timeout');
    if(ex.args)same(q.args,ex.args);else{
     assert.equal(q.args.sessionId,round.binding.session,'cdp_session');if(q.action==='select')assert.equal(q.args.label,`soak-${String(round.index).padStart(2,'0')}`);
     if(['choose_connection','handoff'].includes(q.action))assert.equal(q.args.connectionId,s.connections[(round.binding.adapter+16)%32],'cdp_connection');
@@ -40,20 +47,47 @@ function cdpEvidence(e,start,end,starts){
   }
   const responses=trace.filter(v=>v.kind==='response'&&v.id===q.id),failures=trace.filter(v=>v.kind==='failure'&&v.id===q.id);assert.ok(responses.length<=1&&failures.length<=1&&responses.length+failures.length>=1,'cdp_outcome');
   const response=responses[0],failure=failures[0];
-  for(const out of [...responses,...failures])assert.ok(out.seq>q.seq&&out.seq<closed.seq&&out.at>=q.at&&out.at<=s.clockOrigin+out.t,'cdp_outcome_time');
+  const dispatches=trace.filter(v=>v.kind==='dispatch'&&v.id===q.id);assert.ok(dispatches.length<=1,'dispatch_count');const dispatch=dispatches[0];
+  if(dispatch){assert.ok(dispatch.seq>q.seq&&dispatch.at>=q.at&&dispatch.at<q.deadline&&dispatch.at<=s.clockOrigin+dispatch.t,'dispatch_time');if(q.action)assert.ok(dispatch.timeout>0&&dispatch.timeout<=Math.min(q.timeout,q.deadline-dispatch.at),'dispatch_timeout');}
+  if(response||failure?.uncertain)assert.ok(dispatch,'missing_dispatch');
+  for(const out of [...responses,...failures])assert.ok(out.seq>(dispatch??q).seq&&out.seq<closed.seq&&out.at>=(dispatch??q).at&&out.at<=s.clockOrigin+out.t,'cdp_outcome_time');
   if(failure){assert.ok(typeof failure.uncertain==='boolean'&&failure.reason);failed=true;assert.equal(i,reqs.length-1,'request_after_failure');}
   if(response){assert.ok(response.at<=q.deadline,'late_cdp_response');assert.ok(!response.result?.exceptionDetails&&!response.result?.error,'cdp_exception');}
-  const matches=actions.filter(v=>v.action===q.action&&v.round===q.round);
-  if(!failure&&q.action){
-   const a=only(matches,'cdp_action');assert.ok(a.seq>response.seq&&a.seq<closed.seq&&s.clockOrigin+a.t<=q.deadline,'late_cdp_action');same(a.args,q.args);same(a.result,response.result.result?.value,'cdp_value');assert.equal(a.result.sessionId,q.args.sessionId);
+  const matches=actions.filter(v=>v.action===q.action&&v.round===q.round),abort=aborts.find(v=>v.action===q.action&&v.round===q.round);
+  if(abort){assert.equal(matches.length,0);same(abort.args,q.args);assert.ok(abort.seq>(failure??response).seq&&abort.seq<closed.seq);failed=true;previous=abort.seq;assert.equal(i,reqs.length-1);}
+  else if(!failure&&q.action){
+   const a=only(matches,'cdp_action');assert.ok(a.seq>response.seq&&a.seq<closed.seq&&s.clockOrigin+a.t<=cap,'late_cdp_action');same(a.args,q.args);same(a.result,response.result.result?.value,'cdp_value');assert.equal(a.result.sessionId,q.args.sessionId);
    if(q.args.connectionId)assert.equal(a.result.connectionId,q.args.connectionId);if(q.action==='resize')assert.equal(a.result.width,q.args.width);
    previous=a.seq;
   }else{assert.equal(matches.length,0,'action_without_response');previous=(failure??response).seq;}
  }
- for(const t of trace){assert.ok(['open','closed','request','response','failure','event'].includes(t.kind),'cdp_kind');if(['response','failure'].includes(t.kind))assert.ok(reqs.some(q=>q.id===t.id),'orphan_response');if(t.kind==='event')assert.ok(!t.method.startsWith('Network.'),'unexpected_network_event');}
+ for(const a of aborts)if(!reqs.some(q=>q.action===a.action&&q.round===a.round)){const ex=expected[reqs.length];assert.ok(ex&&ex.action===a.action&&ex.round===a.round,'orphan_abort');assert.ok(a.seq>previous);domExpression(a.action,a.args);assert.equal(a.args.sessionId,starts[a.round]?.binding.session??s.sessions[15].id);}
+ for(const t of trace){assert.ok(['open','closed','request','dispatch','response','failure','event','disconnected'].includes(t.kind),'cdp_kind');if(['dispatch','response','failure'].includes(t.kind))assert.ok(reqs.some(q=>q.id===t.id),'orphan_response');if(t.kind==='event')assert.ok(!t.method.startsWith('Network.'),'unexpected_network_event');}
  for(const a of actions)assert.ok(reqs.some(q=>q.action===a.action&&q.round===a.round),'orphan_action');
  assert.equal(s.instrumentation.evaluateCalls,evals);assert.equal(s.instrumentation.domQueries,queries);assert.equal(s.instrumentation.domActions,evals-queries);
  assert.ok(!events.some(v=>v.type==='shutdown'&&v.seq<closed.seq),'shutdown_before_detach');return actions;
+}
+
+function failureObservation(e,end){
+ const {events,summary:s}=e,rows=events.filter(v=>v.type==='failure_status');
+ if(s.status!=='failed'){assert.equal(rows.length,0);assert.equal(s.failureObservation,undefined);return null;}
+ const begin=only(events.filter(v=>v.type==='failure_observation_start'),'failure_observation_start'),finish=only(events.filter(v=>v.type==='failure_observation_end'),'failure_observation_end');
+ const closed=only(events.filter(v=>v.type==='cdp'&&v.kind==='closed'),'cdp_close'),shutdown=only(events.filter(v=>v.type==='shutdown'),'shutdown');
+ assert.ok(begin.seq>end.seq&&begin.seq>closed.seq&&finish.seq>begin.seq&&finish.seq<shutdown.seq);assert.equal(begin.deadline,begin.startedAt+15000);assert.ok(begin.startedAt<=s.clockOrigin+begin.t);
+ assert.equal(rows.length,32);let observed=0,previous=begin.seq,lastAttempt=begin.startedAt;
+ for(const [index,row] of rows.entries()){
+  assert.equal(row.index,index);assert.ok(row.seq>previous&&row.seq<finish.seq&&row.attemptedAt>=lastAttempt&&row.attemptedAt<=s.clockOrigin+row.t);lastAttempt=row.attemptedAt;
+  const raw=events.filter(v=>v.type==='mcp'&&v.name==='status'&&v.index===index&&v.seq>previous&&v.seq<row.seq);
+  if(row.attempted){assert.ok(row.attemptedAt<=begin.deadline-5000,'late_status_query');if(row.response){observed++;same(only(raw,'raw_failure_status').response,row.response);assert.equal(row.response.connection_id,s.connections[index]);assert.ok(Array.isArray(row.response.sessions));
+    for(const p of row.response.sessions){assert.ok(s.sessions.some(v=>v.id===p.session_id),'foreign_failure_session');assert.ok(typeof p.state==='string'&&Number.isSafeInteger(p.control_epoch));assert.ok(p.stream_id===null||typeof p.stream_id==='string');}
+   }else{assert.ok(row.error&&raw.length===0,'unrecorded_status_result');}}
+  else{assert.equal(row.error,'observation_budget');assert.ok(row.attemptedAt>begin.deadline-5000&&raw.length===0);}
+  previous=row.seq;
+ }
+ const result={startedAt:begin.startedAt,deadline:begin.deadline,finishedAt:finish.finishedAt,observed,complete:observed===32};same(s.failureObservation,result);for(const [key,value] of Object.entries(result))same(finish[key],value);
+ assert.ok(finish.finishedAt>=lastAttempt&&finish.finishedAt<=s.clockOrigin+finish.t);
+ assert.ok(!events.some(v=>v.seq>begin.seq&&v.seq<shutdown.seq&&v.type==='mcp'&&v.name!=='status'),'input_after_failure');
+ return {complete:result.complete,observed,observations:rows.map(({index,response,error})=>({index,...(response?{response}:{error})}))};
 }
 
 function transitions(e,starts,ends,actions){
@@ -182,7 +216,7 @@ export function verifyCdpCadenceEvidence(e){
   }
   if(ends.length<3){assert.equal(s.status,'failed');const stop=only(events.filter(v=>v.type==='cadence_stopped'),'missing_stop');assert.equal(stop.completedRounds,ends.length);assert.equal(stop.reason,s.stopReason);assert.ok(stop.seq<end.seq);}
   else{assert.equal(s.status,'finished');assert.equal(s.stopReason,null);}
-  const actions=cdpEvidence(e,start,end,starts);const rounds=transitions(e,starts,ends,actions);const audit=auditsAndHealth(e,starts,ends);v.metrics.partialAudits=audit.partial;v.metrics.pendingAudits=audit.pending;v.metrics.rates=outputEvidence(e,start,end);memoryEvidence(e,s.elapsedSeconds);if(ends.length===3)for(const rate of v.metrics.rates)assert.ok(rate.bytesPerSecond>=1024,'output_rate');
+  const actions=cdpEvidence(e,start,end,starts);v.metrics.failureObservation=failureObservation(e,end);const rounds=transitions(e,starts,ends,actions);const audit=auditsAndHealth(e,starts,ends);v.metrics.partialAudits=audit.partial;v.metrics.pendingAudits=audit.pending;v.metrics.rates=outputEvidence(e,start,end);memoryEvidence(e,s.elapsedSeconds);if(ends.length===3)for(const rate of v.metrics.rates)assert.ok(rate.bytesPerSecond>=1024,'output_rate');
   for(const d of events.filter(v=>v.type==='cadence_deadline')){assert.ok(d.observedAt>d.deadline);assert.ok(d.observedAt<=s.clockOrigin+d.t);assert.ok(!events.some(v=>v.seq>d.seq&&v.seq<end.seq&&['transition','cadence_round_end'].includes(v.type)),'success_after_deadline');}
   const shutdown=only(events.filter(v=>v.type==='shutdown'),'shutdown');assert.ok(shutdown.seq>end.seq);assert.equal(shutdown.exit.code,0);same(shutdown.process,e.process);validateShutdown(e.process,shutdown.eofs);
   assert.equal(e.cleanup.owner,s.owner);same(e.cleanup.process,e.process);same(e.cleanup.fixtures,s.fixtures);same(e.cleanup.remaining,[]);same(e.cleanup.containers,[]);

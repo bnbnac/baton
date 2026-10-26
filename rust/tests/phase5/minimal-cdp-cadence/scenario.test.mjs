@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {runCdpCadence,performRound} from './scenario.mjs';
+import * as scenario from './scenario.mjs';
+const {runCdpCadence,performRound,ui}=scenario;
 import {installCadenceGuard} from '../native-cadence/run.mjs';
 function fake(){
  let time=0;const events=[],calls=[];const r={born:0,now:()=>time,sleep:async ms=>{time+=ms;},summary:{instrumentation:{}},sessions:Array.from({length:16},(_,index)=>({index,id:'s'+index,adapter:index,epoch:1,stream:'p'+index})),event:async(type,value)=>{const e={type,...value};events.push(e);return e;},checkStop:async()=>{},service:async()=>{},tool:async()=>{},disconnectBrowser:async()=>{},sampleMemory:async()=>calls.push('sample'),elapsed:()=> (time-(r.loadStart??time))/1000,startMeasurement:async()=>{r.loadStart=time;},freeze:async()=>{r.frozen=(r.frozen??0)+1;},verifyAudits:async()=>{calls.push('audits');},save:async()=>{},outputRates:()=>[]};
- installCadenceGuard(r);const overrides={prepare:async()=>{r.cdp={close:async()=>calls.push('close')};},performRound:async()=>{time+=1000;}};return {r,events,calls,overrides,advance:ms=>{time+=ms;}};
+ installCadenceGuard(r);const overrides={prepare:async()=>{r.cdp={state:'open',close:async()=>calls.push('close')};},performRound:async()=>{time+=1000;}};return {r,events,calls,overrides,advance:ms=>{time+=ms;}};
 }
 test('three rounds use current binding and 60s start spacing',async()=>{
  const {r,events,calls,overrides,advance}=fake(),visits=[];overrides.performRound=async(r,round,index)=>{visits.push([index,r.sessions[index].adapter]);r.sessions[index].adapter=(r.sessions[index].adapter+16)%32;advance(1000);};
@@ -17,7 +18,7 @@ test('exact deadline allowed and nested service samples share one schedule',asyn
  const {r,calls,overrides,advance}=fake();overrides.performRound=async()=>{for(let i=0;i<6;i++){advance(10000);await r.tool();}};await runCdpCadence(r,overrides);assert.equal(r.summary.completedRounds,3);assert.ok(calls.filter(c=>c==='sample').length>=6);
 });
 test('prepare or CDP close failure preserves audit capture and failure',async()=>{
- for(const mode of ['prepare','close']){const {r,calls,overrides}=fake();overrides.prepare=async()=>{r.cdp={close:async()=>{calls.push('close');if(mode==='close')throw Error('close');}};if(mode==='prepare')throw Error('prepare');};await assert.rejects(runCdpCadence(r,overrides),new RegExp(mode));assert.ok(calls.includes('audits'));}
+ for(const mode of ['prepare','close']){const {r,calls,overrides}=fake();overrides.prepare=async()=>{r.cdp={state:'open',close:async()=>{calls.push('close');if(mode==='close')throw Error('close');}};if(mode==='prepare')throw Error('prepare');};await assert.rejects(runCdpCadence(r,overrides),new RegExp(mode));assert.ok(calls.includes('audits'));}
 });
 test('real round driver observes MCP geometry and ownership before audit and health',async()=>{
  const {r,advance}=fake(),order=[];r.connections=Array.from({length:32},(_,i)=>'c'+i);r.fixtures=[{id:'a'},{id:'b'}];let selected,geometry={rows:32,columns:120},assignedAdapter=0,state='agent_owned',epoch=1,stream='p0';
@@ -26,4 +27,16 @@ test('real round driver observes MCP geometry and ownership before audit and hea
  const session=()=>({session_id:'s0',state,control_epoch:epoch,stream_id:stream,geometry});r.sessionStatus=async()=>session();r.status=async index=>({connection_id:'c'+index,sessions:index===assignedAdapter?[session()]:[]});r.waitFor=async check=>{for(let i=0;i<30;i++){const result=await check();if(result)return result;advance(100);}throw Error('timeout');};
  r.command=async()=>order.push('stty');r.docker=async()=> '32 80';r.setTransition=async()=>{};r.adoptBinding=async(s,b)=>{Object.assign(s,b);};r.audit=async()=>order.push('audit');r.health=async()=>order.push('health');
  await performRound(r,0,0);assert.deepEqual(order,['select','identity','resize','stty','reclaim','choose_connection','handoff','audit','health']);assert.equal(r.sessions[0].adapter,16);assert.equal(r.sessions[0].stream,'new');
+});
+test('idle connection loss after the last round cannot report cadence success',async()=>{
+ const {r,overrides,advance}=fake();overrides.prepare=async()=>{r.cdp={state:'open',close:async()=>{r.cdp.state='closed';}};};overrides.performRound=async(_r,round)=>{advance(1000);if(round===2)r.cdp.state='failed';};
+ await assert.rejects(runCdpCadence(r,overrides),/cdp_not_open/);assert.equal(r.summary.completedRounds,2);assert.equal(r.summary.cadenceObserved,false);
+});
+test('response followed by host deadline has a separate aborted action',async()=>{
+ const {r,events,advance}=fake();r.cadenceGuard.beginRound(60000);r.cdp={send:async()=>({result:{value:{sessionId:'s0'}}})};r.during=async op=>{const value=await op();advance(60001);return value;};
+ await assert.rejects(ui(r,'reclaim',{sessionId:'s0'},0),/round_deadline/);assert.equal(events.filter(v=>v.type==='cdp_action').length,0);assert.match(events.find(v=>v.type==='cdp_action_aborted').reason,/round_deadline/);
+});
+test('failure sweep records current ownership and bounded query failures without adopting it',async()=>{
+ const {r,events,advance}=fake();r.connections=Array.from({length:32},(_,i)=>'c'+i);r.status=async index=>{advance(5000);if(index===1)throw Error('mcp_timeout');return {connection_id:'c'+index,sessions:[{session_id:'s0',state:'user_owned',control_epoch:2,stream_id:null}]};};
+ await scenario.observeFailureState(r);assert.equal(events.filter(v=>v.type==='failure_status').length,32);assert.equal(r.summary.failureObservation.observed,2);assert.equal(r.summary.failureObservation.complete,false);assert.equal(r.sessions[0].epoch,1);assert.equal(r.now(),15000);
 });

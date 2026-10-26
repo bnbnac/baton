@@ -25,11 +25,15 @@ class Client{
   this.opened=new Promise((resolve,reject)=>{this.resolveOpen=resolve;this.rejectOpen=reject;});this.opened.catch(()=>{});
   this.closed=new Promise(resolve=>{this.resolveClose=resolve;});
   socket.addEventListener('open',()=>{if(this.state==='connecting'){this.state='open';this.resolveOpen();}});
-  socket.addEventListener('close',()=>{this.resolveClose();this.fail('cdp_closed');});
-  socket.addEventListener('error',()=>this.fail('cdp_socket_error'));
+  socket.addEventListener('close',()=>{this.resolveClose();this.disconnect('cdp_closed');});
+  socket.addEventListener('error',()=>this.disconnect('cdp_socket_error'));
   socket.addEventListener('message',e=>{void this.message(e.data).catch(error=>this.fail(String(error)));});
  }
- log(row){const entry={...row,at:this.now()};this.trace=this.trace.then(()=>this.record(entry));return this.trace;}
+ log(row){const entry={at:this.now(),...row};this.trace=this.trace.then(()=>this.record(entry));return this.trace;}
+ disconnect(reason){
+  if(!this.intentionalClose&&!this.disconnection){this.disconnection=reason;void this.log({kind:'disconnected',reason}).catch(()=>{});}
+  this.fail(reason);
+ }
  async open(deadline){
   assert.ok(deadline>this.now(),'cdp_deadline');let timer;
   try{await Promise.race([this.opened,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('cdp_connect_timeout')),Math.max(1,deadline-this.now()));})]);assert.ok(this.now()<=deadline,'cdp_deadline');await this.log({kind:'open',target:this.target});}
@@ -41,14 +45,17 @@ class Client{
  }
  async send(method,params,deadline){
   const {wire,meta}=validateCommand(method,params);assert.equal(this.state,'open','cdp_not_open');assert.equal(this.pending,null,'cdp_busy');assert.ok(this.now()<deadline,'cdp_deadline');
-  if(method==='Runtime.evaluate')assert.ok(wire.timeout<=deadline-this.now(),'cdp_execution_timeout');
   const id=++this.next;
   return new Promise((resolve,reject)=>{
    const p={id,resolve,reject,deadline,sent:false};this.pending=p;
    void (async()=>{
     try{
      await this.log({kind:'request',id,method,...meta,deadline,...(method==='Runtime.evaluate'?{timeout:wire.timeout}:{} )});
-     if(this.pending!==p)return;assert.equal(this.state,'open');assert.ok(this.now()<deadline,'cdp_deadline');
+     if(this.pending!==p)return;assert.equal(this.state,'open');const at=this.now();assert.ok(at<deadline,'cdp_deadline');
+     if(method==='Runtime.evaluate')wire.timeout=Math.min(wire.timeout,deadline-at);
+     // Capture the dispatch budget at the same instant as its timestamp. The
+     // queued trace is flushed before resolving a response or closing.
+     void this.log({kind:'dispatch',id,at,...(method==='Runtime.evaluate'?{timeout:wire.timeout}:{})}).catch(e=>this.fail(String(e)));
      p.sent=true;this.socket.send(JSON.stringify({id,method,params:wire}));
      p.timer=setTimeout(()=>this.fail('cdp_request_timeout'),Math.max(1,deadline-this.now()));
     }catch(e){this.fail(String(e));}
@@ -72,6 +79,7 @@ class Client{
  }
  async close(){
   if(this.closing)return this.closing;
+  this.intentionalClose=true;
   this.closing=(async()=>{this.fail('cdp_closing');this.socket.close();let timer;
    try{await Promise.race([this.closed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('cdp_close_timeout')),3000);})]);await this.trace;await this.log({kind:'closed'});this.state='closed';}
    finally{clearTimeout(timer);}

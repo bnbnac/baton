@@ -112,4 +112,6 @@ node rust/tests/phase5/minimal-cdp-cadence/verify.mjs artifacts/phase5-minimal-c
 설계의 조작 제약은 Task1,시간/부하/중단/신원/계측은 Task2,증거·판정·운영은 Task3에 대응한다. 기존 sampler의 CC거부와 baseline비교의 추가소스 문제를 새 인스턴스 구현으로 처리해 과거 판정은 보존한다. timeout은 실행 취소로 간주하지 않는다. 새 도구의3회 cadence만 평가하며 CDP영향 제거/네이티브입력/2시간메모리를 입증하지 않는다. 기존 단위 검사나 실제 부하는 계획 작성 중 실행하지 않았다.
 
 ## Implementation checkpoint
-2026-10-26: Task1~3 implemented. Full explicit unit suite 169/169; PowerShell sampler syntax checked. Final independent review pending; no live test started. Ledger: .superpowers/sdd/2026-10-26-rust-minimal-cdp-cadence/progress.md.
+2026-10-26: Task1~3 implemented. Full explicit unit suite 169/169; PowerShell sampler syntax checked.
+
+2026-10-27: Final independent review completed. Three Important findings (idle connection loss, host abort after transport success, uncertain ownership without follow-up observation) plus the related timeout-margin recommendation were addressed in one RED→GREEN fix pass. Full explicit suite: 180/180. The verifier now accepts fully recorded negative outcomes while requiring dispatch timing and separate read-only failure observations. No live test started; the next execution remains the separately authorized three-round diagnostic, not a two-hour run. Ledger and all unit logs: `artifacts/phase5-minimal-cdp-cadence-implementation-20261027/`.

@@ -27,13 +27,26 @@ export async function prepareCdp(r,connect=connectCdp){
 }
 export async function ui(r,action,args,round){
  await r.cadenceGuard.check();const deadline=Math.min(r.cadenceGuard.deadline,r.now()+15000),params=evaluateParams(action,args,Math.max(1,deadline-r.now()));
- // A small margin avoids a local clock tick making CDP's execution timeout
- // longer than the remaining host timeout before the send is serialized.
- params.timeout=Math.max(0.001,params.timeout-10);
+ try{
  const raw=await r.during(()=>r.cdp.send('Runtime.evaluate',params,deadline));await r.cadenceGuard.check();
  const value=raw.result?.value;assert.equal(value?.sessionId,args.sessionId,'ui_session');
  if(args.connectionId)assert.equal(value.connectionId,args.connectionId,'ui_connection');if(action==='resize')assert.equal(value.width,args.width,'ui_width');
  await r.event('cdp_action',{action,args,result:value,round});return value;
+ }catch(e){await r.event('cdp_action_aborted',{action,args,round,reason:String(e)});throw e;}
+}
+export async function observeFailureState(r){
+ // Adapter status RPCs already have a 5s transport timeout. Reserve a full
+ // timeout before each request; never race an outstanding RPC with cleanup.
+ const startedAt=r.now(),deadline=startedAt+15000;let observed=0;
+ await r.event('failure_observation_start',{startedAt,deadline});
+ for(let index=0;index<32;index++){
+  const attemptedAt=r.now();let outcome;
+  if(deadline-attemptedAt<5000)outcome={error:'observation_budget',attempted:false};
+  else try{outcome={response:await r.status(index),attempted:true};observed++;}catch(e){outcome={error:String(e),attempted:true};}
+  await r.event('failure_status',{index,attemptedAt,...outcome});
+ }
+ r.summary.failureObservation={startedAt,deadline,finishedAt:r.now(),observed,complete:observed===32};
+ await r.event('failure_observation_end',r.summary.failureObservation);
 }
 export async function performRound(r,round,index){
  const s=r.sessions[index],before={session:s.id,adapter:s.adapter,epoch:s.epoch,stream:s.stream};
@@ -51,12 +64,13 @@ export async function performRound(r,round,index){
  await r.adoptBinding(s,{adapter,epoch:assigned.session.control_epoch,stream:assigned.session.stream_id});await r.cadenceGuard.check();await r.event('transition',record);await r.audit(round);await r.health();
 }
 export async function runCdpCadence(r,overrides={}){
- const g=r.cadenceGuard,originals=new Map();let nextSample=0,sampling=false,previousStartedAt,failure;
+ const g=r.cadenceGuard,originals=new Map(),check=g.check.bind(g);let nextSample=0,sampling=false,previousStartedAt,failure,attached=false;
+ g.check=async()=>{await check();if(attached)assert.equal(r.cdp.state,'open','cdp_not_open');};
  Object.assign(r.summary,{completedRounds:0,cadenceObserved:false,longRunReadiness:'unproven',memoryAcceptance:'not_evaluated'});
  const sample=async()=>{if(sampling||r.loadStart===undefined||r.measurementFrozen||r.elapsed()<nextSample)return;sampling=true;try{await g.check();await r.sampleMemory();nextSample=r.elapsed()+30;}finally{sampling=false;}};
  for(const name of ['service','tool'])if(r[name]){const original=r[name];originals.set(name,original);r[name]=async(...args)=>{const value=await original.apply(r,args);await sample();return value;};}
  try{
-  await (overrides.prepare??prepareCdp)(r,overrides.connectCdp);await g.check();await r.startMeasurement();await sample();
+  await (overrides.prepare??prepareCdp)(r,overrides.connectCdp);attached=true;await g.check();await r.startMeasurement();await sample();
   for(let round=0;round<3;round++){
    g.betweenRounds();while(previousStartedAt!==undefined&&r.now()<nextStart(previousStartedAt)){await r.checkStop();await r.service();await r.sleep(Math.min(100,nextStart(previousStartedAt)-r.now()));}
    await g.check();const startedAt=r.now(),window=roundWindow({round,startedAt,previousStartedAt,runDeadline:g.globalDeadline}),s=r.sessions[window.index];g.beginRound(window.deadline);r.currentRound=round;
@@ -67,8 +81,10 @@ export async function runCdpCadence(r,overrides={}){
  }catch(e){failure=e;r.summary.stopReason=String(e);await r.event('cadence_stopped',{reason:String(e),completedRounds:r.summary.completedRounds});}
  finally{
   for(const [name,original] of originals)r[name]=original;
-  g.finish();
+  g.check=check;g.finish();
   for(const [key,op] of [['freeze',async()=>{if(r.loadStart!==undefined&&!r.measurementFrozen)await r.freeze();}],['cdpClose',async()=>{await r.cdp?.close();}],['audit',()=>r.verifyAudits()]])try{await op();}catch(e){r.summary[key+'Failure']=String(e);failure??=e;}
+  if(r.cdp?.disconnection){failure??=Error(r.cdp.disconnection);r.summary.cadenceObserved=false;}
+  if(failure){r.summary.cadenceObserved=false;try{await observeFailureState(r);}catch(e){r.summary.failureObservationError=String(e);}}
   await r.save();
  }
  if(failure)throw failure;return {completedRounds:r.summary.completedRounds,cadenceObserved:r.summary.cadenceObserved};

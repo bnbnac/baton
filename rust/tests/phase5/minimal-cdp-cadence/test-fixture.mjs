@@ -11,6 +11,7 @@ export function cdpEvidence(timeout=false){
  function command(action,args,round,t){
   const req=++id,deadline=round<0?15000:1000+round*60000+60000,method=action?'Runtime.evaluate':'Network.disable';
   trace('request',t,{id:req,round,method,deadline,...(action?{action,args,timeout:500,expressionSha256:digest(domExpression(action,args))}:{})});
+  trace('dispatch',t,{id:req,round,...(action?{timeout:500}:{})});
   const value={sessionId:args?.sessionId,...(args?.connectionId?{connectionId:args.connectionId}:{}),...(action==='resize'?{width:args.width}:{})};
   trace('response',t+1,{id:req,round,result:action?{result:{value}}:{}});
   if(action)emit('cdp_action',t+2,{round,action,args,result:value});
@@ -23,6 +24,14 @@ export function cdpEvidence(timeout=false){
  }
  for(const t of e.events.filter(v=>v.type==='transition')){t.width=720;delete t.windowMode;delete t.resized.windowMode;}
  const end=e.events.find(v=>v.type==='measurement_end');trace('closed',end.t+10,{round:timeout?0:2});
+ if(timeout){
+  const startedAt=end.t+15,deadline=startedAt+15000;emit('failure_observation_start',startedAt,{startedAt,deadline});
+  for(let index=0;index<32;index++){
+   const t=end.t+20+index*2,response={app_state:'online',connection_id:s.connections[index],sessions:s.sessions.filter(v=>v.adapter===index).map(v=>({session_id:v.id,state:'agent_owned',control_epoch:v.epoch,stream_id:v.stream}))};
+   emit('mcp',t,{index,name:'status',args:{},response});emit('failure_status',t,{index,attemptedAt:t,attempted:true,response});
+  }
+  s.failureObservation={startedAt,deadline,finishedAt:end.t+90,observed:32,complete:true};emit('failure_observation_end',end.t+90,s.failureObservation);
+ }
  for(const sample of e.memory){
   const p=sample.ownership.descendants[0],entry={pid:p.pid,startedTicks:p.startedTicks,localAddress:'127.0.0.1',localPort:9222,remoteAddress:'127.0.0.1',remotePort:12345};
   sample.debugPort={port:9222,observedUtc:'test',listeners:[entry],connections:[entry]};sample.cdpState='open';sample.phase='minimal_cdp_attached';
