@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {createAttachedRuntime,executeAttached,diagnosticSources,installLaunchChecks} from './run.mjs';
+test('direct runner entry reaches reservation validation instead of deadlocking module imports',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'baton-entry-'));t.after(()=>rm(dir,{recursive:true,force:true}));const config=join(dir,'config.json');
+ await writeFile(config,JSON.stringify({app:{path:'unused',sha256:'a'.repeat(64)},adapter:{path:'unused',sha256:'b'.repeat(64)},imageId:'sha256:'+'c'.repeat(64),pwsh:'unused',playwrightPath:'unused'}));
+ const error=await promisify(execFile)(process.execPath,[fileURLToPath(new URL('./run.mjs',import.meta.url)),join(dir,'no-reservation'),config,'A','preflight'],{windowsHide:true,timeout:5000}).then(()=>null,error=>error);
+ assert.ok(error,'unreserved entry must fail');assert.equal(error.code,1);assert.match(error.stderr,/ENOENT.*claim\.json/s);assert.doesNotMatch(error.stderr,/unsettled top-level await/);
+});
 test('launch inputs are checked before setup, after actual environment and before measurement',async()=>{
  const calls=[],r={root:'.',out:'.',summary:{sources:{},environment:{}},setup:async()=>calls.push('setup'),startMeasurement:async()=>calls.push('measurement')};
  installLaunchChecks(r,{configPath:'config',arm:'A',profile:'preflight'},async(...args)=>{calls.push(args.at(-1)?'actual_identity':'frozen_inputs');});

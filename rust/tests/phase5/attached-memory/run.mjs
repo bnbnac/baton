@@ -69,7 +69,7 @@ export async function executeAttached(r,scenario=runAttachedArm){
  };
  return runExperiment(r,{AM:scenario});
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+async function runCli(){
  const [output,configPath,arm,profile]=process.argv.slice(2);assert.ok(output&&configPath,'usage: run.mjs fresh-dir config.json A|B preflight|full');
  const config=validateConfig(JSON.parse((await readFile(resolve(configPath),'utf8')).replace(/^\uFEFF/,''))),out=resolve(output);
  const {validateRunnerInputs,releaseRunnerLock}=await import('./launch.mjs');await validateRunnerInputs(root,out,resolve(configPath),arm,profile);
@@ -78,3 +78,7 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const r=createAttachedRuntime({root,out,config,arm,profile,launchContext:{configPath:resolve(configPath)}});for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{r.interrupted=true;});
  const summary=await executeAttached(r);await releaseRunnerLock(root,out,summary);console.log(JSON.stringify({status:summary.status,failure:summary.failure,finishedUtc:summary.finishedUtc}));if(summary.status==='failed')process.exitCode=1;
 }
+// Complete module evaluation before loading launch gates, whose read-only
+// verifier imports the runtime's manifest helper. Top-level await deadlocks
+// that dependency cycle when this file is the executable entry point.
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))runCli().catch(error=>{console.error(error);process.exitCode=1;});

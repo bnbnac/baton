@@ -104,6 +104,8 @@ Read-only imports: `separated/runtime.mjs` createRuntime/sha256/validateShutdown
 
 2026-10-28 readiness: final integration214/214; one independent review, two Important findings fixed with four RED→GREEN regressions. Report and unchanged candidate config prepared. No live arm has run; preflight/full authorization and execution remain pending.
 
+2026-10-28 execution update: user authorized the bounded A/B preflight. A's first launch at fd354fa failed before runtime initialization because executable run.mjs awaited a circular import. No measurement, B launch, verifier or automatic retry occurred. Failure evidence and active reservation are preserved. A real child-process regression reproduced exit13 and passed after async-main correction; affected run/launch/compare/verify tests79/79. Preflight pair remains incomplete, and full execution remains unauthorized/unexecuted. See the operational report for exact evidence paths.
+
 **Files:** Create docs/testing/rust-attached-memory-comparison.md; update this plan with actual verified progress. Evidence root for the first authorized attempt: `artifacts/phase5-attached-memory-20261027/`; reserve once, never reuse consumed paths.
 
 - [x] Run this exact integrated command, require all pass, and record the actual test count. No live rerun of old cadence/M/F/N or fuzz is included. Require `git diff --check` clean for changed files.

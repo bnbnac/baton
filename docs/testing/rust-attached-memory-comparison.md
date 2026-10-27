@@ -2,7 +2,7 @@
 
 ## Status — 2026-10-28
 
-Implementation through Task 4 is committed at `3778749` (base `48f24a6`), followed by the final review fixes recorded with this report. The final 16-file offline integration suite passed **214/214** tests. The initial sandbox run reported ten local socket/file-rename permission failures; the same unmodified 210-test suite passed in the host environment before the four review regressions were added. **No preflight or full arm has run.** The evidence root currently contains only a copy of the known candidate configuration.
+Implementation through Task 4 is committed at `3778749` (base `48f24a6`), with review fixes/readiness at `fd354fa`. That revision passed **214/214** offline integration tests. The initial sandbox run reported ten local socket/file-rename permission failures; the same unmodified 210-test suite passed in the host environment before the four review regressions were added. The user then authorized the A/B preflight. **A failed during executable startup, before measurement; B and full execution were not started.** The failure and reservations are preserved. A subsequent entry-point correction passed its child-process regression and all **79/79 affected runner/launch/comparison/verifier tests**; it has not been retried live.
 
 The single independent review found two Important issues and no Critical/Minor issues: stop requests could admit the next MCP/CDP operation, and duplicate timestamps could count toward the minimum memory samples. Four regression tests reproduced the issues (4/4 failed before correction, 4/4 passed afterward). The guard now checks and latches stop state before dispatch, while preserving evidence finalization and cleanup. Both memory-validation paths reject equal adjacent timestamps. The full 214-test suite passed after these fixes; no repeated review or live experiment was used to claim closure. The reviewer declined to judge live outcomes, which remain pending.
 
@@ -47,7 +47,9 @@ OS sampling targets absolute 30 s ticks; delayed ticks are skipped, never backfi
 
 After all slots finish, only output/status reads may continue to the boundary. A final read may cross the boundary by at most 15 s; samples at/after the fixed end are preserved separately in `memory-post.jsonl`, excluded from the memory verdict. This grace never extends a round's deadline. The shared desktop watchdog is a coarse 1620/29700 s ceiling; the new guard enforces the experiment's smaller budgets and awaits in-flight operations. It is not hard realtime cancellation during a host hang.
 
-## Exact execution sequence — not yet executed
+## Execution sequence — A startup attempt consumed
+
+The `preflight-a` launch below was attempted once and failed before measurement. **Do not run these commands again against the consumed paths.** The original active reservation also remains. A new live attempt requires an explicit decision after checking the preserved failure and reservation; no fallback name/retry was launched. Full paths remain unused.
 
 Run from PowerShell in the existing worktree. `node` is available; these commands do not require the `pwsh` executable to be on PATH. The candidate config pins its installed PowerShell path.
 
@@ -96,4 +98,10 @@ Monitor evidence files and owned process identity only during measurement. Do no
 
 ## Results
 
-Pending. Offline passing tests and prepared configuration are not live results or a Phase 5 acceptance claim.
+The authorized A launch on **2026-10-28 07:08 KST** (2026-10-27 22:08 UTC), commit `fd354fa`, exited before creating the arm directory. `preflight-a.log` reports an unsettled top-level await at the entry-point import of `launch.mjs`. Its dependency graph imports `run.mjs` while that executable module is still awaiting completion. The launcher's subsequent PID/start-time query found PID40940 already absent, and `preflight-a.launch.json` records `launch_failed`; a start timestamp was not obtained.
+
+An offline real-child-process regression reproduced exit13 with the same import warning. Moving CLI execution into an async main, without blocking module evaluation on top-level await, makes the entry reach reservation validation and reject an unreserved test invocation with the expected exit1. This regression passed after correction, and the affected four test files passed79/79. Prior tests imported the runtime as a library and injected the launch subprocess, so they did not exercise this executable entry cycle.
+
+Read-only process checks found PID40940 absent and no Node process targeting the attempt's output path. Neither A nor B arm directory exists. The failure occurred before `mkdir`, runtime initialization and fixture/app setup; no measurement/audit/sample or app/server cleanup result is claimed. `preflight-a-startup-failure.json` records the assessment and hashes of the original launch/inputs/claim/log. The verifier was not invoked because no completed arm evidence exists. The matching global active reservation and all consumed paths are retained.
+
+No valid preflight pair, memory result or Phase 5 acceptance follows from this attempt. B/full remain unexecuted; the original failed soak and release block remain unchanged.
