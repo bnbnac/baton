@@ -15,6 +15,12 @@ test('full static pass and valid memory failure stay distinct',()=>{
  v=verifyArmEvidence(e);assert.equal(v.evidenceValid,true,v.errors.join());assert.equal(v.workloadPassed,true);assert.equal(v.memoryPassed,false);
 });
 test('full transitioning pass verifies all revisits',()=>{const e=armEvidence('B','full'),v=verifyArmEvidence(e);assert.equal(v.evidenceValid,true,v.errors.join());assert.equal(v.memoryPassed,true);assert.equal(v.metrics.transitions,120);e.events.filter(p=>p.type==='transition')[16].before.adapter=0;assert.equal(verifyArmEvidence(e).evidenceValid,false);});
+test('raw verifier rejects duplicate timestamps even when summary counts agree',()=>{
+ const e=armEvidence('A','full'),sample=e.memory.find(p=>p.elapsed===1200);e.memory=e.memory.filter(p=>p.elapsed<1200||p.elapsed>=2400);
+ e.memory.push(...Array.from({length:29},(_,i)=>({...structuredClone(sample),elapsed:1200+i*1200/29})));e.memory.sort((a,b)=>a.elapsed-b.elapsed);e.summary.samples=e.memory;e.boundary.samples=e.memory.length;
+ assert.equal(verifyArmEvidence(e).evidenceValid,false);e.memory.push(structuredClone(sample));e.memory.sort((a,b)=>a.elapsed-b.elapsed);e.boundary.samples=e.memory.length;
+ const v=verifyArmEvidence(e);assert.equal(v.evidenceValid,false);assert.equal(v.memoryPassed,null);assert.match(v.errors.join(),/sample_boundary/);
+});
 test('complete early-stop evidence is negative and memory unevaluated',()=>{const v=verifyArmEvidence(armEvidence('B','preflight',true));assert.equal(v.evidenceValid,true,v.errors.join());assert.equal(v.workloadPassed,false);assert.equal(v.memoryPassed,null);});
 test('partial delivered audit still requires its actual effect',()=>{
  const e=armEvidence('A','preflight',true),args={session_id:'s0',control_epoch:1,request_id:'partial',text:"printf '%s\\n' 'AUDIT_0_0' >> /tmp/soak-audit-0"};

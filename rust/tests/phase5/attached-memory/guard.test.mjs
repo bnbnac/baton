@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import {installArmGuard} from './guard.mjs';
 import {resolveArm} from './policy.mjs';
 function fixture(){let time=0;const events=[],r={born:0,contract:resolveArm('B','full'),now:()=>time,event:async(type,v)=>events.push({type,...v}),tool:async()=>({ok:true}),read:async()=>{},checkStop:async()=>{},docker:async()=>{},ps:async()=>{},waitFor:async check=>check(),service:async()=>{time+=10;},sleep:async ms=>{time+=ms;}};return {r,events,set:v=>{time=v;},guard:installArmGuard(r)};}
+test('stop after delivered text blocks duplicate and Enter, stays latched, permits cleanup',async()=>{
+ let stopped=false;const sent=[],r={born:0,contract:resolveArm('A','preflight'),now:()=>0,event:async()=>{},checkStop:async()=>{if(stopped)throw Error('stop_requested');},tool:async(index,name)=>{sent.push(name);stopped=true;return {result:'delivered'};}};
+ const g=installArmGuard(r);g.startMeasurement(0);g.beginRound(60000);
+ try{await r.tool(0,'send_text');}catch(error){assert.match(String(error),/stop_requested/);}
+ await assert.rejects(r.tool(0,'send_text'),/stop_requested/);await assert.rejects(r.tool(0,'send_key'),/stop_requested/);assert.deepEqual(sent,['send_text']);
+ stopped=false;await assert.rejects(g.check(),/stop_requested/);assert.throws(()=>g.beginRound(60000));g.finish();await r.tool(0,'status');assert.deepEqual(sent,['send_text','status']);
+});
+test('stop already requested prevents CDP dispatch and waitFor callbacks',async()=>{
+ let dispatched=0;const r={born:0,contract:resolveArm('B','preflight'),now:()=>0,event:async()=>{},checkStop:async()=>{throw Error('stop_requested');},service:async()=>{},sleep:async()=>{},waitFor:async check=>check()};installArmGuard(r);
+ await assert.rejects(r.during(async()=>{dispatched++;}),/stop_requested/);await assert.rejects(r.waitFor(async()=>{dispatched++;return true;},'x'),/stop_requested/);assert.equal(dispatched,0);
+});
 test('long preparation does not consume measurement budget',async()=>{
  const f=fixture();f.set(899000);await f.guard.check();f.guard.startMeasurement(899000);f.set(899000+7140000);await f.guard.check();
  assert.equal(f.guard.globalDeadline,899000+7200000);

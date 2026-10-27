@@ -188,10 +188,10 @@ function outputEvidence(e,start,end){
 }
 
 function memoryEvidence(e,duration){
- same(e.memory,e.summary.samples,'raw_memory_mismatch');assert.ok(e.memory.length,'missing_samples');let previous=0,identities;
+ same(e.memory,e.summary.samples,'raw_memory_mismatch');assert.ok(e.memory.length,'missing_samples');let previous,identities;
  const key=p=>`${p.pid}:${p.startedTicks}`;
  for(const sample of e.memory){
-  assert.ok(Number.isFinite(sample.elapsed)&&sample.elapsed>=previous&&sample.elapsed<duration,'sample_boundary');assert.ok(sample.elapsed-previous<=45,'sample_gap');previous=sample.elapsed;
+  assert.ok(Number.isFinite(sample.elapsed)&&sample.elapsed>=0&&(previous===undefined||sample.elapsed>previous)&&sample.elapsed<duration,'sample_boundary');assert.ok(sample.elapsed-(previous??0)<=45,'sample_gap');previous=sample.elapsed;
   validateAttachedSample(sample);assert.equal(sample.debugPort.port,e.summary.debugPort);
   const owned=sample.ownership;assertProcessIdentity(e.process,owned);same(owned.adapters,e.summary.adapterIdentities);assert.equal(owned.adapters.length,32);
   for(const p of owned.descendants)assert.ok(p.dataDirectoryMatch&&e.process.descendants.some(v=>key(v)===key(p)&&v.dataDirectoryMatch),'foreign_descendant');

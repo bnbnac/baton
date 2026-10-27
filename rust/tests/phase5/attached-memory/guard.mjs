@@ -3,26 +3,34 @@ import assert from 'node:assert/strict';
 // Instance-local wrappers leave frozen historical modules untouched. A deadline
 // never cancels an in-flight operation; its outcome is awaited before cleanup.
 export function installArmGuard(r){
- let mode='preparing',measurementStart,roundDeadline=null,violation,reported=false;
+ let mode='preparing',measurementStart,roundDeadline=null,violation,reported=false,stopFailure;
+ const checkStop=r.checkStop?.bind(r);
  const preparationDeadline=r.born+r.contract.preparationMs;
  const g={
   get globalDeadline(){return measurementStart===undefined?preparationDeadline:measurementStart+r.contract.seconds*1000;},
   get deadline(){return ['tail','freeze'].includes(mode)?g.globalDeadline+r.contract.freezeGraceMs:Math.min(g.globalDeadline,roundDeadline??Infinity);},
   get mode(){return mode;},
   startMeasurement(startMs){
-   assert.ok(mode==='preparing'&&!violation&&Number.isFinite(startMs)&&startMs>=r.born&&startMs<=r.now()&&r.now()<=preparationDeadline,'measurement_start');
+   assert.ok(mode==='preparing'&&!violation&&!stopFailure&&Number.isFinite(startMs)&&startMs>=r.born&&startMs<=r.now()&&r.now()<=preparationDeadline,'measurement_start');
    measurementStart=startMs;mode='measurement';
   },
   beginRound(deadline){
-   assert.ok(mode==='measurement'&&!violation&&Number.isFinite(deadline)&&r.now()<deadline&&deadline<=g.globalDeadline,'round_admission');
+   assert.ok(mode==='measurement'&&!violation&&!stopFailure&&Number.isFinite(deadline)&&r.now()<deadline&&deadline<=g.globalDeadline,'round_admission');
    roundDeadline=deadline;
   },
   betweenRounds(){roundDeadline=null;},
-  beginTail(){assert.ok(mode==='measurement'&&!violation&&roundDeadline===null,'tail_state');mode='tail';},
+  beginTail(){assert.ok(mode==='measurement'&&!violation&&!stopFailure&&roundDeadline===null,'tail_state');mode='tail';},
   beginFreeze(){assert.ok(measurementStart!==undefined&&['measurement','tail'].includes(mode),'freeze_state');mode='freeze';roundDeadline=null;},
   finish(){mode='finished';},
   async check(){
    if(mode==='finished')return;
+   // Poll the original stop check before admitting any wrapped operation. Keep
+   // the first stop latched even if its file disappears; finalization/cleanup
+   // can still run after beginFreeze()/finish(). Never call our own wrapper.
+   if(mode!=='freeze'){
+    if(stopFailure)throw stopFailure;
+    try{await checkStop?.();}catch(error){stopFailure=error;throw error;}
+   }
    const observedAt=r.now(),deadline=g.deadline;
    if(mode!=='freeze'&&violation)throw Error(violation);
    if(observedAt<=deadline)return;

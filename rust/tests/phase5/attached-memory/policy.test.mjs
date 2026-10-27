@@ -33,6 +33,11 @@ test('valid thirty-sample windows pass and twenty-nine fail',()=>{
  missing.push(...Array.from({length:29},(_,i)=>sample(1200+i*1200/29)));missing.sort((a,b)=>a.elapsed-b.elapsed);
  assert.throws(()=>memoryResult(missing,7200,'full'),/insufficient_memory_samples/);
 });
+test('duplicate observations cannot fill a thirty-sample window',()=>{
+ const rows=Array.from({length:180},(_,i)=>sample(i*40)).filter(s=>s.elapsed<1200||s.elapsed>=2400);
+ rows.push(...Array.from({length:29},(_,i)=>sample(1200+i*1200/29)));rows.sort((a,b)=>a.elapsed-b.elapsed);
+ assert.throws(()=>memoryResult(rows,7200,'full'),/insufficient_memory_samples/);rows.push(sample(1200));rows.sort((a,b)=>a.elapsed-b.elapsed);assert.throws(()=>memoryResult(rows,7200,'full'),/sample_boundary/);
+});
 for(const mode of ['gap','end-gap','late','duration','overshoot','sum','foreign','reused','identity','phase','none','extra','negative','nan'])test('rejects invalid memory '+mode,()=>{
  const rows=samples();let duration=7200;
  if(mode==='gap')rows.splice(1,1);

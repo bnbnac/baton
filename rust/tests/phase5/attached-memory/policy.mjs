@@ -26,10 +26,10 @@ export function memoryResult(samples,durationSeconds,profile){
  const {seconds,freezeGraceMs}=resolveArm('A',profile);
  assert.ok(Number.isFinite(durationSeconds)&&durationSeconds>=seconds&&durationSeconds<=seconds+freezeGraceMs/1000,'measurement_duration');
  assert.ok(Array.isArray(samples)&&samples.length>0,'no_samples');
- let previous=0,initial,port;
+ let previous,initial,port;
  for(const s of samples){
-  assert.ok(Number.isFinite(s.elapsed)&&s.elapsed>=previous&&s.elapsed<seconds,'sample_boundary');
-  assert.ok(s.elapsed-previous<=45,'memory_sample_gap');previous=s.elapsed;
+  assert.ok(Number.isFinite(s.elapsed)&&s.elapsed>=0&&(previous===undefined||s.elapsed>previous)&&s.elapsed<seconds,'sample_boundary');
+  assert.ok(s.elapsed-(previous??0)<=45,'memory_sample_gap');previous=s.elapsed;
   validateAttachedSample(s);
   for(const key of ['privateBytes','workingSetBytes'])assert.ok(Number.isFinite(s[key])&&s[key]>0,'memory_total');
   if(initial){assert.deepEqual(identities(s),initial,'process_identity_changed');assert.equal(s.debugPort.port,port,'debug_port_changed');}

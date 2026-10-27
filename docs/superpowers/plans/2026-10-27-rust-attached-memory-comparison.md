@@ -102,15 +102,17 @@ Read-only imports: `separated/runtime.mjs` createRuntime/sha256/validateShutdown
 
 ## Task 5: Integrated readiness and bounded preflight
 
+2026-10-28 readiness: final integration214/214; one independent review, two Important findings fixed with four RED→GREEN regressions. Report and unchanged candidate config prepared. No live arm has run; preflight/full authorization and execution remain pending.
+
 **Files:** Create docs/testing/rust-attached-memory-comparison.md; update this plan with actual verified progress. Evidence root for the first authorized attempt: `artifacts/phase5-attached-memory-20261027/`; reserve once, never reuse consumed paths.
 
-- [ ] Run this exact integrated command, require all pass, and record the actual test count. No live rerun of old cadence/M/F/N or fuzz is included. Require `git diff --check` clean for changed files.
+- [x] Run this exact integrated command, require all pass, and record the actual test count. No live rerun of old cadence/M/F/N or fuzz is included. Require `git diff --check` clean for changed files.
 
 ```powershell
 node --test rust/tests/phase5/attached-memory/policy.test.mjs rust/tests/phase5/attached-memory/guard.test.mjs rust/tests/phase5/attached-memory/scenario.test.mjs rust/tests/phase5/attached-memory/run.test.mjs rust/tests/phase5/attached-memory/verify.test.mjs rust/tests/phase5/attached-memory/launch.test.mjs rust/tests/phase5/attached-memory/compare.test.mjs rust/tests/phase5/minimal-cdp-cadence/cdp.test.mjs rust/tests/phase5/minimal-cdp-cadence/dom.test.mjs rust/tests/phase5/minimal-cdp-cadence/sampling.test.mjs rust/tests/phase5/minimal-cdp-cadence/scenario.test.mjs rust/tests/phase5/minimal-cdp-cadence/run.test.mjs rust/tests/phase5/minimal-cdp-cadence/verify.test.mjs rust/tests/phase5/separated/contract.test.mjs rust/tests/phase5/separated/runtime.test.mjs rust/tests/phase5/separated/transitions.test.mjs
 ```
-- [ ] Use one final independent code review of this implementation range, following executing-plans/requesting-code-review instructions. Fix material findings with focused RED/GREEN tests; repeat only checks affected by those fixes. Preserve a bounded review record; do not start an open-ended review loop.
-- [ ] Write the report with exact CLI commands, stop files, claims/results, frozen inputs and expected preflight/full metrics. Copy the unchanged known candidate config; attach M/F baseline paths. Record implementation commit and manifest. Confirm live authorization at execution time from the session; design/plan approval alone is not a claim that an experiment ran.
+- [x] Use one final independent code review of this implementation range, following executing-plans/requesting-code-review instructions. Fix material findings with focused RED/GREEN tests; repeat only checks affected by those fixes. Preserve a bounded review record; do not start an open-ended review loop.
+- [x] Write the report with exact CLI commands, stop files, claims/results, frozen inputs and expected preflight/full metrics. Copy the unchanged known candidate config; attach M/F baseline paths. Record implementation commit and manifest. Confirm live authorization at execution time from the session; design/plan approval alone is not a claim that an experiment ran.
 - [ ] Execute the new preflight A once at `preflight-a`, verify once after finishedUtc, and only if eligible execute B once at `preflight-b`. Each measures180 seconds, three slots,18 evaluations,48 effects,3 health cycles, sampled attached state, normal EOF32/cleanup. Compare once to `preflight-comparison.json`. These are two arms of one bounded preflight, not retries of the old short test. Failure stops without renaming/relaunching; investigate only if authorized scope permits.
 - [ ] Record raw verification results/limits and commit only implementation fixes or relevant documents with named paths. No full run starts until readiness is concrete and the full execution scope is authorized. If already explicitly authorized in-session, proceed without asking again.
 
