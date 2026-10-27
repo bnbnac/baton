@@ -1,7 +1,7 @@
 # Attached static/transition memory comparison
 
 Date: 2026-10-27 (Asia/Seoul)
-Status: design proposed; awaiting document approval. No implementation or live run authorized by this document alone.
+Status: approved by the user on 2026-10-27; implementation plan requested. No live run starts in the design/planning stage.
 
 ## Intent and evidence
 
