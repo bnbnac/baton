@@ -33,3 +33,9 @@ test('waitFor caps timeout to the active deadline',async()=>{
  const r={...f.r,contract:resolveArm('A','preflight'),waitFor:async(check,label,timeout)=>{received=timeout;return true;}};
  const g=installArmGuard(r);g.startMeasurement(0);g.beginRound(60000);f.set(59000);await r.waitFor(()=>true,'x',45000);assert.equal(received,1000);
 });
+test('read-only tail cannot admit CDP work, new rounds or MCP input',async()=>{
+ const f=fixture();f.guard.startMeasurement(0);f.guard.betweenRounds();f.guard.beginTail();
+ f.set(7200100);await f.r.read();await f.r.tool(0,'status');
+ await assert.rejects(f.r.tool(0,'send_text'),/read_only_tail/);await assert.rejects(f.r.during(async()=>{}),/read_only_tail/);
+ assert.throws(()=>f.guard.beginRound(7201000));f.set(7215001);await assert.rejects(f.guard.check(),/tail_deadline/);
+});

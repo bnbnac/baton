@@ -7,7 +7,7 @@ export function installArmGuard(r){
  const preparationDeadline=r.born+r.contract.preparationMs;
  const g={
   get globalDeadline(){return measurementStart===undefined?preparationDeadline:measurementStart+r.contract.seconds*1000;},
-  get deadline(){return mode==='freeze'?g.globalDeadline+r.contract.freezeGraceMs:Math.min(g.globalDeadline,roundDeadline??Infinity);},
+  get deadline(){return ['tail','freeze'].includes(mode)?g.globalDeadline+r.contract.freezeGraceMs:Math.min(g.globalDeadline,roundDeadline??Infinity);},
   get mode(){return mode;},
   startMeasurement(startMs){
    assert.ok(mode==='preparing'&&!violation&&Number.isFinite(startMs)&&startMs>=r.born&&startMs<=r.now()&&r.now()<=preparationDeadline,'measurement_start');
@@ -18,14 +18,15 @@ export function installArmGuard(r){
    roundDeadline=deadline;
   },
   betweenRounds(){roundDeadline=null;},
-  beginFreeze(){assert.ok(measurementStart!==undefined&&mode==='measurement','freeze_state');mode='freeze';roundDeadline=null;},
+  beginTail(){assert.ok(mode==='measurement'&&!violation&&roundDeadline===null,'tail_state');mode='tail';},
+  beginFreeze(){assert.ok(measurementStart!==undefined&&['measurement','tail'].includes(mode),'freeze_state');mode='freeze';roundDeadline=null;},
   finish(){mode='finished';},
   async check(){
    if(mode==='finished')return;
    const observedAt=r.now(),deadline=g.deadline;
    if(mode!=='freeze'&&violation)throw Error(violation);
    if(observedAt<=deadline)return;
-   const reason=mode==='preparing'?'preparation_deadline':mode==='freeze'?'freeze_deadline':observedAt>g.globalDeadline?'measurement_deadline':'round_deadline';
+   const reason=mode==='preparing'?'preparation_deadline':mode==='freeze'?'freeze_deadline':mode==='tail'?'tail_deadline':observedAt>g.globalDeadline?'measurement_deadline':'round_deadline';
    violation??=reason;
    if(!reported){reported=true;await r.event('attached_deadline',{observedAt,deadline,reason});}
    throw Error(reason);
@@ -35,7 +36,9 @@ export function installArmGuard(r){
  for(const name of ['tool','read','checkStop','docker','ps'])if(typeof r[name]==='function'){
   const original=r[name].bind(r);
   r[name]=async(...args)=>{
-   assert.ok(mode!=='freeze','measurement_frozen');await g.check();
+   assert.ok(mode!=='freeze','measurement_frozen');
+   if(mode==='tail'&&name==='tool')assert.ok(['status','read_output'].includes(args[1]),'read_only_tail');
+   await g.check();
    try{const result=await original(...args);await g.check();return result;}catch(error){await g.check();throw error;}
   };
  }
@@ -43,7 +46,7 @@ export function installArmGuard(r){
   await g.check();const value=await original(check,label,mode==='finished'?timeout:Math.min(timeout,Math.max(0,g.deadline-r.now())),options);await g.check();return value;
  };}
  r.during=async operation=>{
-  await g.check();assert.ok(mode!=='freeze','measurement_frozen');let done=false,result,failure;
+  await g.check();assert.ok(mode!=='freeze','measurement_frozen');assert.ok(mode!=='tail','read_only_tail');let done=false,result,failure;
   const pending=Promise.resolve().then(operation).then(v=>{result=v;},e=>{failure=e;}).finally(()=>{done=true;});
   try{while(!done){await g.check();await r.service();await r.sleep(100);}}finally{await pending;}
   await g.check();if(failure)throw failure;return result;
