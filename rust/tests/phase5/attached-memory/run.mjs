@@ -10,6 +10,11 @@ import {sampleAttached} from '../minimal-cdp-cadence/sampling.mjs';
 import {resolveArm} from './policy.mjs';
 import {installArmGuard} from './guard.mjs';
 import {runAttachedArm} from './scenario.mjs';
+export function installLaunchChecks(r,context,validate=async(...args)=>(await import('./launch.mjs')).validateRunnerInputs(...args)){
+ const check=actual=>validate(r.root,r.out,context.configPath,context.arm,context.profile,actual?r.summary:undefined);
+ const setup=r.setup.bind(r);r.setup=async()=>{await check(false);await setup();await check(true);};
+ const start=r.startMeasurement.bind(r);r.startMeasurement=async()=>{await check(true);await start();};
+}
 
 export async function diagnosticSources(base){
  if(base instanceof URL)base=fileURLToPath(base);
@@ -20,7 +25,7 @@ export async function diagnosticSources(base){
  }
  return paths.sort();
 }
-export function createAttachedRuntime({arm,profile,...options},deps={}){
+export function createAttachedRuntime({arm,profile,launchContext,...options},deps={}){
  const r=createRuntime({...options,contract:resolveArm(arm,profile)},deps);installArmGuard(r);
  Object.assign(r.summary,{arm,evaluations:{preparation:{calls:0,queries:0,actions:0},measurement:{calls:0,queries:0,actions:0}}});
  Object.assign(r.summary.instrumentation,{evaluateCalls:0,domActions:0,domQueries:0,heapDiagnosticCalls:0,jsProbes:0});
@@ -53,6 +58,7 @@ export function createAttachedRuntime({arm,profile,...options},deps={}){
  };
  const manifest=r.manifest.bind(r);r.manifest=async()=>{await manifest();for(const p of await diagnosticSources(r.root))r.summary.sources[p]=await sha256(join(r.root,p));};
  const setup=r.setup.bind(r);r.setup=async()=>{await setup();await r.cadenceGuard.check();r.summary.cadenceBaselines=await checkBaselines(r);await r.save();};
+ if(launchContext)installLaunchChecks(r,{...launchContext,arm,profile});
  return r;
 }
 export async function executeAttached(r,scenario=runAttachedArm){
@@ -66,8 +72,9 @@ export async function executeAttached(r,scenario=runAttachedArm){
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const [output,configPath,arm,profile]=process.argv.slice(2);assert.ok(output&&configPath,'usage: run.mjs fresh-dir config.json A|B preflight|full');
  const config=validateConfig(JSON.parse((await readFile(resolve(configPath),'utf8')).replace(/^\uFEFF/,''))),out=resolve(output);
+ const {validateRunnerInputs,releaseRunnerLock}=await import('./launch.mjs');await validateRunnerInputs(root,out,resolve(configPath),arm,profile);
  const artifacts=await realpath(join(root,'artifacts')),parent=await realpath(dirname(out)),rel=relative(artifacts,parent);
  assert.ok((rel===''||(!rel.startsWith('..')&&!isAbsolute(rel)))&&out!==artifacts,'output_outside_artifacts');await mkdir(out);
- const r=createAttachedRuntime({root,out,config,arm,profile});for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{r.interrupted=true;});
- const summary=await executeAttached(r);console.log(JSON.stringify({status:summary.status,failure:summary.failure,finishedUtc:summary.finishedUtc}));if(summary.status==='failed')process.exitCode=1;
+ const r=createAttachedRuntime({root,out,config,arm,profile,launchContext:{configPath:resolve(configPath)}});for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{r.interrupted=true;});
+ const summary=await executeAttached(r);await releaseRunnerLock(root,out,summary);console.log(JSON.stringify({status:summary.status,failure:summary.failure,finishedUtc:summary.finishedUtc}));if(summary.status==='failed')process.exitCode=1;
 }
