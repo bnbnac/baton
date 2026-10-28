@@ -200,3 +200,9 @@ R2(`6089e6b`)에서 보강된 M 180.0968초 및 F 17회 사전 검사가 모두 
 제품 Tao patch와 진단 수집기 보완 구성에서 자동화 연결을 분리한 고정 UI 부하 M을 7204.240초 실행했다. 독립 verifier는 `evidenceValid:true`, `scopePassed:true`, `detached_static_load_passed`로 판정했다. OS240표본의 20분 안정 구간5개 중앙값 중 마지막/첫 비율은 private1.000100652(+0.0101%), working set0.903132063(−9.6868%)로 기존 각각1.2 이하 기준을 충족했다. 원시 memory.jsonl의 별도 중앙값 계산도 일치했다. 32연결16세션2서버/120audit·1920효과/120health, 과부하 대조·정상 종료·소유잔류0과 소스·바이너리·환경 동일성을 검증했다. [전체 구간 수치·증거·판정](rust-phase-5-separated-validation.md#2026-10-25-정식-m-2시간-완료--고정-ui-부하-범위-통과).
 
 이는 고정 UI·측정 중 debugger 연결0/강제GC0/JS조회0인 이번 구성의 통과다. 준비에는 Playwright를 사용했고 listener는 남았으며 측정 후 과부하 검사에 재연결했다. 과거 실패와의 통제 비교가 아니므로 누수 부재나 단일 원인으로 일반화하지 않는다. 원래 2시간 실패 기록은 유지한다. 정식 F120회와 독립 N2/2도 통과했지만 공개 경계 완전성·결합 전환 메모리는 미검증이고 Phase5 출시 차단은 해제하지 않는다.
+
+### Attached CDP A/B 사전 시험 통과 — 2026-10-28
+
+명시 승인된 수정본 `cf91fa5`로 A 고정 UI와 B 자동 전환을 각각180.0080306초/180.0010621초 실행했다. 각32연결16세션2서버,3회차·18회 측정 평가·48audit 효과·3health·6OS 표본·정상 종료/EOF32/소유잔류0을 원시 기록과 대조했다. 준비1회 identity 조회는 측정 평가에서 분리했다. A/B 독립 검증과 한 번의 비교 결과는 `preflightPassed:true`, `memoryPassed:null`, `phase5Acceptance:false`다. 소스45개(공통23개 포함), 후보2개, 이미지 및 환경이 같으며 각 OS 표본의 established CDP 연결은1이다. 첫 실행 진입점 실패는 별도로 보존했고 사용자 승인 후 새 시도만 진행했다. [실제 결과·증거·한계](rust-attached-memory-comparison.md#corrected-preflight-pair--2026-10-28).
+
+3분 사전 시험은 2시간 메모리 기준이나120회 반복 검증이 아니다. Full A/B는 아직 시작하지 않았으며 원래2시간 실패·공개 경계 미검증·Phase5 출시 차단은 유지한다.
