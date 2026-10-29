@@ -1,0 +1,16 @@
+[package]
+name = "baton-adapter"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+baton-ipc = { path = "../baton-ipc" }
+rmcp = { version = "=3.4.0", features = ["transport-io"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "io-util", "time", "sync"] }
+serde_json = "1"
+getrandom = "=0.3.4"
+
+[dev-dependencies]
+baton-ipc = { path = "../baton-ipc", features = ["endpoint-diagnostics"] }
+tokio = { version = "1", features = ["process"] }

@@ -1,5 +1,7 @@
 # Baton MVP 설계
 
+> **C# MVP 과거 기록:** 현재 구현은 Rust입니다. 이 문서의 C# 명령·경로·계약은 `csharp-mvp-final` 태그 기준이며 현재 실행 안내로 사용하지 않습니다. [보존·복구 안내](legacy-csharp.md)와 [Rust 개인 사용 안내](rust-personal-use.md)를 참고하세요.
+
 Windows 사용자가 직접 인증한 Linux PTY 셸 하나를 로컬 MCP 어댑터 연결 하나에 영구 배정한다. 에이전트·명령 승인 엔진·감사 시스템은 구현하지 않는다.
 
 ## 기술 비교와 결정

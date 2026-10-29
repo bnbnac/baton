@@ -1,1 +1,0 @@
-{"name":"baton-test-fixtures","private":true,"type":"module","scripts":{"ssh-fixture":"node tests/ssh-fixture.mjs"},"devDependencies":{"ssh2":"1.17.0"}}

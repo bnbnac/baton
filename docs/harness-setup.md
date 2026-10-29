@@ -1,5 +1,7 @@
 # 같은 Windows 컴퓨터의 MCP 연결
 
+> **C# MVP 과거 기록:** 현재 구현은 Rust입니다. 이 문서의 C# 명령·경로·계약은 `csharp-mvp-final` 태그 기준이며 현재 실행 안내로 사용하지 않습니다. [보존·복구 안내](legacy-csharp.md)와 [Rust 개인 사용 안내](rust-personal-use.md)를 참고하세요.
+
 앱을 먼저 실행하고, 하네스가 `Baton.Adapter.exe`를 stdio 서버로 실행하도록 설정한다. 두 하네스는 동일한 어댑터 바이너리를 사용한다. 앱 내부 named pipe 주소나 인증 비밀은 MCP 설정에 넣지 않는다.
 
 아래 `C:\Tools\Baton`은 예시 **설치 폴더**다. 실제 배포 폴더의 절대 경로로 바꿔야 한다. 앱과 어댑터를 같은 Windows 사용자 및 같은 비관리자 권한으로 실행한다. Windows 네이티브 어댑터와 Windows named pipe를 사용하므로 WSL 내부 MCP 설정은 이 MVP 범위 밖이다.

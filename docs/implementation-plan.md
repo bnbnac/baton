@@ -1,5 +1,7 @@
 # Baton 구현 순서
 
+> **C# MVP 과거 기록:** 현재 구현은 Rust입니다. 이 문서의 C# 명령·경로·계약은 `csharp-mvp-final` 태그 기준이며 현재 실행 안내로 사용하지 않습니다. [보존·복구 안내](legacy-csharp.md)와 [Rust 개인 사용 안내](rust-personal-use.md)를 참고하세요.
+
 요청에서 설계 후 구현 진행을 승인했으므로 이 세션에서 순서대로 실행한다.
 
 - [x] 1. SSH 검증: SSH.NET으로 호스트키 확인, 비밀번호/keyboard-interactive, PTY와 raw 입출력을 로컬 시험 서버에서 검증한다. `tests/ssh-fixture.mjs`, `SshTransportTests.cs`, `SshTransport.cs`.

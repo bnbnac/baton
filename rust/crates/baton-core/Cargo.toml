@@ -1,0 +1,17 @@
+[package]
+name = "baton-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# Includes the larger integration-test budget; no production code uses it.
+release-verification = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["test-util", "rt-multi-thread"] }
