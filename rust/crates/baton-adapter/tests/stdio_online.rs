@@ -114,9 +114,7 @@ async fn offline_start_rediscovers_a_new_app_without_restarting_stdio() {
         "offline"
     );
     let fixture = Arc::new(Fixture::new(None));
-    let server = LocalServer::start(&path, WireId::from_u128(89123), fixture)
-        .await
-        .unwrap();
+    let server = start_server(&path, WireId::from_u128(89123), fixture).await;
     let status = tokio::time::timeout(Duration::from_secs(8), async {
         loop {
             let status = data(&process.call(3, "status", json!({})).await);

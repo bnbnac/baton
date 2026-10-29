@@ -22,9 +22,7 @@ async fn damaged_discovery_is_rejected_then_reloaded_after_replacement() {
         .await;
     server.shutdown().await;
     let instance = app_id();
-    let replacement = LocalServer::start(&path, instance, Arc::new(Fixture::new(None)))
-        .await
-        .unwrap();
+    let replacement = start_server(&path, instance, Arc::new(Fixture::new(None))).await;
     assert_eq!(
         data(&process.wait_status("app_state", json!("online")).await)["app_instance_id"],
         serde_json::to_value(instance).unwrap()
@@ -36,7 +34,7 @@ async fn damaged_discovery_is_rejected_then_reloaded_after_replacement() {
 #[tokio::test]
 async fn handshake_attempt_expires_and_reconnects_to_a_replacement_endpoint() {
     let path = folder();
-    let mut lease = endpoint::EndpointLease::publish(&path, app_id()).unwrap();
+    let mut lease = publish_lease(&path, app_id());
     let mut pipe = lease.take_first_pipe().unwrap();
     let accepted = tokio::spawn(async move {
         pipe.connect().await.unwrap();
@@ -59,9 +57,7 @@ async fn handshake_attempt_expires_and_reconnects_to_a_replacement_endpoint() {
     );
     drop(pipe);
     drop(lease);
-    let server = LocalServer::start(&path, app_id(), Arc::new(Fixture::new(None)))
-        .await
-        .unwrap();
+    let server = start_server(&path, app_id(), Arc::new(Fixture::new(None))).await;
     process.wait_status("app_state", json!("online")).await;
     process.eof().await;
     server.shutdown().await;
@@ -79,9 +75,7 @@ async fn three_app_restarts_use_new_identity_and_never_replay_offline_input() {
             "app_offline"
         );
         let fixture = Arc::new(Fixture::new(None));
-        let server = LocalServer::start(&path, instance, fixture.clone())
-            .await
-            .unwrap();
+        let server = start_server(&path, instance, fixture.clone()).await;
         let status = data(&process.wait_status("app_state", json!("online")).await);
         assert_eq!(
             status["app_instance_id"],
@@ -116,9 +110,7 @@ async fn pending_input_becomes_uncertain_and_is_not_sent_to_replacement_app() {
     assert_eq!(data(&result)["code"], "uncertain");
     assert_eq!(old.inputs.lock().unwrap().len(), 1);
     let new = Arc::new(Fixture::new(None));
-    let replacement = LocalServer::start(&path, app_id(), new.clone())
-        .await
-        .unwrap();
+    let replacement = start_server(&path, app_id(), new.clone()).await;
     process.wait_status("app_state", json!("online")).await;
     assert!(new.inputs.lock().unwrap().is_empty());
     assert_eq!(
@@ -146,9 +138,7 @@ async fn authentication_and_version_errors_recover_with_fresh_discovery() {
             serde_json::to_value(code).unwrap()
         );
         server.shutdown().await;
-        let replacement = LocalServer::start(&path, app_id(), Arc::new(Fixture::new(None)))
-            .await
-            .unwrap();
+        let replacement = start_server(&path, app_id(), Arc::new(Fixture::new(None))).await;
         assert_eq!(
             data(&process.wait_status("app_state", json!("online")).await)["sessions"],
             json!([])
@@ -161,7 +151,7 @@ async fn authentication_and_version_errors_recover_with_fresh_discovery() {
 #[tokio::test]
 async fn handshake_stall_does_not_block_initialize_tools_status_or_eof() {
     let path = folder();
-    let mut lease = endpoint::EndpointLease::publish(&path, app_id()).unwrap();
+    let mut lease = publish_lease(&path, app_id());
     let pipe = lease.take_first_pipe().unwrap();
     let accepted = tokio::spawn(async move {
         pipe.connect().await.unwrap();
@@ -213,9 +203,7 @@ async fn prolonged_offline_retains_tools_and_eof_stops_retrying() {
     );
     process.eof().await;
     let fixture = Arc::new(Fixture::new(None));
-    let server = LocalServer::start(&path, app_id(), fixture.clone())
-        .await
-        .unwrap();
+    let server = start_server(&path, app_id(), fixture.clone()).await;
     tokio::time::sleep(Duration::from_millis(1200)).await;
     assert_eq!(fixture.attempts.load(Ordering::SeqCst), 0);
     server.shutdown().await;

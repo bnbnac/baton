@@ -134,6 +134,22 @@ pub async fn setup(reject: Option<ErrorCode>) -> (std::path::PathBuf, LocalServe
     let server = start_server(&path, app, fixture.clone()).await;
     (path, server, fixture)
 }
+pub fn publish_lease(path: &Path, app: WireId) -> endpoint::EndpointLease {
+    endpoint::diagnostics::take_startup_failure();
+    let result = endpoint::EndpointLease::publish(path, app);
+    let diagnostic = endpoint::diagnostics::take_startup_failure();
+    eprintln!(
+        "fixture_publish path={} app={app:?} result={:?} diagnostic={diagnostic:?}",
+        path.display(),
+        result.as_ref().map(|_| ())
+    );
+    result.unwrap_or_else(|error| {
+        panic!(
+            "fixture_publish path={} app={app:?}: {error:?}; {diagnostic:?}",
+            path.display()
+        )
+    })
+}
 pub async fn start_server(path: &Path, app: WireId, fixture: Arc<Fixture>) -> LocalServer {
     endpoint::diagnostics::take_startup_failure();
     // start currently publishes synchronously in its first poll. Consume the
