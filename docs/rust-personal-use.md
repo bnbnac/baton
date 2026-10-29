@@ -2,17 +2,17 @@
 
 2026-10-29. 목적은 개인 사용이다. 정식 Phase 5 인수는 미완료이며 [README의 알려진 문제](../README.md)를 먼저 확인한다.
 
-**소스와 아래 ZIP의 차이:** 이후 수정한 [세션 알림 순서 역전 문제](testing/rust-session-snapshot-ordering.md)는 아래 ZIP에 포함되지 않는다. 이번 소스 수정 작업에서는 ZIP을 재빌드하거나 교체하지 않았다. 기존 ZIP에서 제어권 표시·버튼이 실제 상태와 다를 수 있다는 한계를 유지한다.
+**2026-10-30 안내 갱신:** 아래 새 ZIP은 커밋 `edacf24`에서 앱과 어댑터를 함께 빌드했으며 [세션 알림 순서 역전 수정](testing/rust-session-snapshot-ordering.md)을 포함한다. 기존 이름의 ZIP은 보존하지만 수정이 없으므로 새 파일을 사용한다.
 
 ## 사용할 파일
 
 아래 ZIP·실행 파일과 `artifacts/` 증거는 이 작업 PC에만 보관하며 Git에 커밋하거나 push하지 않는다. GitHub에서 문서를 열면 해당 로컬 파일 링크는 사용할 수 없다. 저장소를 clone한 것만으로 이 패키지를 받는 것은 아니다.
 
-- 로컬 ZIP: [Baton-personal-windows-x64.zip](../artifacts/baton-personal-20261029/Baton-personal-windows-x64.zip).
-- 압축 해제 검증 및 사용 폴더: [baton.exe](../artifacts/baton-personal-20261029/ready/baton.exe), [baton-adapter.exe](../artifacts/baton-personal-20261029/ready/baton-adapter.exe).
+- 로컬 ZIP: [Baton-personal-edacf24-windows-x64.zip](../artifacts/baton-personal-edacf24-20261029/Baton-personal-edacf24-windows-x64.zip).
+- 압축 해제 검증 및 사용 폴더: [baton.exe](../artifacts/baton-personal-edacf24-20261029/ready/baton.exe), [baton-adapter.exe](../artifacts/baton-personal-edacf24-20261029/ready/baton-adapter.exe).
 - 파일 무결성: 같은 폴더의 `manifest.json`. `candidate_unaccepted`는 정식 인수 미완료라는 뜻이며 사용을 금지하는 표시는 아니다.
 
-이번 묶음은 소스를 새로 빌드하지 않고, 10월 28일 attached A/B에서 검증한 두 실행 파일을 복사한다. 앱은 10월 24일 Tao 수정 후보, 어댑터는 10월 13일 하네스 후속 후보다. 패키징 시점의 Git commit은 두 파일을 새로 빌드한 commit이 아니다. 원본 경로·파일 해시와 기존 시험 참조는 패키지 바깥 `assembly-inputs.json`에 기록한다. 기존 10월 11일 ZIP과 구분한다.
+두 실행 파일은 커밋 `edacf24de540dc183999633c41d767e67620133f`의 archive에서 Windows x64 release로 빌드했다. 미커밋 Cargo 변경과 미완성 fuzz는 포함하지 않았다. 기존 의존성·빌드 캐시는 재사용했으므로 깨끗한 Windows 환경 인수와는 다르다. ZIP SHA256은 `aa3bab314fc63975a01b0e4ff30d29ff0d1431b78c61c2d796928413c85632f8`이다. [빌드·패키지 점검 기록](testing/rust-personal-use-check.md)에 출처와 한계를 기록한다. 이전 후보의 2시간 A/B 결과를 새 바이너리의 시험 결과로 취급하지 않는다.
 
 ## 실행
 

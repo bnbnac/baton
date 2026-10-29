@@ -1,6 +1,29 @@
 # Rust 개인 사용 패키지 점검
 
-2026-10-29 KST. 목적은 개인 사용 준비이며 정식 Phase 5 인수를 완료하는 작업이 아니다. 제품을 다시 빌드하지 않았다. 상세 안내와 직접 점검표는 [개인 사용 안내](../rust-personal-use.md)에 있다.
+2026-10-30 KST 갱신. 목적은 개인 사용 준비이며 정식 Phase 5 인수를 완료하는 작업이 아니다. 상세 안내와 직접 점검표는 [개인 사용 안내](../rust-personal-use.md)에 있다.
+
+## 새 패키지: edacf24에서 재빌드
+
+10월 29일 KST에 커밋 `edacf24de540dc183999633c41d767e67620133f`의 archive에서 앱과 어댑터를 함께 Windows x64 release로 빌드했다. 세션 목록 순서 역전 수정이 포함된다. 기존 ZIP은 덮어쓰지 않았다.
+
+- [새 ZIP](../../artifacts/baton-personal-edacf24-20261029/Baton-personal-edacf24-windows-x64.zip), 6,186,048 bytes.
+- ZIP SHA256: `aa3bab314fc63975a01b0e4ff30d29ff0d1431b78c61c2d796928413c85632f8`.
+- 앱 SHA256: `15cbb42a1d370ac72abafc4bff85f9249ef51caa8c3972830b79274b6657b03c`.
+- 어댑터 SHA256: `42b091c4cbd8c48f9fcf726d94342e8a4a674240a779728dcfad0e3e1e6574c6`.
+- 실행 폴더: `artifacts/baton-personal-edacf24-20261029/ready`. 파일은 앱·어댑터·README.txt·manifest.json 네 개다.
+- source manifest SHA256: `6045dacb4b1ce4d4fb987617dca18898e3f20e91fc828a0bde2eaf37581a6a9d`.
+
+빌드 입력과 로그는 저장소 기본 경로의 `artifacts/build-edacf24-20261029/`에 보존한다. `source-before.json`과 `source-after.json`을 대조했으며 미커밋 Cargo 변경·미완성 fuzz는 제외했다. `npm ls --depth=0`, `npm run build`, 앱과 어댑터 각각의 `cargo +stable build --release --target x86_64-pc-windows-msvc --offline --locked`가 exit 0이었다. 앱은 `desktop,tauri/custom-protocol` 기능을 사용했다. 기존 node_modules와 Cargo 캐시/target을 재사용했다.
+
+패키지 증거는 작업 트리의 `artifacts/baton-personal-edacf24-20261029/`에 있다. `package.mjs verify`로 원본 패키지와 ZIP에서 해제한 `ready`의 파일 집합·해시·PE를 확인했다. `adapter-smoke.json`은 initialize, 도구 5개, offline status/입력 거부, EOF 0, 깨끗한 stdio 및 Windows 전용 PATH 점검 통과를 기록한다.
+
+`startup-check.json`의 2회 시작(최초+재실행)은 각각 native window·어댑터 online·정상 종료·WebView 자식 종료·endpoint 제거·어댑터 EOF 0을 확인했다. appInstanceId도 달라졌다. 격리 프로필에서 수행했으며 강제 정리, CDP, Playwright, 실제 SSH 및 하네스 설정 접근은 없었다. 이는 창의 시각적 정확성이나 물리 IME 통과를 뜻하지 않는다.
+
+**직접 한글 입력·배율·시험용 SSH·실제 하네스 전달/회수는 pending이다.** 기존 A/B의 장시간 결과를 새 바이너리의 검증으로 확대하지 않는다. `candidate_unaccepted`, `phase5Acceptance=false`, 과거 초기화·메모리 원인 미확정 및 잔여 검증은 유지한다. ZIP·실행 파일·원시 증거는 로컬에만 보관하고 push하지 않는다.
+
+## 이전 패키지 기록 (보존)
+
+아래는 재빌드 전 서로 다른 시점의 후보를 조립한 10월 29일 패키지 기록이다. 새 ZIP과 구분한다.
 
 ## 패키지와 출처
 
