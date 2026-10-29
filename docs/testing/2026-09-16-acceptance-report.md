@@ -88,7 +88,7 @@ P1은 이 보고서의 개선 우선순위이며, 침해 발생이나 모든 사
 | MCP 단절 | PipeBroker에서 해당 owner를 DisconnectAdapter하고 소유 셸 Close |
 | 프로세스 강제 종료 | 관리형 종료 콜백 실행은 기대할 수 없음. OS가 종료된 프로세스의 열린 핸들을 정리 |
 
-참조 코드: [MainWindow](../../src/Baton.App/MainWindow.xaml.cs), [App](../../src/Baton.App/App.xaml.cs), [SessionRegistry](../../src/Baton.Core/SessionRegistry.cs), [ShellSession](../../src/Baton.Core/ShellSession.cs), [SshTransport](../../src/Baton.Core/SshTransport.cs), [PipeBroker](../../src/Baton.Core/PipeBroker.cs).
+참조 코드: [MainWindow](https://github.com/bnbnac/baton/blob/csharp-mvp-final/src/Baton.App/MainWindow.xaml.cs), [App](https://github.com/bnbnac/baton/blob/csharp-mvp-final/src/Baton.App/App.xaml.cs), [SessionRegistry](https://github.com/bnbnac/baton/blob/csharp-mvp-final/src/Baton.Core/SessionRegistry.cs), [ShellSession](https://github.com/bnbnac/baton/blob/csharp-mvp-final/src/Baton.Core/ShellSession.cs), [SshTransport](https://github.com/bnbnac/baton/blob/csharp-mvp-final/src/Baton.Core/SshTransport.cs), [PipeBroker](https://github.com/bnbnac/baton/blob/csharp-mvp-final/src/Baton.Core/PipeBroker.cs).
 
 주의할 점은 SSH 자원 정리가 비동기이며 App.OnExit가 그 Task의 완료나 원격 프로세스 종료 확인을 기다리지 않는다는 것이다. 연결 종료를 요청하고 로컬 자원을 폐기하는 구현이지 원격 PID가 모두 사라졌다는 확인 응답을 받는 구현이 아니다. Windows는 프로세스 종료 때 핸들을 닫지만 자식 프로세스를 자동 종료하는 것은 아니다. Baton은 로컬 SSH 자식 프로세스를 만들지 않아 이 경로는 네트워크 소켓 정리에 해당한다. [Windows 프로세스 종료 문서](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process)
 
@@ -119,7 +119,7 @@ P1은 이 보고서의 개선 우선순위이며, 침해 발생이나 모든 사
 
 두 조건의 검증을 통과했고 스크립트 종료 코드는 0이었다. 시간에는 여러 Docker exec 조회 비용이 포함되므로 정확한 프로세스 종료 시각이나 1초 이내 보장으로 해석하면 안 된다. 분리 작업은 컨테이너 정리 시 제거했다. 시험 컨테이너·이미지 태그·호스트 프로세스가 남지 않은 것도 별도로 확인했다.
 
-재현 코드: [시험 호스트](../../tests/Baton.LifecycleProbe/Program.cs), [실행 스크립트](../../scripts/test-server-lifecycle.ps1). 로컬 실측 자료: [server-lifecycle.json](../../artifacts/verification/server-lifecycle.json). JSON은 git 제외 artifacts에 있으며 표의 결과는 이 문서에도 보존한다.
+재현 코드: [시험 호스트](https://github.com/bnbnac/baton/blob/csharp-mvp-final/tests/Baton.LifecycleProbe/Program.cs), [실행 스크립트](https://github.com/bnbnac/baton/blob/csharp-mvp-final/scripts/test-server-lifecycle.ps1). 당시 로컬 실측 자료 경로: `artifacts/verification/server-lifecycle.json` (Git 제외, 현재 checkout에 포함되지 않음). 표의 결과는 이 문서에 보존한다.
 
 ### 결과 해석과 한계
 
