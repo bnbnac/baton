@@ -41,7 +41,7 @@ smoke와 본 시험 사이에는 실행기 관련 소스 18개, 앱/어댑터 �
 PowerShell에서 사용할 명령이다. `pwsh`가 PATH에 없어도 아래 명령은 기존 Windows PowerShell에서 실행할 수 있다. 실행기는 설정된 PS7 절대 경로를 사용한다.
 
 ```powershell
-Set-Location 'C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0'
+Set-Location '<저장소 루트>'
 $nodeExe = 'C:\Program Files\nodejs\node.exe'
 $evidenceRoot = 'artifacts/phase5-native-soak-preparation-20261016'
 $run = "$evidenceRoot/smoke2"

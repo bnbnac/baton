@@ -27,7 +27,7 @@
 | `npm test` | **21 pass / 0 fail**, exit 0 |
 | `npm run build` | TypeScript 검사와 Vite 빌드 exit 0 |
 
-최종 검증은 기준 커밋을 archive한 사본에 수정 소스·시험 8개만 덮은 별도 폴더에서 수행했다. 미커밋 Cargo 변경·미완성 fuzz는 포함하지 않았고, 기존 Cargo 캐시/target과 node_modules를 재사용했다. 원시 증거와 overlay SHA256은 로컬 `C:/Users/sj/Documents/work/code/baton/artifacts/session-order-20261029/`의 `source-inputs-final.json`, `backend-red.log`, `frontend-red.log`, `workspace-tests.log`, `desktop-clippy.log`, `frontend-tests-final.log`, `frontend-build.log`에 있다. 이 원시 증거는 push하지 않는다.
+최종 검증은 기준 커밋을 archive한 사본에 수정 소스·시험 8개만 덮은 별도 폴더에서 수행했다. 미커밋 Cargo 변경·미완성 fuzz는 포함하지 않았고, 기존 Cargo 캐시/target과 node_modules를 재사용했다. 원시 증거와 overlay SHA256은 로컬 `<저장소 루트>/artifacts/session-order-20261029/`의 `source-inputs-final.json`, `backend-red.log`, `frontend-red.log`, `workspace-tests.log`, `desktop-clippy.log`, `frontend-tests-final.log`, `frontend-build.log`에 있다. 이 원시 증거는 push하지 않는다.
 
 별도 읽기 전용 리뷰는 수정 파일과 직접 호출부를 확인했다. 초기 응답도 같은 번호 체계에 들어가고, 전송 전 잠금이 풀리며, acceptance 구독 호출부도 새 반환형과 호환됨을 확인했다. 새 P1/P2나 데드록 지적은 없었다. 이를 저장소 전체 재감사로 확대하지 않는다.
 

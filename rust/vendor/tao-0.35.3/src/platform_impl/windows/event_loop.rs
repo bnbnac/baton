@@ -1,6 +1,8 @@
 // Copyright 2014-2021 The winit contributors
 // Copyright 2021-2023 Tauri Programme within The Commons Conservancy
 // SPDX-License-Identifier: Apache-2.0
+// Modified by Baton contributors: Alt+Space WM_SYSCHAR replay (see alt_space.rs
+// and rust/vendor/README.md).
 
 #![allow(non_snake_case)]
 

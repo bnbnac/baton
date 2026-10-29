@@ -17,8 +17,8 @@ const out=resolve(process.argv[2]??''),condition=process.argv[3],mode=process.ar
 if(!process.argv[2]||!['baseline','transitions'].includes(condition)||!['smoke','diagnostic'].includes(mode))throw Error('usage: memory-comparison.mjs fresh-directory baseline|transitions smoke|diagnostic');
 const seconds=mode==='smoke'?60:3600;
 await mkdir(out);
-const {chromium}=await import('file:///C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const pwsh='C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe';
+const {chromium}=await import(`file:///${process.env.USERPROFILE.replaceAll('\\','/')}/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs`);
+const pwsh=`${process.env.USERPROFILE.replaceAll('\\','/')}/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe`;
 const appExe=join(root,'artifacts/rust-phase-5/20261010T213817-6aeef27f4382426d968c8f836bd2de91/압축 해제 검증/baton.exe');
 const adapterExe=join(root,'artifacts/phase5-harness-fixes-probe3-20261013/candidate/baton-adapter.exe');
 const execute=promisify(execFile),pause=ms=>new Promise(r=>setTimeout(r,ms));
@@ -111,7 +111,7 @@ try{
  await wait(async()=>{try{return (await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(2000)})).ok;}catch{return false;}},'webview_ready');browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
  page=await wait(async()=>browser.contexts().flatMap(c=>c.pages()).find(p=>p.url()==='http://tauri.localhost/'),'product_page');page.setDefaultTimeout(15000);
  summary.connections=[];for(let i=0;i<32;i++)summary.connections.push(await wait(async()=>{const s=await status(i);return s.app_state==='online'?s.connection_id:false;},'adapter_online_'+i));
- summary.environment={platform:process.platform,arch:process.arch,osRelease:osRelease(),node:process.version,webview:browser.version(),playwright:JSON.parse(await readFile('C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json','utf8')).version};
+ summary.environment={platform:process.platform,arch:process.arch,osRelease:osRelease(),node:process.version,webview:browser.version(),playwright:JSON.parse(await readFile(`${process.env.USERPROFILE.replaceAll('\\','/')}/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json`,'utf8')).version};
  for(let i=0;i<16;i++){await createSession(i);for(const s of sessions)s.lastLog=Date.now();await pump();await save();}
  await wait(async()=>{await pump();return sessions.every(s=>s.oracle.count>0);},'all_streams');
  const r0=await receipt();await writeFile(join(out,'initial-memory-input.json'),JSON.stringify(r0));

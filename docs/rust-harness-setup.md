@@ -7,7 +7,7 @@
 현재 작업 폴더에서 PowerShell로 실행한다.
 
 ```powershell
-Set-Location 'C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0'
+Set-Location '<저장소 루트>'
 Start-Process -FilePath (Join-Path $PWD 'rust\target\debug\baton.exe')
 ```
 
@@ -21,7 +21,7 @@ Start-Process -FilePath (Join-Path $PWD 'rust\target\debug\baton.exe')
 {
   "mcpServers": {
     "baton-rust": {
-      "command": "C:\\Users\\sj\\Documents\\work\\code\\baton\\.worktrees\\rust-phase-0\\rust\\target\\debug\\baton-adapter.exe",
+      "command": "<저장소 루트>\\rust\\target\\debug\\baton-adapter.exe",
       "args": []
     }
   }
@@ -57,14 +57,14 @@ Phase 4의 명령·관측·제한은 [수명 검증 보고서](testing/rust-phas
 이미 검증된 실행 파일이 있으면 매번 빌드할 필요가 없다. 소스를 변경한 뒤 전체 Phase 3 검증이 필요할 때만 실행한다. Rust stable 1.88.0, Node 22.17.0, 설치된 프런트엔드 의존성과 Windows 빌드 도구/WebView2를 사용한 기록은 [인수 보고서](testing/rust-phase-3-report.md)에 있다. runner는 Cargo offline 모드이므로 의존성이 먼저 준비되어 있어야 한다.
 
 ```powershell
-Set-Location 'C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0'
+Set-Location '<저장소 루트>'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\rust\scripts\verify-phase-3.ps1
 ```
 
 이 스크립트는 Windows PowerShell 5에서 실행해도 설치된 PowerShell 7을 찾아 다시 실행한다. `pwsh`가 PATH에 없어도 `C:\Program Files\PowerShell\7\pwsh.exe`와 현재 Codex 번들 경로를 확인한다. 찾지 못하면 절대 경로 안내와 함께 중단한다. 이 PC에서 직접 지정하려면:
 
 ```powershell
-& 'C:\Users\sj\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe' -NoProfile -File .\rust\scripts\verify-phase-3.ps1
+& "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe" -NoProfile -File .\rust\scripts\verify-phase-3.ps1
 ```
 
 완료 시 `PHASE_3_RECEIPT` 뒤의 `summary.json`을 확인한다. `automated_passed_manual_pending`은 자동 시험 통과이며 실제 모델 시험까지 완료했다는 뜻은 아니다. 로그, 실행 파일/PDB, 프런트엔드, lock과 소스·환경 지문은 실행별 `artifacts/rust-phase-3/` 폴더에 보존한다. 시험은 로컬 SSH fixture를 사용한다.

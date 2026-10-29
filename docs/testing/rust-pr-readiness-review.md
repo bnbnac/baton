@@ -14,7 +14,7 @@
 
 ## 이번 검증
 
-로컬 증거 위치: `C:/Users/sj/Documents/work/code/baton/artifacts/pr-review-20261029/`. 저장소 clone으로 원시 증거를 받는 것은 아니다.
+로컬 증거 위치: `<저장소 루트>/artifacts/pr-review-20261029/`. 저장소 clone으로 원시 증거를 받는 것은 아니다.
 
 | 검증 | 결과와 한계 |
 |---|---|

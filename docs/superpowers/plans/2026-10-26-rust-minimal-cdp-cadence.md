@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 기존 작업 트리 `C:/Users/sj/Documents/work/code/baton/.worktrees/rust-phase-0`에서 현재 세션의 직접 구현 방식을 유지한다.
+- 기존 작업 트리 `<저장소 루트>`에서 현재 세션의 직접 구현 방식을 유지한다.
 - 32연결/16세션/2서버, 최대3회, 세션0→1→0, 현재 adapter+16 modulo32로 전달한다.
 - 회차별 모든 검증/audit16/health32 포함60000ms, 다음 시작은 이전 시작+60000ms 이후, 준비 포함900000ms. 초과 시 후속 회차0, 재시도/몰아 실행/유예0. 정상 종료는 별도 timeout을 사용한다.
 - geometry 안정750ms, DOM terminal 너비720/1000px 변경 및 MCP/서버 stty 일치. OS 창 최대화·실제 입력 검증으로 주장하지 않는다.

@@ -30,7 +30,7 @@ F는 분당 실행 속도나 2시간 지속성을 입증하지 않는다. N은 �
 
 ## 고정 입력과 실행
 
-PowerShell에서 작업 디렉터리를 `C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0`로 설정한다. Node 실행은 `C:\Program Files\nodejs\node.exe`를 사용한다. `pwsh`가 PATH에 있다고 가정하지 않는다.
+PowerShell에서 작업 디렉터리를 `<저장소 루트>`로 설정한다. Node 실행은 `C:\Program Files\nodejs\node.exe`를 사용한다. `pwsh`가 PATH에 있다고 가정하지 않는다.
 
 새 실행기: `rust/tests/phase5/separated/launch.mjs <fresh-directory> <config.json> M|F|N preflight|full`. 같은 출력 경로·log·launch 파일이 있으면 거부한다. 실패 디렉터리는 보존하며 이름을 바꾸어 자동 재실행하지 않는다.
 
@@ -47,8 +47,8 @@ PowerShell에서 작업 디렉터리를 `C:\Users\sj\Documents\work\code\baton\.
     "sha256": "09823dd5d51cd3b33f286540fe43a03570b3eee81497607a1b5b67336fcb754c"
   },
   "imageId": "sha256:7270e924b7597cbece5eb6886a47c3383502f31d8a253763774f3b8c6b4f810a",
-  "pwsh": "C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe",
-  "playwrightPath": "C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs",
+  "pwsh": "%USERPROFILE%\.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe",
+  "playwrightPath": "%USERPROFILE%\.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs",
   "preflightEvidence": {
     "M": "artifacts/phase5-separated-20261019-r2/m-preflight",
     "F": "artifacts/phase5-separated-20261019-r2/f-preflight"

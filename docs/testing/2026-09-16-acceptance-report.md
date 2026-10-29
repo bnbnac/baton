@@ -27,7 +27,7 @@ Baton 종료 후의 `Server disconnected`는 **MCP 연결 종료의 증거**이�
 ## 3. 테스트 환경과 식별자
 
 - 하네스: 사용자의 Claude Desktop. 정확한 Desktop 버전은 기록에 없음.
-- 원격: `uname -s` 결과 `Linux`, 사용자 `bnbnac`, 작업 디렉터리 `/home/bnbnac`.
+- 원격: `uname -s` 결과 `Linux`, 사용자 `<원격 사용자>`, 작업 디렉터리 `/home/<원격 사용자>`.
 - 프롬프트의 호스트 표시: `focal-minimal`. 이름만으로 OS 배포판/버전을 확정하지 않음.
 - PTY: 120×32.
 - Claude가 조회한 연결 C1: `8868043274bf4acdb128e67a6ca4556e`.
@@ -42,7 +42,7 @@ Baton 종료 후의 `Server disconnected`는 **MCP 연결 종료의 증거**이�
 | ID | 목적·수행 | 관찰된 결과 | 판정 |
 |---|---|---|---|
 | M01 | 명령 없이 초기 status 조회 | C1, `unassigned`, `session_id=null`, 120×32 | 통과: Desktop MCP 연결과 미배정 상태 확인 |
-| M02 | 셸 전달 후 `whoami; pwd; uname -s` 실행 | S1에서 `bnbnac`, `/home/bnbnac`, `Linux` 출력 | 통과: 실제 원격 명령·입출력 확인 |
+| M02 | 셸 전달 후 `whoami; pwd; uname -s` 실행 | S1에서 `<원격 사용자>`, `/home/<원격 사용자>`, `Linux` 출력 | 통과: 실제 원격 명령·입출력 확인 |
 | M03 | 전달 후 사용자 입력 차단 | 사용자가 UI의 전달 완료 표시와 실제 입력 차단을 확인 | 사용자 확인: 모든 IME/접근성/마우스 조합의 검증은 아님 |
 | M04 | `sleep 30` 후 read 1초 대기 | 출력 `sleep 30`, Ctrl+C 미전송 보고 | 부분 확인: 조회 반환과 인터럽트 분리. 이 기록만으로 프로세스의 정확한 잔여 실행 시간을 증명하지 못함 |
 | M05 | Ctrl+C 후 다음 명령 실행 | `^C`, 이어서 `AFTER_INTERRUPT` 출력 | ETX 전송·후속 실행 확인. 30초가 지나기 전에 sleep이 실제 중단됐는지는 타임스탬프/PID가 없어 미확정 |
