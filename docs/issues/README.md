@@ -1,5 +1,7 @@
 # Baton 이슈 목록
 
+> **과거 이슈 스냅샷:** 아래 상태는 C# MVP 시점 기록이며 현재 Rust 구현의 진행 상태가 아닙니다. [현재 사용 안내](../rust-personal-use.md)를 참고하세요.
+
 작성일: 2026-09-16. 대상 저장소: [bnbnac/baton](https://github.com/bnbnac/baton).
 
 상태: GitHub 이슈 #1–#9 등록 완료. [GitHub 이슈 목록](https://github.com/bnbnac/baton/issues)과 [개별 URL 매핑](github-issues.json)을 참고한다. 이슈 등록과 구현 착수는 별개이며 제품 변경은 시작하지 않는다.

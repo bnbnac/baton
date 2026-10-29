@@ -1,5 +1,7 @@
 # Baton
 
+사용자가 Windows 앱에서 직접 연결·인증한 SSH 셸을 Claude Desktop 등의 MCP 하네스에 전달하고 다시 회수하는 Rust/Tauri 데스크톱 앱입니다. 앱이 SSH 연결을 소유하고, MCP stdio 어댑터가 배정된 세션을 조작합니다.
+
 ## ⚠️ Rust 개인 사용판 — 알려진 문제와 미검증 범위
 
 **현재 Rust 버전은 개인 사용을 위한 시험판입니다. 정식 출시 인수 완료나 모든 환경의 안정성을 보장하지 않습니다.** 개인 사용을 시작하기 위해 정식 출시 검증 전체를 기다릴 필요는 없지만, 아래 한계는 남아 있습니다.
@@ -13,77 +15,46 @@
 | **명령 승인·복구 한계** | Baton은 명령 승인 엔진이 아닙니다. 에이전트에게 전달한 셸에서 모델 지침만으로 위험한 명령이나 sudo를 강제 차단하지 않습니다. 회수는 이미 실행된 명령을 되돌리지 않으며, 종료가 모든 원격 백그라운드 작업의 종료를 보장하지 않습니다. |
 | **잔여 검증** | 입력면 4종의 30분 퍼징은 미실행이고 재접속 ID 재사용 변이 시험 증거는 아직 확인되지 않았습니다. |
 
-**Rust 실행은 [개인 사용 안내](docs/rust-personal-use.md)를 따르세요.** 최신 검증 앱·어댑터를 묶은 로컬 패키지와 짧은 점검 절차를 안내합니다. 아래의 `artifacts/Baton`, .NET 빌드 및 되돌릴 수 없는 전달 설명은 **기존 C# MVP**에 대한 것으로 Rust 버전과 혼용하면 안 됩니다.
-
-근거: [초기화 조사](docs/testing/rust-startup-followup-report.md) · [메모리 원래 실패](docs/testing/rust-phase-5-soak-report.md) · [후속 A/B 통과](docs/testing/rust-attached-memory-comparison.md) · [개인 사용 우선순위와 잔여 검증](docs/testing/rust-phase-5-acceptance-gap-audit.md).
-
-## 기존 C# MVP 안내
-
-Windows 사용자가 직접 연결·인증한 Linux SSH 셸을 Claude Desktop 또는 Codex에 MCP 도구로 전달하는 데스크톱 MVP입니다.
-
-앱이 SSH 세션을 소유합니다. 각 stdio MCP 어댑터는 사용자에게 배정받은 셸 하나만 조작합니다. 자체 AI/채팅/명령 승인 UI/영구 입출력 로그는 없습니다.
-
 ## 실행
 
-배포 폴더 `artifacts/Baton` 전체를 보관하고 `app/Baton.exe`를 실행합니다. self-contained 배포에는 .NET 런타임이 포함됩니다. Windows x64, 일반 사용자 권한으로 실행하세요. PowerShell·Git Bash·별도 SSH 실행 파일·Node.js는 앱 실행에 필요하지 않습니다.
+[개인 사용 안내](docs/rust-personal-use.md)의 새 로컬 ZIP을 사용합니다. ZIP·실행 파일은 저장소에 포함하지 않습니다. Windows x64, WebView2 Runtime, Microsoft Visual C++ x64 Runtime이 필요하며 실행에 Rust·Node·.NET SDK는 필요하지 않습니다.
 
-1. 앱을 먼저 실행합니다.
-2. [하네스 설정 안내](docs/harness-setup.md)에 따라 같은 Windows 사용자로 Claude Desktop/Codex의 Baton MCP를 시작합니다.
-3. **새 SSH 세션**에서 host/port/user와 인증 방법을 선택합니다.
-4. 비밀번호/개인키 암호/MFA를 직접 입력하고, 신뢰할 수 있는 경로로 받은 SHA256 서버 지문과 대조하여 호스트키를 확인합니다. 호스트키 승인은 해당 접속에만 적용됩니다.
-5. 입력란과 **전송 + Enter**, 제어 키로 일반 사용자 셸을 준비합니다. 필요하다면 전달 전에 사용자 본인이 `sudo -v` 등 인증 준비를 할 수 있습니다. 숨김 입력은 이 사용자 소유 단계에서만 사용할 수 있습니다.
-6. 대상 MCP 연결의 이름과 연결 ID를 확인하고 **에이전트에 전달**을 누릅니다. 이 동작은 되돌릴 수 없습니다. 화면이 초기화되고 공개 출력 커서가 0에서 시작합니다.
-7. 이후에는 출력을 관찰하거나 **SSH 연결 종료**만 합니다. 직접 작업하려면 별도 SSH 세션을 만드세요.
+1. ZIP 전체를 새 폴더에 풀고 `baton.exe`를 일반 사용자 권한으로 실행합니다.
+2. Claude Desktop 등 MCP 하네스의 stdio 명령을 같은 폴더의 `baton-adapter.exe` 절대 경로로 지정합니다. 인자는 없으며 앱과 같은 Windows 사용자로 실행합니다. [MCP 연결·회수 안내](docs/rust-harness-setup.md)를 참고하세요.
+3. 앱에서 SSH 연결·인증을 진행하고 서버 지문을 신뢰할 수 있는 경로로 대조합니다. 인증정보는 하네스에 전달하지 않습니다.
+4. 하네스에서 `status`를 조회해 연결 ID를 확인한 뒤 앱에서 해당 연결을 선택하고 **에이전트에 전달**합니다.
+5. **내가 제어하기**로 회수하면 직접 입력할 수 있습니다. 회수 시 미수신 공개 출력 꼬리는 폐기될 수 있고 이미 실행된 명령은 취소되지 않습니다.
+6. 사용 후 SSH 연결과 앱 창을 정상 종료합니다. 이전 세션·명령은 자동 복원·재전송되지 않습니다.
 
-MCP 연결이 끝나면 소유 SSH 세션도 끝납니다. 앱 재실행이나 네트워크 단절 시 자동 재접속하지 않습니다. 새로운 접속에는 새로운 세션 ID를 사용합니다. 종료가 원격 작업의 rollback이나 모든 백그라운드 프로세스 종료를 보장하지는 않습니다.
+하나의 MCP 연결을 여러 대화가 공유하면 Baton은 대화별로 구분하지 못합니다. 독립된 권한 경계가 필요하면 별도 연결을 사용합니다. 10월 30일 사용자 PC·Claude Desktop에서 확인한 [기본 실사용 결과와 한계](docs/testing/rust-personal-use-check.md)를 참고하세요.
 
 ## 개발·빌드
 
-- .NET 10 SDK, Windows x64.
-- Node.js 22+와 npm은 로컬 SSH 시험 서버를 실행하는 **테스트에만** 필요합니다.
-- 프로젝트 의존성은 NuGet.Config와 각 `packages.lock.json`, `package-lock.json`에 기록합니다.
+현재 제품과 시험 코드는 `rust/`에 있습니다. Windows용 빌드에는 Rust stable, Visual Studio C++ 빌드 도구, Node.js/npm과 WebView2가 필요합니다. 저장소 루트에서 PowerShell로 실행합니다.
 
-명령 프롬프트 또는 IDE 터미널에서:
-
-```bat
-build.cmd
-build.cmd test
-build.cmd publish
+```powershell
+npm ci --prefix rust/app
+npm run build --prefix rust/app
+cargo +stable build --locked --release --target x86_64-pc-windows-msvc --manifest-path rust/Cargo.toml -p baton-app --features desktop,tauri/custom-protocol --bin baton
+cargo +stable build --locked --release --target x86_64-pc-windows-msvc --manifest-path rust/Cargo.toml -p baton-adapter --bin baton-adapter
 ```
 
-`build.cmd`는 프로젝트 내부 `.buildhome`/`.packages`에 개발 도구 캐시를 만듭니다. `test`는 합성 SSH fixture를 사용하며 실제 Linux 셸을 실행하지 않습니다. `publish` 결과:
+결과는 `rust/target/x86_64-pc-windows-msvc/release/`의 `baton.exe`, `baton-adapter.exe`입니다(별도 `CARGO_TARGET_DIR`을 지정하면 해당 경로를 사용합니다). 빌드가 성공해도 실사용·출시 인수 전체가 완료되는 것은 아닙니다. [시험 패키지 생성 절차](docs/rust-windows-candidate.md)는 기존 기록의 적용 범위를 확인하고 사용하세요.
 
-```text
-artifacts/Baton/app/Baton.exe
-artifacts/Baton/adapter/Baton.Adapter.exe
+기본 회귀 검사:
+
+```powershell
+npm test --prefix rust/app
+cargo +stable test --locked --manifest-path rust/Cargo.toml -p baton-core -p baton-ssh -p baton-ipc -p baton-adapter -p baton-app --all-targets
 ```
 
-Docker Linux 엔진이 있다면 PowerShell의 `./scripts/test-linux-ssh.ps1`로 실제 OpenSSH/bash PTY 통합 시험을 별도로 실행할 수 있습니다. 배포본 수명 검증은 `node scripts/test-app-lifecycle.mjs`입니다. 실제 수행 결과와 하네스 검증 범위는 [검증 문서](docs/verification.md)에 기록했습니다.
+별도 Node 기반 통합 시험은 `rust/tests/package.json`의 의존성을 사용합니다(`npm ci --prefix rust/tests`). 공통 OpenSSH 시험 이미지는 `tests/linux-ssh/Dockerfile`에 남아 있으며 Docker 시험 환경용입니다. 실제 SSH·장시간 시험의 실행 조건은 각 보고서와 계획을 따릅니다.
 
-설치 프로그램, 코드 서명, 자동 업데이트는 제공하지 않습니다. 폴더 배포이며 exe 옆 DLL들을 함께 배포해야 합니다. 사용자의 하네스 설정 파일은 자동 수정하지 않습니다.
+## 구조와 기록
 
-## 제공 도구
-
-| 도구 | 계약 |
-|---|---|
-| `status` | 현재 어댑터 연결에 배정된 세션 ID와 상태. 미배정이면 앱에서 전달해야 함 |
-| `read_output` | 전달 이후 UTF-8 출력의 비소비적 커서 조회. 문자열은 원격 ANSI 제어 문자를 포함할 수 있음 |
-| `send_text` | 정확한 텍스트를 전송. Enter를 추가하거나 명령을 재작성하지 않음 |
-| `send_key` | Enter, Ctrl+C 등의 제어 키를 전송 |
-
-커서는 공개 문자열의 절대 UTF-16 코드 단위 위치입니다. 출력 1 Mi 단위, 조회 최대 32 Ki 단위, 대기 최대 10초. `cursor_expired`일 때 `oldest_cursor`에서 재개합니다. `next_cursor`, `end_cursor`, `has_more`를 확인하세요. read timeout은 원격 작업 완료가 아닙니다.
-
-텍스트 입력 최대 UTF-8 16 KiB, 세션별 입력 큐 32건. 매 실행마다 고유 `request_id`를 사용합니다. 같은 ID와 내용은 기존 결과만 반환하며 재전송하지 않습니다. 같은 ID로 다른 내용은 거부합니다. 중복 이력은 세션당 4096개까지 유지하며 소진 시 새 세션이 필요합니다. `delivered`는 채널에 전달했다는 의미이고 원격 명령 성공이 아닙니다. `uncertain`이면 자동 재시도하지 마세요.
-
-## 범위와 문서
-
-- [설계와 기술 비교](docs/design.md)
-- [Claude Desktop / Codex 연결](docs/harness-setup.md)
-- [에이전트 및 sudo 사용 지침](docs/agent-guide.md)
-- [검증 결과와 알려진 한계](docs/verification.md)
-- [1차 수동 테스트 및 서버 종료 검토](docs/testing/2026-09-16-acceptance-report.md)
-- [구현 순서](docs/implementation-plan.md)
-
-OpenSSH config, ssh-agent, ProxyJump, 하드웨어 보안키, SFTP는 미지원입니다. UI는 VT를 해석한 단색 텍스트 화면입니다. 일반 명령/로그 관찰을 목표로 하며 vim/top 등 전체 화면 앱의 안정적 조작을 보장하지 않습니다.
-
-작업 입출력은 앱 파일/로그에 저장하지 않습니다. `%LOCALAPPDATA%/Baton`에는 사용자 전용 ACL과 DPAPI로 보호한 로컬 IPC 발견 정보 및 앱 잠금 파일만 만듭니다. 하네스가 MCP 결과를 대화 기록으로 보관하는 것은 Baton 통제 밖입니다. 같은 Windows 사용자 권한의 다른 프로그램이나 OS pagefile/crash dump까지 격리하는 제품은 아닙니다.
+- `rust/app/`: Tauri 데스크톱 UI와 프런트엔드
+- `rust/crates/`: 세션 코어, SSH, 로컬 IPC, MCP 어댑터
+- `rust/tests/`, `rust/scripts/`: 통합 시험과 검증 도구
+- [개인 사용 안내](docs/rust-personal-use.md) · [잔여 검증](docs/testing/rust-phase-5-acceptance-gap-audit.md)
+- [초기화 조사](docs/testing/rust-startup-followup-report.md) · [메모리 조사](docs/testing/rust-phase-5-memory-investigation.md)
+- [C# MVP 보존·복구 안내](docs/legacy-csharp.md): C# 전용 구현은 현재 트리에서 제거했으며 `csharp-mvp-final` 태그로 보존합니다. 과거 C# 문서는 역사적 기록이며 현재 Rust의 실행 계약이 아닙니다.

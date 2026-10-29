@@ -1,6 +1,6 @@
 # Rust Baton 실행과 MCP 연결
 
-2026-10-09 Phase 4 기준 Windows 개발 빌드용 안내다. Rust 앱과 Rust 어댑터를 함께 사용한다. 기존 C# 실행 파일·endpoint·하네스 설정은 이 작업으로 바뀌지 않았다.
+2026-10-09 Phase 4 기준 Windows 개발 빌드용 절차다. 현재 개인 사용 실행 파일은 [개인 사용 안내](rust-personal-use.md)의 경로를 사용한다. Rust 앱과 Rust 어댑터를 함께 사용하며 아래 debug 경로는 개발 빌드 예시다. C# 구현은 [보존 태그](legacy-csharp.md)에서만 관리한다.
 
 ## 1. 앱 실행
 

@@ -1,5 +1,7 @@
 # Baton 1차 수동 테스트 결과 및 서버 종료 검토
 
+> **C# MVP 과거 기록:** 현재 구현은 Rust입니다. 이 문서의 C# 명령·경로·계약은 `csharp-mvp-final` 태그 기준이며 현재 실행 안내로 사용하지 않습니다. [보존·복구 안내](../legacy-csharp.md)와 [Rust 개인 사용 안내](../rust-personal-use.md)를 참고하세요.
+
 정리일: 2026-09-16. 대상: 현재 Windows MVP와 Claude Desktop. **제품 코드와 배포 실행 파일은 변경하지 않았다.** 대화별 격리 구현과 Claude Desktop/Claude Code CLI 동시 실행 검증은 사용자 지시에 따라 보류한다.
 
 ## 1. 결론

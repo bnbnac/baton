@@ -1,4 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>WinExe</OutputType><UseWPF>true</UseWPF><AssemblyName>Baton</AssemblyName></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../Baton.Core/Baton.Core.csproj" /></ItemGroup>
-</Project>
