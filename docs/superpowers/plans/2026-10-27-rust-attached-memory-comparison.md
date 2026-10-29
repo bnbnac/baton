@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Worktree `C:/Users/sj/Documents/work/code/baton/.worktrees/rust-phase-0`; implementation base `7758902` plus this planning commit. Direct implementation in this session is preserved; local commits only.
+- Worktree `<저장소 루트>`; implementation base `7758902` plus this planning commit. Direct implementation in this session is preserved; local commits only.
 - A then B, fresh processes/profiles/containers; 32 MCP connections, 16 SSH sessions, two fixture servers per arm. No simultaneous arms or automatic retries.
 - Full: preparation 900 seconds, measurement 7200 seconds, 120 slots of 60000ms. One round per slot, completion within its slot; no catch-up. Freeze overshoot <=15 seconds, never used to extend a round deadline.
 - B session `k % 16`; paired owner `(currentAdapter+16)%32`; stable geometry >=750ms; width 720px when columns>=90, otherwise 1000px. Both start with session0 and workspace width1000px.

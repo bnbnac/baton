@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from '../../app/node_modules/vite/dist/node/index.js';
-const {chromium}=await import(pathToFileURL(process.env.BATON_PLAYWRIGHT_PATH??'C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs').href);
+const {chromium}=await import(pathToFileURL(process.env.BATON_PLAYWRIGHT_PATH??`${process.env.USERPROFILE.replaceAll('\\','/')}/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs`).href);
 const session={id:'session-a',label:'A',host:'localhost',port:22,username:'fixture',state:'user_owned',epoch:2,error:null,has_terminal:true,assigned_connection:null,intervention:null};
 test('UI controls remain usable across snapshots without hiding ownership changes',async t=>{
   const server=await createServer({root:fileURLToPath(new URL('../../app/',import.meta.url)),server:{host:'127.0.0.1',port:0},configFile:false});

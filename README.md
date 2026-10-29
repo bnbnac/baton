@@ -58,3 +58,7 @@ cargo +stable test --locked --manifest-path rust/Cargo.toml -p baton-core -p bat
 - [개인 사용 안내](docs/rust-personal-use.md) · [잔여 검증](docs/testing/rust-phase-5-acceptance-gap-audit.md)
 - [초기화 조사](docs/testing/rust-startup-followup-report.md) · [메모리 조사](docs/testing/rust-phase-5-memory-investigation.md)
 - [C# MVP 보존·복구 안내](docs/legacy-csharp.md): C# 전용 구현은 현재 트리에서 제거했으며 `csharp-mvp-final` 태그로 보존합니다. 과거 C# 문서는 역사적 기록이며 현재 Rust의 실행 계약이 아닙니다.
+
+## 라이선스
+
+이 저장소는 [Apache License 2.0](LICENSE)으로 배포합니다. `rust/vendor/tao-0.35.3`은 Tauri의 Tao 0.35.3(Apache-2.0)을 일부 수정해 포함한 것이며, 원본 라이선스와 저작권 표시를 유지합니다. 변경 범위와 출처는 [rust/vendor/README.md](rust/vendor/README.md)를 참고하세요. 그 밖의 의존성은 저장소에 포함하지 않고 `Cargo.lock`·`package-lock.json`으로 고정합니다.

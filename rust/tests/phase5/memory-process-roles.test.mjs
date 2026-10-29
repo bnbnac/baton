@@ -5,7 +5,7 @@ import {promisify} from 'node:util';
 import {mkdtemp,writeFile,rm,rmdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-const execute=promisify(execFile),pwsh='C:/Users/sj/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe';
+const execute=promisify(execFile),pwsh=`${process.env.USERPROFILE.replaceAll('\\','/')}/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe`;
 const script=resolve('rust/scripts/sample-test-process-roles.ps1');
 
 test('missing process diagnostics identify the expected app, adapter or WebView without accepting an incomplete sample',async()=>{

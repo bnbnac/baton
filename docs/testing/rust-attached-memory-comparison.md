@@ -56,7 +56,7 @@ The following preflight commands describe the completed20261028 attempt. **Do no
 Run from PowerShell in the existing worktree. `node` is available; these commands do not require the `pwsh` executable to be on PATH. The candidate config pins its installed PowerShell path.
 
 ```powershell
-Set-Location 'C:\Users\sj\Documents\work\code\baton\.worktrees\rust-phase-0'
+Set-Location '<저장소 루트>'
 $am = 'rust/tests/phase5/attached-memory'
 $evidence = 'artifacts/phase5-attached-memory-20261028'
 node "$am/launch.mjs" "$evidence/preflight-a" "$evidence/config.json" A preflight
