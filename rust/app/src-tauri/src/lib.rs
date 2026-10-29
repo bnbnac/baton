@@ -7,6 +7,8 @@ mod ids;
 mod lifecycle;
 mod output_pump;
 mod ownership;
+#[cfg(test)]
+mod session_snapshot_tests;
 pub use output_pump::OutputSink;
 #[cfg(feature = "acceptance")]
 pub mod acceptance;

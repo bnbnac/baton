@@ -99,7 +99,7 @@ pub async fn list_sessions(
     window: WebviewWindow,
     state: State<'_, Managed>,
     events: Channel<UiEvent>,
-) -> Result<Vec<SessionInfo>, AppError> {
+) -> Result<SessionSnapshot, AppError> {
     local(&window)?;
     let mut pipe = state.pipe.0.lock().unwrap();
     if pipe.is_some() {
@@ -110,7 +110,7 @@ pub async fn list_sessions(
     *pipe = Some(events);
     drop(pipe);
     state.service.start_frontend()?;
-    Ok(state.service.list())
+    state.service.session_snapshot()
 }
 #[tauri::command]
 pub fn close_session(

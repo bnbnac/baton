@@ -49,6 +49,11 @@ pub struct SessionInfo {
     pub intervention: Option<baton_ipc::Intervention>,
 }
 #[derive(Clone, Debug, Serialize)]
+pub struct SessionSnapshot {
+    pub revision: SafeInt,
+    pub sessions: Vec<SessionInfo>,
+}
+#[derive(Clone, Debug, Serialize)]
 pub struct ConnectionInfo {
     pub id: Id,
     pub display_name: String,
@@ -85,10 +90,19 @@ impl AppError {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiEvent {
-    Connections { connections: Vec<ConnectionInfo> },
-    Sessions { sessions: Vec<SessionInfo> },
-    Heartbeat { challenge: Id },
-    Auth { prompt: AuthPromptDto },
+    Connections {
+        connections: Vec<ConnectionInfo>,
+    },
+    Sessions {
+        #[serde(flatten)]
+        snapshot: SessionSnapshot,
+    },
+    Heartbeat {
+        challenge: Id,
+    },
+    Auth {
+        prompt: AuthPromptDto,
+    },
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct AuthPromptDto {

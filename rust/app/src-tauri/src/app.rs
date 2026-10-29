@@ -56,6 +56,7 @@ pub(crate) struct Entry {
 }
 pub(crate) struct AppState {
     pub entries: BTreeMap<Id, Entry>,
+    pub session_revision: SafeInt,
     pub stopping: bool,
     pub frontend_started: bool,
     pub heartbeat: Option<Id>,
@@ -163,6 +164,7 @@ impl AppService {
             runtime: Arc::new(Runtime::spawn(registry)),
             state: Mutex::new(AppState {
                 entries: BTreeMap::new(),
+                session_revision: SafeInt::new(0).unwrap(),
                 stopping: false,
                 frontend_started: false,
                 heartbeat: None,
@@ -278,6 +280,25 @@ impl AppService {
     }
     pub fn list(&self) -> Vec<SessionInfo> {
         let state = self.state.lock().unwrap();
+        self.list_locked(&state)
+    }
+    // Capture order, not transport arrival order, determines freshness. The
+    // initial command response uses this same sequence as channel notifications.
+    pub fn session_snapshot(&self) -> Result<SessionSnapshot, AppError> {
+        let mut state = self.state.lock().unwrap();
+        let revision = match state.session_revision.checked_next() {
+            Ok(revision) => revision,
+            Err(_) => {
+                drop(state);
+                self.stop(CloseReason::CounterExhausted);
+                return Err(AppError::new("session_revision_exhausted"));
+            }
+        };
+        let sessions = self.list_locked(&state);
+        state.session_revision = revision;
+        Ok(SessionSnapshot { revision, sessions })
+    }
+    fn list_locked(&self, state: &AppState) -> Vec<SessionInfo> {
         let snapshots = self.runtime.snapshots();
         state
             .entries
@@ -299,9 +320,9 @@ impl AppService {
             .collect()
     }
     pub(crate) fn publish(&self) {
-        let _ = self.send(UiEvent::Sessions {
-            sessions: self.list(),
-        });
+        if let Ok(snapshot) = self.session_snapshot() {
+            let _ = self.send(UiEvent::Sessions { snapshot });
+        }
     }
     pub(crate) fn send(&self, event: UiEvent) -> Result<(), AppError> {
         if let Err(error) = self.sink.emit(event) {
