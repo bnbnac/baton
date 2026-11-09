@@ -173,7 +173,7 @@ async fn handshake_stall_does_not_block_initialize_tools_status_or_eof() {
             .as_array()
             .unwrap()
             .len(),
-        5
+        6
     );
     assert_eq!(
         data(&process.call(3, "status", json!({})).await)["app_state"],
@@ -199,7 +199,7 @@ async fn prolonged_offline_retains_tools_and_eof_stops_retrying() {
             .as_array()
             .unwrap()
             .len(),
-        5
+        6
     );
     process.eof().await;
     let fixture = Arc::new(Fixture::new(None));

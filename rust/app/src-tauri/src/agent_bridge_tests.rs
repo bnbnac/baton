@@ -481,3 +481,65 @@ async fn user_ownership_actions_validate_epoch_and_intervention_is_only_notifica
     assert_eq!(handle.snapshot().await.state, State::UserOwned);
     app.shutdown().await;
 }
+
+#[tokio::test]
+async fn connection_name_is_listed_per_connection_and_forgotten_on_disconnect() {
+    let app = AppService::with_connector(
+        Arc::new(ConnectorFixture(Arc::new(Writes::default()))),
+        Arc::new(Sink),
+    );
+    let path = folder();
+    let server = LocalServer::start(
+        &path,
+        WireId::from_u128(app.runtime.app_id().as_u128()),
+        Arc::new(AgentBridge::new(app.clone())),
+    )
+    .await
+    .unwrap();
+    let a = LocalClient::connect(&path).await.unwrap();
+    let b = LocalClient::connect(&path).await.unwrap();
+    assert!(
+        app.list_agent_connections()
+            .iter()
+            .all(|c| c.name.is_none())
+    );
+    let named = a
+        .call(
+            AgentRequest::SetConnectionName {
+                name: "  세션 A  ".into(),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(named, AgentResponse::ConnectionName {});
+    let invalid = b
+        .call(
+            AgentRequest::SetConnectionName { name: "\n".into() },
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(invalid.is_err());
+    let list = app.list_agent_connections();
+    let name_of = |client: &LocalClient| {
+        list.iter()
+            .find(|c| c.id.0 == client.context().connection_id().as_u128())
+            .unwrap()
+            .name
+            .clone()
+    };
+    assert_eq!(name_of(&a).as_deref(), Some("세션 A"));
+    assert_eq!(name_of(&b), None);
+    a.close();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while app.list_agent_connections().len() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(app.state.lock().unwrap().connection_names.is_empty());
+    drop(b);
+    server.shutdown().await;
+    app.shutdown().await;
+}

@@ -12,8 +12,32 @@ impl AppService {
             .map(|id| ConnectionInfo {
                 id: Id(id.as_u128()),
                 display_name: format!("MCP {:032x}", id.as_u128()),
+                name: state.connection_names.get(&Id(id.as_u128())).cloned(),
             })
             .collect()
+    }
+    pub(crate) fn set_connection_name(&self, id: Id, name: String) -> bool {
+        let named = {
+            let mut state = self.state.lock().unwrap();
+            // A late request must not resurrect the name of a disconnected connection.
+            let live = !state.stopping
+                && self
+                    .runtime
+                    .connection_ids()
+                    .into_iter()
+                    .any(|c| c.as_u128() == id.0);
+            if live {
+                state.connection_names.insert(id, name);
+            }
+            live
+        };
+        if named {
+            self.publish_connections();
+        }
+        named
+    }
+    pub(crate) fn forget_connection_name(&self, id: Id) {
+        self.state.lock().unwrap().connection_names.remove(&id);
     }
     pub(crate) fn publish_connections(&self) {
         let active = {

@@ -9,6 +9,8 @@ struct State {
     #[cfg(windows)]
     client: Option<Arc<LocalClient>>,
     failure: Option<WireError>,
+    // Connection IDs change on reconnect, so the name is replayed to each new one.
+    name: Option<String>,
 }
 pub struct AdapterLink {
     state: Arc<Mutex<State>>,
@@ -48,6 +50,7 @@ impl AdapterLink {
                 #[cfg(windows)]
                 client: None,
                 failure: failure(error),
+                name: None,
             })),
             stop: CancellationToken::new(),
             worker: Mutex::new(None),
@@ -87,6 +90,9 @@ impl AdapterLink {
             return Err(WireError::new(ErrorCode::Cancelled));
         }
         let status = matches!(request, AgentRequest::Status {});
+        if let AgentRequest::SetConnectionName { name } = &request {
+            self.state.lock().unwrap().name = Some(name.clone());
+        }
         #[cfg(windows)]
         {
             let client = self.state.lock().unwrap().client.clone();
@@ -145,6 +151,17 @@ fn retire(state: &Mutex<State>, client: &Arc<LocalClient>) {
     }
 }
 #[cfg(windows)]
+async fn announce_name(state: &Mutex<State>, client: &Arc<LocalClient>) {
+    let name = state.lock().unwrap().name.clone();
+    let Some(name) = name else { return };
+    // Best effort: a stalled app must not delay supervision, and the tool can be called again.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        client.call(AgentRequest::SetConnectionName { name }, CancellationToken::new()),
+    )
+    .await;
+}
+#[cfg(windows)]
 async fn supervise(path: PathBuf, state: Arc<Mutex<State>>, stop: CancellationToken) {
     let mut backoff = crate::reconnect::Backoff::default();
     loop {
@@ -160,6 +177,7 @@ async fn supervise(path: PathBuf, state: Arc<Mutex<State>>, stop: CancellationTo
                     current.failure = None;
                     current.client = Some(client.clone());
                 }
+                announce_name(&state, &client).await;
                 backoff.reset();
                 tokio::select! {biased;_=stop.cancelled()=>client.close(),_=client.disconnected()=>{}}
                 retire(&state, &client);
@@ -221,6 +239,7 @@ mod tests {
         let state = Mutex::new(State {
             client: Some(new.clone()),
             failure: None,
+            name: None,
         });
         old.close();
         retire(&state, &old);

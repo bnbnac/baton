@@ -57,6 +57,7 @@ pub struct SessionSnapshot {
 pub struct ConnectionInfo {
     pub id: Id,
     pub display_name: String,
+    pub name: Option<String>,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

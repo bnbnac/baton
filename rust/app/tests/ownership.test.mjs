@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Ownership } from '../.test-output/sessions/ownership.js';
+import { connectionLabel } from '../.test-output/connections/view.js';
 const session=(id='session-a',state='user_owned',epoch=4)=>({id,state,epoch,has_terminal:true,intervention:null});
 test('connection removal clears the choice and never auto-selects another connection',()=>{
   const view=new Ownership();view.updateConnections([{id:'a',display_name:'A'},{id:'b',display_name:'B'}]);
@@ -22,4 +23,11 @@ test('transition states disable actions and only a requested intervention can be
   const s={...session('s','agent_owned',8),intervention:{request_id:'r',reason:'<img onerror=x>',state:'requested'}};
   assert.deepEqual(view.decline(s),{id:'s',expected_epoch:8,request_id:'r'});assert.equal(s.state,'agent_owned');
   assert.equal(view.decline({...s,intervention:{...s.intervention,state:'declined'}}),null);
+});
+
+test('connection label shows the session name with an ID suffix, else the legacy MCP ID',()=>{
+  const id='1a2b3c4d5e6f708192a3b4c5d6e7f809';
+  assert.equal(connectionLabel({id,display_name:'MCP '+id,name:'세션 A'}),'세션 A · 1a2b3c');
+  assert.equal(connectionLabel({id,display_name:'MCP '+id,name:null}),'MCP 1a2b3c4d5e6f');
+  assert.equal(connectionLabel({id,display_name:'MCP '+id}),'MCP 1a2b3c4d5e6f');
 });

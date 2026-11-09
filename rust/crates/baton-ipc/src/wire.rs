@@ -58,7 +58,11 @@ pub enum AgentRequest {
         request_id: WireId,
         reason: String,
     },
+    SetConnectionName {
+        name: String,
+    },
 }
+pub const CONNECTION_NAME_CHARS: usize = 64;
 impl AgentRequest {
     pub fn validate(&self) -> Result<(), WireError> {
         match self {
@@ -72,6 +76,13 @@ impl AgentRequest {
             }
             Self::RequestUserControl { reason, .. }
                 if reason.len() > 2048 || reason.chars().any(char::is_control) =>
+            {
+                Err(WireError::new(ErrorCode::InvalidRequest))
+            }
+            Self::SetConnectionName { name }
+                if name.trim().is_empty()
+                    || name.chars().count() > CONNECTION_NAME_CHARS
+                    || name.chars().any(char::is_control) =>
             {
                 Err(WireError::new(ErrorCode::InvalidRequest))
             }
@@ -109,6 +120,7 @@ pub enum AgentResponse {
     Output(OutputPage),
     Input { result: InputOutcome },
     Intervention { result: InterventionOutcome },
+    ConnectionName {},
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
