@@ -27,7 +27,8 @@ impl AppService {
                     .into_iter()
                     .any(|c| c.as_u128() == id.0);
             let changed = live
-                && state.connection_names.insert(id, name.clone()).as_deref() != Some(name.as_str());
+                && state.connection_names.insert(id, name.clone()).as_deref()
+                    != Some(name.as_str());
             (live, changed)
         };
         if changed {

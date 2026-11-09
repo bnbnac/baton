@@ -66,12 +66,13 @@ pub const CONNECTION_NAME_CHARS: usize = 64;
 // Invisible and bidi-override characters pass char::is_control but can blank a label or reorder it to mimic another session.
 fn is_hidden_format(c: char) -> bool {
     matches!(c,
-        '\u{00AD}' | '\u{061C}' | '\u{180E}'
+        '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{115F}' | '\u{1160}' | '\u{180E}'
         | '\u{200B}'..='\u{200F}'
-        | '\u{202A}'..='\u{202E}'
+        | '\u{2028}'..='\u{202E}'
         | '\u{2060}'..='\u{2064}'
         | '\u{2066}'..='\u{2069}'
-        | '\u{FEFF}')
+        | '\u{2800}' | '\u{3164}' | '\u{FEFF}' | '\u{FFA0}'
+        | '\u{E0001}' | '\u{E0020}'..='\u{E007F}')
 }
 impl AgentRequest {
     pub fn validate(&self) -> Result<(), WireError> {
