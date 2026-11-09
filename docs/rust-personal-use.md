@@ -40,3 +40,36 @@
 ## 문제가 발생하면
 
 발생 시각, 앱/어댑터 파일 해시, Windows·WebView·하네스 버전, 오류 문구, 직전에 한 동작을 남긴다. 비밀번호·endpoint secret·터미널 원문 전체를 복사하지 않는다. 연결 실패 시 다른 작업 중인 앱을 종료하거나 endpoint 파일을 임의 삭제하지 않는다. 시간에 따라 메모리가 늘면 출력량·세션 수·동작을 함께 기록한다. 같은 성공 시험을 무작정 반복하지 않는다.
+
+## 병합 후 로컬 업데이트
+
+PR을 `main`에 병합한 뒤 로컬 실행 파일을 새 빌드로 바꾸는 절차다. 위 ZIP 방식과 달리 커밋마다 폴더 경로가 바뀌지 않고 worktree를 정리해도 사라지지 않는다.
+
+```powershell
+git switch main; git pull --ff-only   # 또는 HEAD가 origin/main과 같은 상태
+powershell -NoProfile -File rust/scripts/install-local.ps1 -DryRun   # 먼저 검사와 계획만 확인
+powershell -NoProfile -File rust/scripts/install-local.ps1
+```
+
+Windows PowerShell 5.1(`powershell.exe`)에서 확인했다(PowerShell 7은 시험하지 않음). 2026-11-10 PR 14 병합 커밋(9c019f4)으로 실제 실행해 설치, 해시 검증, `current` junction 이동을 확인했다.
+
+### 사전 조건
+
+- `baton.exe`와 `baton-adapter.exe`가 실행 중이 아니어야 한다. 실행 중이면 스크립트는 프로세스를 종료하지 않고 PID와 경로를 출력한 뒤 중단한다. 앱을 닫고, 어댑터를 쓰는 Claude 세션(어댑터는 세션마다 별도 프로세스)도 종료한다.
+- `HEAD`가 `origin/main`과 같고 추적 파일에 변경이 없어야 한다.
+- Node, Rust stable 툴체인(`x86_64-pc-windows-msvc`), 오프라인 npm/Cargo 캐시가 있어야 한다. `rust/app/node_modules`가 없으면 `npm ci --offline`을 실행한다. 처음 빌드는 몇 분 걸린다.
+
+### 하는 일
+
+1. 실행 중 프로세스와 `main` 최신 여부를 확인한다.
+2. `npm run build` 후 앱(`desktop,tauri/custom-protocol`)과 어댑터를 `cargo +stable build --release --target x86_64-pc-windows-msvc --offline --locked`로 빌드한다.
+3. `%LOCALAPPDATA%\Baton\versions\<커밋 짧은 해시>\`에 `baton.exe`, `baton-adapter.exe`, `manifest.json`을 복사하고 SHA256을 검증한다. 같은 해시의 폴더가 이미 있고 manifest와 일치하면 빌드를 건너뛴다.
+4. `%LOCALAPPDATA%\Baton\current` junction을 새 버전 폴더로 옮긴다.
+5. 최근 3개(`-Keep`으로 변경)를 제외한 오래된 버전 폴더를 지운다. 현재·직전 버전과 실행 중인 파일이 들어 있는 폴더는 건드리지 않는다.
+6. 하네스 설정에 넣을 어댑터 경로를 출력한다.
+
+`-DryRun`(또는 `-WhatIf`)은 1번과 계획 출력만 하고 빌드·복사·junction·삭제를 하지 않는다. 단 `git fetch origin main`은 수행한다.
+
+### 하네스 설정과 재시작
+
+스크립트는 하네스(MCP 클라이언트) 설정을 바꾸지 않는다. 어댑터 명령을 `%LOCALAPPDATA%\Baton\current\baton-adapter.exe`의 절대 경로로 한 번 지정하면 이후 업데이트에서 설정을 다시 바꿀 필요가 없다. 앱은 `current\baton.exe`로 실행한다. 새 어댑터는 이미 떠 있는 Claude 세션에 적용되지 않으므로 세션을 다시 시작해야 하며, 앱과 어댑터는 같은 빌드끼리 쓴다.
