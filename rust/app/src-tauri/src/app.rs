@@ -56,6 +56,7 @@ pub(crate) struct Entry {
 }
 pub(crate) struct AppState {
     pub entries: BTreeMap<Id, Entry>,
+    pub connection_names: BTreeMap<Id, String>,
     pub session_revision: SafeInt,
     pub stopping: bool,
     pub frontend_started: bool,
@@ -164,6 +165,7 @@ impl AppService {
             runtime: Arc::new(Runtime::spawn(registry)),
             state: Mutex::new(AppState {
                 entries: BTreeMap::new(),
+                connection_names: BTreeMap::new(),
                 session_revision: SafeInt::new(0).unwrap(),
                 stopping: false,
                 frontend_started: false,

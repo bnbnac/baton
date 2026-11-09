@@ -131,6 +131,9 @@ impl AgentBackend for AgentBridge {
             *response = self.status(context);
             return;
         }
+        if matches!(request, AgentRequest::SetConnectionName { .. }) {
+            return;
+        }
         let connection = match self.check(context) {
             Ok(c) => c,
             Err(e) => {
@@ -164,7 +167,7 @@ impl AgentBackend for AgentBridge {
                 control_epoch,
                 ..
             } => (*session_id, *control_epoch, None),
-            AgentRequest::Status {} => unreachable!(),
+            AgentRequest::Status {} | AgentRequest::SetConnectionName { .. } => unreachable!(),
         };
         let prepared = std::mem::replace(response, Err(WireError::new(ErrorCode::Disconnected)));
         *response = self
@@ -207,6 +210,8 @@ impl AgentBackend for AgentBridge {
                     context.connection_id().as_u128(),
                 ))
                 .await;
+            self.app
+                .forget_connection_name(Id(context.connection_id().as_u128()));
             self.app.publish_connections();
         })
     }
@@ -225,6 +230,14 @@ impl AgentBackend for AgentBridge {
             let principal = core::Principal::Agent(connection);
             match request {
                 AgentRequest::Status {} => self.status(context),
+                AgentRequest::SetConnectionName { name } => {
+                    let id = Id(connection.as_u128());
+                    if self.app.set_connection_name(id, name.trim().to_owned()) {
+                        Ok(AgentResponse::ConnectionName {})
+                    } else {
+                        Err(WireError::new(ErrorCode::Disconnected))
+                    }
+                }
                 AgentRequest::ReadOutput {
                     session_id,
                     control_epoch,

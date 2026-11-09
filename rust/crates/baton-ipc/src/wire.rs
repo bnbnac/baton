@@ -58,6 +58,21 @@ pub enum AgentRequest {
         request_id: WireId,
         reason: String,
     },
+    SetConnectionName {
+        name: String,
+    },
+}
+pub const CONNECTION_NAME_CHARS: usize = 64;
+// Invisible and bidi-override characters pass char::is_control but can blank a label or reorder it to mimic another session.
+fn is_hidden_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{115F}' | '\u{1160}' | '\u{180E}'
+        | '\u{200B}'..='\u{200F}'
+        | '\u{2028}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{2069}'
+        | '\u{2800}' | '\u{3164}' | '\u{FEFF}' | '\u{FFA0}'
+        | '\u{E0001}' | '\u{E0020}'..='\u{E007F}')
 }
 impl AgentRequest {
     pub fn validate(&self) -> Result<(), WireError> {
@@ -72,6 +87,13 @@ impl AgentRequest {
             }
             Self::RequestUserControl { reason, .. }
                 if reason.len() > 2048 || reason.chars().any(char::is_control) =>
+            {
+                Err(WireError::new(ErrorCode::InvalidRequest))
+            }
+            Self::SetConnectionName { name }
+                if name.trim().is_empty()
+                    || name.chars().count() > CONNECTION_NAME_CHARS
+                    || name.chars().any(|c| c.is_control() || is_hidden_format(c)) =>
             {
                 Err(WireError::new(ErrorCode::InvalidRequest))
             }
@@ -109,6 +131,7 @@ pub enum AgentResponse {
     Output(OutputPage),
     Input { result: InputOutcome },
     Intervention { result: InterventionOutcome },
+    ConnectionName {},
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

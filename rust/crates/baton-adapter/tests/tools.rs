@@ -31,7 +31,45 @@ fn all_tool_parameters_are_checked_before_dispatch() {
     assert!(parse("request_user_control", args.as_object().cloned()).is_err());
     args["reason"] = json!("인증 필요");
     assert!(parse("request_user_control", args.as_object().cloned()).is_ok());
-    assert_eq!(definitions().len(), 5);
+    assert_eq!(definitions().len(), 6);
+}
+
+#[test]
+fn connection_name_is_validated_before_dispatch() {
+    let ok = |name: serde_json::Value| {
+        parse(
+            "set_connection_name",
+            json!({"name":name}).as_object().cloned(),
+        )
+        .is_ok()
+    };
+    assert!(ok(json!("MCP 세션 이름")));
+    assert!(ok(json!("a".repeat(64))));
+    assert!(!ok(json!("a".repeat(65))));
+    assert!(!ok(json!("   ")));
+    assert!(!ok(json!("two\nlines")));
+    assert!(!ok(json!("\u{200B}\u{200B}")));
+    assert!(!ok(json!("세션\u{202E}A")));
+    assert!(!ok(json!("a\u{FEFF}b")));
+    for blank in [
+        "\u{3164}",
+        "\u{115F}\u{1160}",
+        "\u{FFA0}",
+        "\u{2800}",
+        "a\u{2028}b",
+    ] {
+        assert!(!ok(json!(blank)), "{blank:?}");
+    }
+    assert!(ok(json!("⚠\u{FE0F} 배포")));
+    assert!(!ok(json!(7)));
+    assert!(parse("set_connection_name", None).is_err());
+    assert!(
+        parse(
+            "set_connection_name",
+            json!({"name":"x","extra":1}).as_object().cloned()
+        )
+        .is_err()
+    );
 }
 
 #[test]
