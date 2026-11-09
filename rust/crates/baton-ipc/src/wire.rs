@@ -63,6 +63,16 @@ pub enum AgentRequest {
     },
 }
 pub const CONNECTION_NAME_CHARS: usize = 64;
+// Invisible and bidi-override characters pass char::is_control but can blank a label or reorder it to mimic another session.
+fn is_hidden_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{061C}' | '\u{180E}'
+        | '\u{200B}'..='\u{200F}'
+        | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{2069}'
+        | '\u{FEFF}')
+}
 impl AgentRequest {
     pub fn validate(&self) -> Result<(), WireError> {
         match self {
@@ -82,7 +92,7 @@ impl AgentRequest {
             Self::SetConnectionName { name }
                 if name.trim().is_empty()
                     || name.chars().count() > CONNECTION_NAME_CHARS
-                    || name.chars().any(char::is_control) =>
+                    || name.chars().any(|c| c.is_control() || is_hidden_format(c)) =>
             {
                 Err(WireError::new(ErrorCode::InvalidRequest))
             }

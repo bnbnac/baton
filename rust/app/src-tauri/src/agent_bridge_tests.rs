@@ -538,7 +538,14 @@ async fn connection_name_is_listed_per_connection_and_forgotten_on_disconnect() 
     })
     .await
     .unwrap();
-    assert!(app.state.lock().unwrap().connection_names.is_empty());
+    // forget_connection_name runs after the runtime drops the connection.
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !app.state.lock().unwrap().connection_names.is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     drop(b);
     server.shutdown().await;
     app.shutdown().await;

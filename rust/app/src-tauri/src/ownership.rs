@@ -17,7 +17,7 @@ impl AppService {
             .collect()
     }
     pub(crate) fn set_connection_name(&self, id: Id, name: String) -> bool {
-        let named = {
+        let (live, changed) = {
             let mut state = self.state.lock().unwrap();
             // A late request must not resurrect the name of a disconnected connection.
             let live = !state.stopping
@@ -26,15 +26,14 @@ impl AppService {
                     .connection_ids()
                     .into_iter()
                     .any(|c| c.as_u128() == id.0);
-            if live {
-                state.connection_names.insert(id, name);
-            }
-            live
+            let changed = live
+                && state.connection_names.insert(id, name.clone()).as_deref() != Some(name.as_str());
+            (live, changed)
         };
-        if named {
+        if changed {
             self.publish_connections();
         }
-        named
+        live
     }
     pub(crate) fn forget_connection_name(&self, id: Id) {
         self.state.lock().unwrap().connection_names.remove(&id);

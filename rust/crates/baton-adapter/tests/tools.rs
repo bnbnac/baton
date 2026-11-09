@@ -44,6 +44,9 @@ fn connection_name_is_validated_before_dispatch() {
     assert!(!ok(json!("a".repeat(65))));
     assert!(!ok(json!("   ")));
     assert!(!ok(json!("two\nlines")));
+    assert!(!ok(json!("\u{200B}\u{200B}")));
+    assert!(!ok(json!("세션\u{202E}A")));
+    assert!(!ok(json!("a\u{FEFF}b")));
     assert!(!ok(json!(7)));
     assert!(parse("set_connection_name", None).is_err());
     assert!(parse("set_connection_name", json!({"name":"x","extra":1}).as_object().cloned()).is_err());

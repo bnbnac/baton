@@ -177,9 +177,13 @@ async fn supervise(path: PathBuf, state: Arc<Mutex<State>>, stop: CancellationTo
                     current.failure = None;
                     current.client = Some(client.clone());
                 }
-                announce_name(&state, &client).await;
                 backoff.reset();
-                tokio::select! {biased;_=stop.cancelled()=>client.close(),_=client.disconnected()=>{}}
+                // Announcing shares the select so a stalled app cannot delay stop or disconnect detection.
+                let watch = async {
+                    announce_name(&state, &client).await;
+                    client.disconnected().await;
+                };
+                tokio::select! {biased;_=stop.cancelled()=>client.close(),_=watch=>{}}
                 retire(&state, &client);
             }
             Err(error) => {
@@ -221,6 +225,65 @@ mod tests {
             })
         }
     }
+    #[derive(Default)]
+    struct Recorder(Mutex<Vec<(WireId, String)>>);
+    impl AgentBackend for Recorder {
+        fn connected(&self, _: ConnectionContext) -> IpcFuture<'_, Result<(), WireError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn disconnected(&self, _: ConnectionContext) -> IpcFuture<'_, ()> {
+            Box::pin(async {})
+        }
+        fn dispatch(
+            &self,
+            c: ConnectionContext,
+            request: AgentRequest,
+            _: CancellationToken,
+        ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
+            Box::pin(async move {
+                if let AgentRequest::SetConnectionName { name } = request {
+                    self.0.lock().unwrap().push((c.connection_id(), name));
+                }
+                Ok(AgentResponse::ConnectionName {})
+            })
+        }
+    }
+    #[tokio::test]
+    async fn name_set_while_offline_is_announced_on_the_next_connection() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../artifacts/phase4-race");
+        std::fs::create_dir_all(&root).unwrap();
+        let id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = root.canonicalize().unwrap().join(id.to_string());
+        let link = AdapterLink::start(path.clone());
+        let offline = link
+            .call(
+                AgentRequest::SetConnectionName {
+                    name: "세션 A".into(),
+                },
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(offline.is_err());
+        let recorder = Arc::new(Recorder::default());
+        let server = LocalServer::start(&path, WireId::from_u128(id), recorder.clone())
+            .await
+            .unwrap();
+        // Reconnect backoff is at most 5 seconds.
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            while recorder.0.lock().unwrap().is_empty() {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("name was not announced after connecting");
+        assert_eq!(recorder.0.lock().unwrap()[0].1, "세션 A");
+        link.shutdown().await;
+        server.shutdown().await;
+    }
     #[tokio::test]
     async fn late_retirement_of_old_client_preserves_replacement_connection() {
         let root =
@@ -240,8 +303,7 @@ mod tests {
             client: Some(new.clone()),
             failure: None,
             name: None,
-        });
-        old.close();
+        });        old.close();
         retire(&state, &old);
         let current = state
             .lock()

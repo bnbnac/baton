@@ -235,7 +235,7 @@ impl AgentBackend for AgentBridge {
                     if self.app.set_connection_name(id, name.trim().to_owned()) {
                         Ok(AgentResponse::ConnectionName {})
                     } else {
-                        Err(WireError::new(ErrorCode::AppOffline))
+                        Err(WireError::new(ErrorCode::Disconnected))
                     }
                 }
                 AgentRequest::ReadOutput {
