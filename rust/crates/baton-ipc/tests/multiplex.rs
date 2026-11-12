@@ -28,8 +28,8 @@ impl AgentBackend for Backend {
     ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
         Box::pin(async move {
             match request {
-                AgentRequest::Status {} => Ok(AgentResponse::Status(StatusResult {
-                    contract_version: 2,
+                AgentRequest::Status { .. } => Ok(AgentResponse::Status(StatusResult {
+                    contract_version: CONTRACT_VERSION,
                     app_state: AppState::Online,
                     app_instance_id: Some(ctx.app_instance_id()),
                     connection_id: Some(ctx.connection_id()),
@@ -73,6 +73,7 @@ async fn real_pipe_clients_have_distinct_contexts_and_waiting_reads_do_not_block
     assert_ne!(a.context(), b.context());
     let cancel = CancellationToken::new();
     let reads = AgentRequest::ReadOutput {
+        agent_key: key(),
         session_id: WireId::from_u128(1),
         control_epoch: baton_core::SafeInt::new(1).unwrap(),
         stream_id: WireId::from_u128(1),
@@ -88,7 +89,7 @@ async fn real_pipe_clients_have_distinct_contexts_and_waiting_reads_do_not_block
     );
     let status = tokio::time::timeout(
         std::time::Duration::from_secs(1),
-        a.call(AgentRequest::Status {}, CancellationToken::new()),
+        a.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new()),
     )
     .await
     .unwrap()
@@ -98,7 +99,7 @@ async fn real_pipe_clients_have_distinct_contexts_and_waiting_reads_do_not_block
     assert!(wait.await.is_err());
     drop(a);
     assert!(
-        b.call(AgentRequest::Status {}, CancellationToken::new())
+        b.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .is_ok()
     );
@@ -136,7 +137,7 @@ async fn concurrent_calls_preserve_request_order_on_the_wire() {
             for _ in 0..100 {
                 barrier.wait().await;
                 client
-                    .call(AgentRequest::Status {}, CancellationToken::new())
+                    .call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
                     .await
                     .unwrap();
             }
@@ -151,4 +152,8 @@ async fn concurrent_calls_preserve_request_order_on_the_wire() {
     .unwrap();
     drop(client);
     server.shutdown().await;
+}
+
+fn key() -> AgentKey {
+    AgentKey::from_u128(1)
 }

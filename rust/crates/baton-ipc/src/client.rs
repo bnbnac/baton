@@ -66,9 +66,9 @@ impl LocalClient {
         let result=tokio::time::timeout(Duration::from_secs(3),async{
             let discovery=endpoint::load_endpoint(dir)?;
             let mut pipe=ClientOptions::new().open(&discovery.pipe_name).map_err(|_|WireError::new(ErrorCode::AppOffline))?;
-            write_frame(&mut pipe,&Frame::Hello{contract_version:2,app_instance_id:discovery.app_instance_id,secret:discovery.secret.clone()}).await?;
+            write_frame(&mut pipe,&Frame::Hello{contract_version:crate::CONTRACT_VERSION,app_instance_id:discovery.app_instance_id,secret:discovery.secret.clone()}).await?;
             let context=match read_frame(&mut pipe).await? {
-                Frame::Welcome{contract_version:2,app_instance_id,connection_id} if app_instance_id==discovery.app_instance_id=>ConnectionContext{app:app_instance_id,connection:connection_id},
+                Frame::Welcome{contract_version:crate::CONTRACT_VERSION,app_instance_id,connection_id} if app_instance_id==discovery.app_instance_id=>ConnectionContext{app:app_instance_id,connection:connection_id},
                 Frame::Rejected{error}=>return Err(error),
                 _=>return Err(WireError::new(ErrorCode::ProtocolMismatch)),
             };

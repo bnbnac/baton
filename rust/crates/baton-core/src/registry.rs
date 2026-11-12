@@ -5,6 +5,9 @@ use std::time::Duration;
 pub struct Registry {
     app: AppId,
     connections: BTreeSet<ConnectionId>,
+    // Recency of use per connection, so a full registry gives up the longest idle one.
+    touched: BTreeMap<ConnectionId, u64>,
+    clock: u64,
     pub(crate) sessions: BTreeMap<SessionId, Session>,
 }
 impl Registry {
@@ -15,6 +18,8 @@ impl Registry {
         Self {
             app,
             connections: BTreeSet::new(),
+            touched: BTreeMap::new(),
+            clock: 0,
             sessions: BTreeMap::new(),
         }
     }
@@ -29,9 +34,18 @@ impl Registry {
             return Err(CoreError::Capacity);
         }
         self.connections.insert(id);
+        self.touch_connection(id);
         Ok(())
     }
+    /// Marks `id` as just used. Unknown connections are ignored.
+    pub fn touch_connection(&mut self, id: ConnectionId) {
+        if self.connections.contains(&id) {
+            self.clock += 1;
+            self.touched.insert(id, self.clock);
+        }
+    }
     pub fn remove_connection(&mut self, id: ConnectionId) -> Result<(), CoreError> {
+        self.touched.remove(&id);
         if self.connections.remove(&id) {
             for s in self.sessions.values_mut() {
                 s.disconnected(id);
@@ -40,6 +54,20 @@ impl Registry {
         } else {
             Err(CoreError::UnknownId)
         }
+    }
+    /// Removes the least recently used connection that no shell is assigned to and
+    /// returns it, or `None` when every connection owns a shell.
+    pub fn prune_least_recent_unassigned_connection(&mut self) -> Option<ConnectionId> {
+        let owners: BTreeSet<ConnectionId> =
+            self.sessions.values().filter_map(|s| s.assigned).collect();
+        let stale = self
+            .connections
+            .iter()
+            .copied()
+            .filter(|c| !owners.contains(c))
+            .min_by_key(|c| self.touched.get(c).copied().unwrap_or(0))?;
+        let _ = self.remove_connection(stale);
+        Some(stale)
     }
     pub fn has_connection(&self, id: ConnectionId) -> bool {
         self.connections.contains(&id)

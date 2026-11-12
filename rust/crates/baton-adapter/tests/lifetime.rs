@@ -9,7 +9,7 @@ use std::{
 };
 
 fn input() -> Value {
-    json!({"session_id":"1".repeat(32),"control_epoch":1,"request_id":"2".repeat(32),"text":"NEVER_REPLAY"})
+    json!({"agent_key":TEST_KEY,"session_id":"1".repeat(32),"control_epoch":1,"request_id":"2".repeat(32),"text":"NEVER_REPLAY"})
 }
 
 #[tokio::test]

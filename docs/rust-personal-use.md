@@ -55,7 +55,7 @@ Windows PowerShell 5.1(`powershell.exe`)에서 확인했다(PowerShell 7은 시�
 
 ### 사전 조건
 
-- `baton.exe`와 `baton-adapter.exe`가 실행 중이 아니어야 한다. 실행 중이면 스크립트는 프로세스를 종료하지 않고 PID와 경로를 출력한 뒤 중단한다. 앱을 닫고, 어댑터를 쓰는 Claude 세션(어댑터는 세션마다 별도 프로세스)도 종료한다.
+- `baton.exe`와 `baton-adapter.exe`가 실행 중이 아니어야 한다. 실행 중이면 스크립트는 프로세스를 종료하지 않고 PID와 경로를 출력한 뒤 중단한다. 앱을 닫고, 어댑터를 쓰는 Claude 세션도 종료한다. Claude Desktop은 어댑터를 세션마다 띄우지 않고 클라이언트 종류당 하나를 띄워 여러 세션이 공유하므로, 새 어댑터를 쓰려면 Desktop을 다시 시작해야 한다. 세션 사이의 구분은 어댑터 프로세스가 아니라 각 호출의 `agent_key`가 한다([agent_key 지침](agent-guide.md)).
 - `HEAD`가 `origin/main`과 같고 추적 파일에 변경이 없어야 한다.
 - Node, Rust stable 툴체인(`x86_64-pc-windows-msvc`), 오프라인 npm/Cargo 캐시가 있어야 한다. `rust/app/node_modules`가 없으면 `npm ci --offline`을 실행한다. 처음 빌드는 몇 분 걸린다.
 

@@ -1,16 +1,43 @@
 use baton_ipc::*;
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
+
+// A name is replayed to a reconnecting app only while its session is still using this
+// adapter; otherwise sessions that ended long ago would reappear in the handoff list, and
+// more names than the app holds connections would push live ones out.
+const REPLAY_WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
+const REPLAY_CAP: usize = 32;
+fn replay_candidates(
+    names: &BTreeMap<AgentKey, String>,
+    seen: &BTreeMap<AgentKey, Instant>,
+    now: Instant,
+) -> Vec<(AgentKey, String)> {
+    let mut fresh: Vec<(Instant, AgentKey, String)> = names
+        .iter()
+        .filter_map(|(key, name)| {
+            let at = *seen.get(key)?;
+            (now.saturating_duration_since(at) <= REPLAY_WINDOW).then(|| (at, *key, name.clone()))
+        })
+        .collect();
+    fresh.sort_by(|a, b| b.0.cmp(&a.0));
+    fresh.truncate(REPLAY_CAP);
+    fresh.into_iter().map(|(_, key, name)| (key, name)).collect()
+}
 use tokio::task::JoinHandle;
 
 struct State {
     #[cfg(windows)]
     client: Option<Arc<LocalClient>>,
     failure: Option<WireError>,
-    // Connection IDs change on reconnect, so the name is replayed to each new one.
-    name: Option<String>,
+    // Sessions share this adapter, so each key keeps its own name. Connection IDs change on
+    // reconnect, so every name is replayed to each new one.
+    names: BTreeMap<AgentKey, String>,
+    // When each key last made any call through this adapter.
+    seen: BTreeMap<AgentKey, Instant>,
     // An app instance that dropped the connection right at a name request is only suspected.
     // It is confirmed unsupported when the same instance answers the next connection; a
     // restart changes the instance ID, which clears both marks on its own.
@@ -57,7 +84,8 @@ impl AdapterLink {
                 #[cfg(windows)]
                 client: None,
                 failure: failure(error),
-                name: None,
+                names: BTreeMap::new(),
+                seen: BTreeMap::new(),
                 #[cfg(windows)]
                 suspect: None,
                 #[cfg(windows)]
@@ -100,9 +128,18 @@ impl AdapterLink {
         if cancel.is_cancelled() {
             return Err(WireError::new(ErrorCode::Cancelled));
         }
-        let status = matches!(request, AgentRequest::Status {});
-        if let AgentRequest::SetConnectionName { name } = &request {
-            self.state.lock().unwrap().name = Some(name.clone());
+        let status = matches!(request, AgentRequest::Status { .. });
+        self.state
+            .lock()
+            .unwrap()
+            .seen
+            .insert(request.agent_key(), Instant::now());
+        if let AgentRequest::SetConnectionName { agent_key, name } = &request {
+            self.state
+                .lock()
+                .unwrap()
+                .names
+                .insert(*agent_key, name.clone());
         }
         #[cfg(windows)]
         {
@@ -171,30 +208,32 @@ fn retire(state: &Mutex<State>, client: &Arc<LocalClient>) {
 #[cfg(windows)]
 async fn announce_name(state: &Mutex<State>, client: &Arc<LocalClient>) -> bool {
     let app = client.context().app_instance_id();
-    let name = {
+    let names: Vec<(AgentKey, String)> = {
         let state = state.lock().unwrap();
         if state.unsupported == Some(app) {
-            None
+            Vec::new()
         } else {
-            state.name.clone()
+            replay_candidates(&state.names, &state.seen, Instant::now())
         }
     };
-    let Some(name) = name else { return true };
-    // A timeout leaves the outcome unknown, so it is not counted as a drop; the tool can be called again.
-    let reply = tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        client.call(
-            AgentRequest::SetConnectionName { name },
-            CancellationToken::new(),
-        ),
-    )
-    .await;
-    let dropped = !client.is_connected()
-        || matches!(&reply,Ok(Err(e)) if matches!(e.code,ErrorCode::Disconnected|ErrorCode::AppOffline));
-    if dropped {
-        state.lock().unwrap().suspect = Some(app);
+    for (agent_key, name) in names {
+        // A timeout leaves the outcome unknown, so it is not counted as a drop; the tool can be called again.
+        let reply = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            client.call(
+                AgentRequest::SetConnectionName { agent_key, name },
+                CancellationToken::new(),
+            ),
+        )
+        .await;
+        let dropped = !client.is_connected()
+            || matches!(&reply,Ok(Err(e)) if matches!(e.code,ErrorCode::Disconnected|ErrorCode::AppOffline));
+        if dropped {
+            state.lock().unwrap().suspect = Some(app);
+            return false;
+        }
     }
-    !dropped
+    true
 }
 #[cfg(windows)]
 async fn supervise(path: PathBuf, state: Arc<Mutex<State>>, stop: CancellationToken) {
@@ -258,7 +297,7 @@ mod tests {
         ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
             Box::pin(async move {
                 Ok(AgentResponse::Status(StatusResult {
-                    contract_version: 2,
+                    contract_version: CONTRACT_VERSION,
                     app_state: AppState::Online,
                     app_instance_id: Some(c.app_instance_id()),
                     connection_id: Some(c.connection_id()),
@@ -270,7 +309,7 @@ mod tests {
     // With `hang`, a name request never completes, like an app that drops the connection on it.
     #[derive(Default)]
     struct Recorder {
-        names: Mutex<Vec<(WireId, String)>>,
+        names: Mutex<Vec<(AgentKey, String)>>,
         hang: bool,
     }
     impl AgentBackend for Recorder {
@@ -288,8 +327,8 @@ mod tests {
         ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
             Box::pin(async move {
                 match request {
-                    AgentRequest::SetConnectionName { name } => {
-                        self.names.lock().unwrap().push((c.connection_id(), name));
+                    AgentRequest::SetConnectionName { agent_key, name } => {
+                        self.names.lock().unwrap().push((agent_key, name));
                         if self.hang {
                             cancel.cancelled().await;
                             return Err(WireError::new(ErrorCode::Cancelled));
@@ -297,7 +336,7 @@ mod tests {
                         Ok(AgentResponse::ConnectionName {})
                     }
                     _ => Ok(AgentResponse::Status(StatusResult {
-                        contract_version: 2,
+                        contract_version: CONTRACT_VERSION,
                         app_state: AppState::Online,
                         app_instance_id: Some(c.app_instance_id()),
                         connection_id: Some(c.connection_id()),
@@ -329,7 +368,7 @@ mod tests {
     }
     async fn online(link: &AdapterLink) -> bool {
         matches!(
-            link.call(AgentRequest::Status {}, CancellationToken::new()).await,
+            link.call(AgentRequest::Status { agent_key: key(1) }, CancellationToken::new()).await,
             Ok(AgentResponse::Status(s)) if s.app_state == AppState::Online
         )
     }
@@ -342,8 +381,93 @@ mod tests {
         .await
         .expect("link did not connect");
     }
+    fn key(n: u128) -> AgentKey {
+        AgentKey::from_u128(n)
+    }
+    fn set_name_for(n: u128, name: &str) -> AgentRequest {
+        AgentRequest::SetConnectionName {
+            agent_key: key(n),
+            name: name.into(),
+        }
+    }
     fn set_name(name: &str) -> AgentRequest {
-        AgentRequest::SetConnectionName { name: name.into() }
+        set_name_for(1, name)
+    }
+    #[test]
+    fn replay_skips_names_not_used_within_the_window() {
+        let t0 = Instant::now();
+        let names = BTreeMap::from([(key(1), "A".to_string()), (key(2), "B".to_string())]);
+        let seen = BTreeMap::from([(key(1), t0), (key(2), t0 + REPLAY_WINDOW)]);
+        let later = t0 + REPLAY_WINDOW + Duration::from_secs(1);
+        assert_eq!(
+            replay_candidates(&names, &seen, later),
+            vec![(key(2), "B".to_string())]
+        );
+    }
+    #[test]
+    fn replay_is_capped_to_the_most_recently_used_names() {
+        let t0 = Instant::now();
+        let mut names = BTreeMap::new();
+        let mut seen = BTreeMap::new();
+        for n in 1..=40u128 {
+            names.insert(key(n), format!("n{n}"));
+            seen.insert(key(n), t0 + Duration::from_secs(n as u64));
+        }
+        let got = replay_candidates(&names, &seen, t0 + Duration::from_secs(41));
+        assert_eq!(got.len(), REPLAY_CAP);
+        let keys: Vec<AgentKey> = got.iter().map(|(k, _)| *k).collect();
+        assert!(!keys.contains(&key(1)));
+        assert!(!keys.contains(&key(8)));
+        for n in 9..=40u128 {
+            assert!(keys.contains(&key(n)), "missing {n}");
+        }
+    }
+    #[tokio::test]
+    async fn names_for_two_keys_are_both_replayed_on_the_next_connection() {
+        let (path, id) = unique_path();
+        let link = AdapterLink::start(path.clone());
+        assert!(link.call(set_name_for(1, "서버 점검"), CancellationToken::new()).await.is_err());
+        assert!(link.call(set_name_for(2, "로그 분석"), CancellationToken::new()).await.is_err());
+        let recorder = Arc::new(Recorder::default());
+        let server = LocalServer::start(&path, WireId::from_u128(id), recorder.clone())
+            .await
+            .unwrap();
+        wait_for("both name announcements", || {
+            recorder.names.lock().unwrap().len() >= 2
+        })
+        .await;
+        let mut names = recorder.names.lock().unwrap().clone();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![(key(1), "서버 점검".to_string()), (key(2), "로그 분석".to_string())]
+        );
+        link.shutdown().await;
+        server.shutdown().await;
+        let _ = std::fs::remove_dir_all(&path);
+    }
+    #[tokio::test]
+    async fn a_later_name_for_the_same_key_replaces_the_earlier_one() {
+        let (path, id) = unique_path();
+        let link = AdapterLink::start(path.clone());
+        assert!(link.call(set_name_for(1, "이전"), CancellationToken::new()).await.is_err());
+        assert!(link.call(set_name_for(1, "최신"), CancellationToken::new()).await.is_err());
+        let recorder = Arc::new(Recorder::default());
+        let server = LocalServer::start(&path, WireId::from_u128(id), recorder.clone())
+            .await
+            .unwrap();
+        wait_for("name announcement", || {
+            !recorder.names.lock().unwrap().is_empty()
+        })
+        .await;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert_eq!(
+            *recorder.names.lock().unwrap(),
+            vec![(key(1), "최신".to_string())]
+        );
+        link.shutdown().await;
+        server.shutdown().await;
+        let _ = std::fs::remove_dir_all(&path);
     }
     #[tokio::test]
     async fn name_set_while_offline_is_announced_on_the_next_connection() {
@@ -451,7 +575,8 @@ mod tests {
         let state = Mutex::new(State {
             client: Some(new.clone()),
             failure: None,
-            name: None,
+            names: BTreeMap::new(),
+            seen: BTreeMap::new(),
             suspect: None,
             unsupported: None,
         });
@@ -464,7 +589,7 @@ mod tests {
             .clone()
             .expect("old error removed replacement");
         let response = current
-            .call(AgentRequest::Status {}, CancellationToken::new())
+            .call(AgentRequest::Status { agent_key: key(1) }, CancellationToken::new())
             .await
             .unwrap();
         let AgentResponse::Status(status) = response else {

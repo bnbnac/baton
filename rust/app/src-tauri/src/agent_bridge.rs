@@ -38,8 +38,21 @@ impl AgentBridge {
             context.connection_id().as_u128(),
         ))
     }
-    fn status(&self, context: ConnectionContext) -> Result<AgentResponse, WireError> {
-        let connection = self.check(context)?;
+    // Sessions share one adapter, so the owner of a call is the agent key it carries,
+    // not the IPC connection that delivered it.
+    fn principal(
+        &self,
+        context: ConnectionContext,
+        request: &AgentRequest,
+    ) -> Result<core::ConnectionId, WireError> {
+        self.check(context)?;
+        Ok(core::ConnectionId::from_u128(request.agent_key().as_u128()))
+    }
+    fn status(
+        &self,
+        context: ConnectionContext,
+        connection: core::ConnectionId,
+    ) -> Result<AgentResponse, WireError> {
         let state_guard = self.app.state.lock().unwrap();
         if state_guard.stopping {
             return Err(WireError::new(ErrorCode::AppOffline));
@@ -73,10 +86,10 @@ impl AgentBridge {
                     });
                 }
                 AgentResponse::Status(StatusResult {
-                    contract_version: 2,
+                    contract_version: CONTRACT_VERSION,
                     app_state: AppState::Online,
                     app_instance_id: Some(context.app_instance_id()),
-                    connection_id: Some(context.connection_id()),
+                    connection_id: Some(WireId::from_u128(connection.as_u128())),
                     sessions,
                 })
             })
@@ -127,20 +140,20 @@ impl AgentBackend for AgentBridge {
         if response.is_err() {
             return;
         }
-        if matches!(request, AgentRequest::Status {}) {
-            *response = self.status(context);
-            return;
-        }
-        if matches!(request, AgentRequest::SetConnectionName { .. }) {
-            return;
-        }
-        let connection = match self.check(context) {
+        let connection = match self.principal(context, request) {
             Ok(c) => c,
             Err(e) => {
                 *response = Err(e);
                 return;
             }
         };
+        if matches!(request, AgentRequest::Status { .. }) {
+            *response = self.status(context, connection);
+            return;
+        }
+        if matches!(request, AgentRequest::SetConnectionName { .. }) {
+            return;
+        }
         let (session, epoch, stream) = match request {
             AgentRequest::ReadOutput {
                 session_id,
@@ -167,7 +180,7 @@ impl AgentBackend for AgentBridge {
                 control_epoch,
                 ..
             } => (*session_id, *control_epoch, None),
-            AgentRequest::Status {} | AgentRequest::SetConnectionName { .. } => unreachable!(),
+            AgentRequest::Status { .. } | AgentRequest::SetConnectionName { .. } => unreachable!(),
         };
         let prepared = std::mem::replace(response, Err(WireError::new(ErrorCode::Disconnected)));
         *response = self
@@ -192,28 +205,14 @@ impl AgentBackend for AgentBridge {
             if context.app_instance_id().as_u128() != self.app.runtime.app_id().as_u128() {
                 return Err(WireError::new(ErrorCode::AuthenticationFailed));
             }
-            self.app
-                .runtime
-                .register_connection(core::ConnectionId::from_u128(
-                    context.connection_id().as_u128(),
-                ))?;
+            // The IPC connection only authenticates the adapter. Owners are agent keys, which
+            // register on their first call, so nothing is registered or removed here.
             drop(state);
-            self.app.publish_connections();
             Ok(())
         })
     }
-    fn disconnected(&self, context: ConnectionContext) -> IpcFuture<'_, ()> {
-        Box::pin(async move {
-            self.app
-                .runtime
-                .disconnect(core::ConnectionId::from_u128(
-                    context.connection_id().as_u128(),
-                ))
-                .await;
-            self.app
-                .forget_connection_name(Id(context.connection_id().as_u128()));
-            self.app.publish_connections();
-        })
+    fn disconnected(&self, _: ConnectionContext) -> IpcFuture<'_, ()> {
+        Box::pin(async {})
     }
     fn dispatch(
         &self,
@@ -223,14 +222,17 @@ impl AgentBackend for AgentBridge {
     ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
         Box::pin(async move {
             request.validate()?;
-            let connection = self.check(context)?;
+            let connection = self.principal(context, &request)?;
             if cancel.is_cancelled() {
                 return Err(WireError::new(ErrorCode::Cancelled));
             }
+            if self.app.runtime.ensure_connection(connection)? {
+                self.app.publish_connections();
+            }
             let principal = core::Principal::Agent(connection);
             match request {
-                AgentRequest::Status {} => self.status(context),
-                AgentRequest::SetConnectionName { name } => {
+                AgentRequest::Status { .. } => self.status(context, connection),
+                AgentRequest::SetConnectionName { name, .. } => {
                     let id = Id(connection.as_u128());
                     if self.app.set_connection_name(id, name.trim().to_owned()) {
                         Ok(AgentResponse::ConnectionName {})
@@ -239,6 +241,7 @@ impl AgentBackend for AgentBridge {
                     }
                 }
                 AgentRequest::ReadOutput {
+                    agent_key: _,
                     session_id,
                     control_epoch,
                     stream_id,
@@ -267,6 +270,7 @@ impl AgentBackend for AgentBridge {
                     }))
                 }
                 AgentRequest::SendText {
+                    agent_key: _,
                     session_id,
                     control_epoch,
                     request_id,
@@ -289,6 +293,7 @@ impl AgentBackend for AgentBridge {
                     .await
                 }
                 AgentRequest::SendKey {
+                    agent_key: _,
                     session_id,
                     control_epoch,
                     request_id,
@@ -311,6 +316,7 @@ impl AgentBackend for AgentBridge {
                     .await
                 }
                 AgentRequest::RequestUserControl {
+                    agent_key: _,
                     session_id,
                     control_epoch,
                     request_id,
