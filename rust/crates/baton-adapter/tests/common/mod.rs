@@ -55,8 +55,8 @@ impl AgentBackend for Fixture {
     ) -> IpcFuture<'_, Result<AgentResponse, WireError>> {
         Box::pin(async move {
             match r {
-                AgentRequest::Status {} => Ok(AgentResponse::Status(StatusResult {
-                    contract_version: 2,
+                AgentRequest::Status { .. } => Ok(AgentResponse::Status(StatusResult {
+                    contract_version: CONTRACT_VERSION,
                     app_state: AppState::Online,
                     app_instance_id: Some(c.app_instance_id()),
                     connection_id: Some(c.connection_id()),
@@ -217,7 +217,10 @@ impl Process {
         assert_eq!(v["jsonrpc"], "2.0");
         v
     }
-    pub async fn call(&mut self, id: u64, name: &str, args: Value) -> Value {
+    pub async fn call(&mut self, id: u64, name: &str, mut args: Value) -> Value {
+        if let Some(map) = args.as_object_mut() {
+            map.entry("agent_key").or_insert(json!(TEST_KEY));
+        }
         self.send(json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}})).await;
         let result = self.next().await;
         assert_eq!(result["id"], id);
@@ -259,6 +262,7 @@ impl Process {
 pub fn data(response: &Value) -> Value {
     serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
 }
+pub const TEST_KEY: &str = "3f39e1c4-70c2-475e-b0e7-b5891a42f330";
 pub fn read(wait: u32) -> Value {
-    json!({"session_id":"00000000000000000000000000000001","control_epoch":1,"stream_id":"00000000000000000000000000000002","cursor":0,"limit":100,"wait_ms":wait})
+    json!({"agent_key":TEST_KEY,"session_id":"00000000000000000000000000000001","control_epoch":1,"stream_id":"00000000000000000000000000000002","cursor":0,"limit":100,"wait_ms":wait})
 }

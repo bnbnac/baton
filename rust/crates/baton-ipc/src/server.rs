@@ -96,7 +96,7 @@ async fn serve(
         return;
     }
     let welcome = Frame::Welcome {
-        contract_version: 2,
+        contract_version: crate::CONTRACT_VERSION,
         app_instance_id: context.app,
         connection_id: context.connection,
     };

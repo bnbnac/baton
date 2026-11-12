@@ -25,9 +25,9 @@ test('transition states disable actions and only a requested intervention can be
   assert.equal(view.decline({...s,intervention:{...s.intervention,state:'declined'}}),null);
 });
 
-test('connection label shows the session name with an ID suffix, else the legacy MCP ID',()=>{
+test('Claude session label shows its name with the first six UUID digits, else a default name',()=>{
   const id='1a2b3c4d5e6f708192a3b4c5d6e7f809';
-  assert.equal(connectionLabel({id,display_name:'MCP '+id,name:'세션 A'}),'세션 A · 1a2b3c');
-  assert.equal(connectionLabel({id,display_name:'MCP '+id,name:null}),'MCP 1a2b3c4d5e6f');
-  assert.equal(connectionLabel({id,display_name:'MCP '+id}),'MCP 1a2b3c4d5e6f');
+  assert.equal(connectionLabel({id,display_name:'MCP '+id,name:'서버 점검'}),'서버 점검 · 1a2b3c');
+  assert.equal(connectionLabel({id,display_name:'MCP '+id,name:null}),'Claude 세션 · 1a2b3c');
+  assert.equal(connectionLabel({id,display_name:'MCP '+id}),'Claude 세션 · 1a2b3c');
 });

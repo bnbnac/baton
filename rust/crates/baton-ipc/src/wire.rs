@@ -28,11 +28,67 @@ impl<'de> Deserialize<'de> for WireId {
             .map_err(|_| serde::de::Error::custom("invalid_id"))
     }
 }
+pub const CONTRACT_VERSION: u32 = 3;
+
+/// A Claude session's identity, carried on every agent request. It is a trusted
+/// claim by the session, not an authenticated credential.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AgentKey(u128);
+impl AgentKey {
+    pub const fn from_u128(value: u128) -> Self {
+        Self(value)
+    }
+    pub const fn as_u128(self) -> u128 {
+        self.0
+    }
+    /// Accepts the hyphenated 8-4-4-4-12 form or 32 plain hex digits, in either
+    /// case. The nil value is rejected so an unset key never becomes a session.
+    pub fn parse(text: &str) -> Option<Self> {
+        let bytes = text.as_bytes();
+        let hex: String = match bytes.len() {
+            32 => text.to_owned(),
+            36 => {
+                if [8, 13, 18, 23].iter().any(|&i| bytes[i] != b'-') {
+                    return None;
+                }
+                text.chars().filter(|c| *c != '-').collect()
+            }
+            _ => return None,
+        };
+        if hex.len() != 32 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let value = u128::from_str_radix(&hex, 16).ok()?;
+        (value != 0).then_some(Self(value))
+    }
+}
+impl Serialize for AgentKey {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let v = self.0;
+        s.serialize_str(&format!(
+            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+            (v >> 96) as u32,
+            (v >> 80) & 0xffff,
+            (v >> 64) & 0xffff,
+            (v >> 48) & 0xffff,
+            v & 0xffff_ffff_ffff
+        ))
+    }
+}
+impl<'de> Deserialize<'de> for AgentKey {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(d)?;
+        Self::parse(&text).ok_or_else(|| serde::de::Error::custom("invalid_agent_key"))
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AgentRequest {
-    Status {},
+    Status {
+        agent_key: AgentKey,
+    },
     ReadOutput {
+        agent_key: AgentKey,
         session_id: WireId,
         control_epoch: SafeInt,
         stream_id: WireId,
@@ -41,24 +97,28 @@ pub enum AgentRequest {
         wait_ms: u32,
     },
     SendText {
+        agent_key: AgentKey,
         session_id: WireId,
         control_epoch: SafeInt,
         request_id: WireId,
         text: String,
     },
     SendKey {
+        agent_key: AgentKey,
         session_id: WireId,
         control_epoch: SafeInt,
         request_id: WireId,
         key: Key,
     },
     RequestUserControl {
+        agent_key: AgentKey,
         session_id: WireId,
         control_epoch: SafeInt,
         request_id: WireId,
         reason: String,
     },
     SetConnectionName {
+        agent_key: AgentKey,
         name: String,
     },
 }
@@ -75,6 +135,16 @@ fn is_hidden_format(c: char) -> bool {
         | '\u{E0001}' | '\u{E0020}'..='\u{E007F}')
 }
 impl AgentRequest {
+    pub fn agent_key(&self) -> AgentKey {
+        match self {
+            Self::Status { agent_key }
+            | Self::ReadOutput { agent_key, .. }
+            | Self::SendText { agent_key, .. }
+            | Self::SendKey { agent_key, .. }
+            | Self::RequestUserControl { agent_key, .. }
+            | Self::SetConnectionName { agent_key, .. } => *agent_key,
+        }
+    }
     pub fn validate(&self) -> Result<(), WireError> {
         match self {
             Self::SendText { text, .. } if text.len() > limits::INPUT_BYTES => {
@@ -90,7 +160,7 @@ impl AgentRequest {
             {
                 Err(WireError::new(ErrorCode::InvalidRequest))
             }
-            Self::SetConnectionName { name }
+            Self::SetConnectionName { name, .. }
                 if name.trim().is_empty()
                     || name.chars().count() > CONNECTION_NAME_CHARS
                     || name.chars().any(|c| c.is_control() || is_hidden_format(c)) =>
@@ -164,7 +234,7 @@ pub struct StatusResult {
 impl StatusResult {
     pub fn offline() -> Self {
         Self {
-            contract_version: 2,
+            contract_version: CONTRACT_VERSION,
             app_state: AppState::Offline,
             app_instance_id: None,
             connection_id: None,

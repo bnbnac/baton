@@ -2,7 +2,8 @@ use crate::{dto::*, *};
 use baton_core::{ConnectionId, IoFuture, SessionId, State, StreamId, Transport, WriteResult};
 use baton_ipc::{AgentBackend, ConnectionContext, IpcFuture, WireError};
 use baton_ipc::{
-    AgentRequest, AgentResponse, CancellationToken, ErrorCode, LocalClient, LocalServer, WireId,
+    AgentKey, AgentRequest, AgentResponse, CancellationToken, ErrorCode, LocalClient, LocalServer,
+    WireId,
 };
 use std::{
     sync::{Arc, Mutex},
@@ -95,6 +96,58 @@ async fn session(app: &Arc<AppService>, label: &str) -> (Id, baton_core::Session
     .unwrap();
     (info.id, handle)
 }
+fn key(n: u128) -> AgentKey {
+    AgentKey::from_u128(n)
+}
+// The core connection an agent key maps to: the key's 128 bits.
+fn vc(n: u128) -> ConnectionId {
+    ConnectionId::from_u128(n)
+}
+fn status_request(n: u128) -> AgentRequest {
+    AgentRequest::Status { agent_key: key(n) }
+}
+async fn status_of(client: &LocalClient, n: u128) -> baton_ipc::StatusResult {
+    match client
+        .call(status_request(n), CancellationToken::new())
+        .await
+        .unwrap()
+    {
+        AgentResponse::Status(status) => status,
+        other => panic!("status expected, got {other:?}"),
+    }
+}
+fn read_request(
+    n: u128,
+    session: Id,
+    epoch: baton_core::SafeInt,
+    stream: u128,
+    wait_ms: u32,
+) -> AgentRequest {
+    AgentRequest::ReadOutput {
+        agent_key: key(n),
+        session_id: WireId::from_u128(session.0),
+        control_epoch: epoch,
+        stream_id: WireId::from_u128(stream),
+        cursor: baton_core::SafeInt::new(0).unwrap(),
+        limit: 100,
+        wait_ms,
+    }
+}
+fn send_request(
+    n: u128,
+    session: Id,
+    epoch: baton_core::SafeInt,
+    request_id: u128,
+    text: &str,
+) -> AgentRequest {
+    AgentRequest::SendText {
+        agent_key: key(n),
+        session_id: WireId::from_u128(session.0),
+        control_epoch: epoch,
+        request_id: WireId::from_u128(request_id),
+        text: text.into(),
+    }
+}
 #[tokio::test]
 async fn real_ipc_bridge_filters_owners_and_blocks_foreign_read_and_write() {
     let writes = Arc::new(Writes::default());
@@ -110,48 +163,22 @@ async fn real_ipc_bridge_filters_owners_and_blocks_foreign_read_and_write() {
     .unwrap();
     let a = LocalClient::connect(&path).await.unwrap();
     let b = LocalClient::connect(&path).await.unwrap();
+    status_of(&a, 1).await;
+    status_of(&b, 2).await;
     let (aid, ah) = session(&app, "A private").await;
     let (bid, bh) = session(&app, "B private").await;
-    ah.handoff(
-        ConnectionId::from_u128(a.context().connection_id().as_u128()),
-        StreamId::from_u128(1),
-    )
-    .await
-    .unwrap();
-    bh.handoff(
-        ConnectionId::from_u128(b.context().connection_id().as_u128()),
-        StreamId::from_u128(2),
-    )
-    .await
-    .unwrap();
+    ah.handoff(vc(1), StreamId::from_u128(1)).await.unwrap();
+    bh.handoff(vc(2), StreamId::from_u128(2)).await.unwrap();
     ah.receive(b"A output".to_vec()).await.unwrap();
     bh.receive(b"B SECRET".to_vec()).await.unwrap();
-    let status = a
-        .call(AgentRequest::Status {}, CancellationToken::new())
-        .await
-        .unwrap();
-    let AgentResponse::Status(status) = status else {
-        panic!("status expected")
-    };
+    let status = status_of(&a, 1).await;
     assert_eq!(status.sessions.len(), 1);
     assert_eq!(status.sessions[0].session_id, WireId::from_u128(aid.0));
     assert_eq!(status.sessions[0].label, "A private");
     let epoch = bh.snapshot().await.epoch;
     for request in [
-        AgentRequest::ReadOutput {
-            session_id: WireId::from_u128(bid.0),
-            control_epoch: epoch,
-            stream_id: WireId::from_u128(2),
-            cursor: baton_core::SafeInt::new(0).unwrap(),
-            limit: 100,
-            wait_ms: 0,
-        },
-        AgentRequest::SendText {
-            session_id: WireId::from_u128(bid.0),
-            control_epoch: epoch,
-            request_id: WireId::from_u128(5),
-            text: "NEVER".into(),
-        },
+        read_request(1, bid, epoch, 2, 0),
+        send_request(1, bid, epoch, 5, "NEVER"),
     ] {
         assert_eq!(
             a.call(request, CancellationToken::new())
@@ -164,12 +191,7 @@ async fn real_ipc_bridge_filters_owners_and_blocks_foreign_read_and_write() {
     assert!(writes.0.lock().unwrap().is_empty());
     let sent = a
         .call(
-            AgentRequest::SendText {
-                session_id: WireId::from_u128(aid.0),
-                control_epoch: ah.snapshot().await.epoch,
-                request_id: WireId::from_u128(6),
-                text: "ALLOWED".into(),
-            },
+            send_request(1, aid, ah.snapshot().await.epoch, 6, "ALLOWED"),
             CancellationToken::new(),
         )
         .await
@@ -181,16 +203,110 @@ async fn real_ipc_bridge_filters_owners_and_blocks_foreign_read_and_write() {
         }
     );
     assert_eq!(*writes.0.lock().unwrap(), vec![b"ALLOWED".to_vec()]);
+    // A shell belongs to the agent key, not to the IPC connection that carried the call.
     drop(a);
-    tokio::time::timeout(Duration::from_secs(1), async {
-        while ah.snapshot().await.state != State::Closed {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(ah.snapshot().await.state, State::AgentOwned);
     assert_eq!(bh.snapshot().await.state, State::AgentOwned);
     drop(b);
+    server.shutdown().await;
+    app.shutdown().await;
+}
+#[tokio::test]
+async fn two_agent_keys_on_one_ipc_connection_see_only_their_own_shells() {
+    let app = AppService::with_connector(
+        Arc::new(ConnectorFixture(Arc::new(Writes::default()))),
+        Arc::new(Sink),
+    );
+    let path = folder();
+    let server = app.start_agent_server(&path).await.unwrap();
+    let client = LocalClient::connect(&path).await.unwrap();
+    status_of(&client, 1).await;
+    status_of(&client, 2).await;
+    let (aid, ah) = session(&app, "A shell").await;
+    let (bid, bh) = session(&app, "B shell").await;
+    ah.handoff(vc(1), StreamId::from_u128(1)).await.unwrap();
+    bh.handoff(vc(2), StreamId::from_u128(2)).await.unwrap();
+    let first = status_of(&client, 1).await;
+    assert_eq!(first.sessions.len(), 1);
+    assert_eq!(first.sessions[0].session_id, WireId::from_u128(aid.0));
+    let second = status_of(&client, 2).await;
+    assert_eq!(second.sessions.len(), 1);
+    assert_eq!(second.sessions[0].session_id, WireId::from_u128(bid.0));
+    assert!(status_of(&client, 3).await.sessions.is_empty());
+    drop(client);
+    server.shutdown().await;
+    app.shutdown().await;
+}
+#[tokio::test]
+async fn foreign_key_cannot_read_or_write_another_keys_shell() {
+    let writes = Arc::new(Writes::default());
+    let app =
+        AppService::with_connector(Arc::new(ConnectorFixture(writes.clone())), Arc::new(Sink));
+    let path = folder();
+    let server = app.start_agent_server(&path).await.unwrap();
+    let client = LocalClient::connect(&path).await.unwrap();
+    status_of(&client, 1).await;
+    status_of(&client, 2).await;
+    let (aid, ah) = session(&app, "A shell").await;
+    ah.handoff(vc(1), StreamId::from_u128(1)).await.unwrap();
+    ah.receive(b"A output".to_vec()).await.unwrap();
+    let epoch = ah.snapshot().await.epoch;
+    for request in [
+        read_request(2, aid, epoch, 1, 0),
+        send_request(2, aid, epoch, 5, "NEVER"),
+    ] {
+        assert_eq!(
+            client
+                .call(request, CancellationToken::new())
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::NotOwner
+        );
+    }
+    assert!(writes.0.lock().unwrap().is_empty());
+    match client
+        .call(read_request(1, aid, epoch, 1, 0), CancellationToken::new())
+        .await
+        .unwrap()
+    {
+        AgentResponse::Output(page) => assert_eq!(page.text, "A output"),
+        other => panic!("output expected, got {other:?}"),
+    }
+    drop(client);
+    server.shutdown().await;
+    app.shutdown().await;
+}
+#[tokio::test]
+async fn one_agent_key_can_own_three_shells() {
+    let app = AppService::with_connector(
+        Arc::new(ConnectorFixture(Arc::new(Writes::default()))),
+        Arc::new(Sink),
+    );
+    let path = folder();
+    let server = app.start_agent_server(&path).await.unwrap();
+    let client = LocalClient::connect(&path).await.unwrap();
+    status_of(&client, 1).await;
+    let mut expected = Vec::new();
+    for n in 0..3u128 {
+        let (id, handle) = session(&app, &format!("shell {n}")).await;
+        handle
+            .handoff(vc(1), StreamId::from_u128(n + 1))
+            .await
+            .unwrap();
+        expected.push(WireId::from_u128(id.0));
+    }
+    let mut seen: Vec<WireId> = status_of(&client, 1)
+        .await
+        .sessions
+        .iter()
+        .map(|s| s.session_id)
+        .collect();
+    seen.sort();
+    expected.sort();
+    assert_eq!(seen, expected);
+    drop(client);
     server.shutdown().await;
     app.shutdown().await;
 }
@@ -253,22 +369,10 @@ async fn read_reclaim_before_flush_rejects_the_old_output() {
     .await
     .unwrap();
     let client = Arc::new(LocalClient::connect(&path).await.unwrap());
+    status_of(&client, 1).await;
     let (id, handle) = session(&app, "private after reclaim").await;
-    handle
-        .handoff(
-            ConnectionId::from_u128(client.context().connection_id().as_u128()),
-            StreamId::from_u128(1),
-        )
-        .await
-        .unwrap();
-    let request = AgentRequest::ReadOutput {
-        session_id: WireId::from_u128(id.0),
-        control_epoch: handle.snapshot().await.epoch,
-        stream_id: WireId::from_u128(1),
-        cursor: baton_core::SafeInt::new(0).unwrap(),
-        limit: 100,
-        wait_ms: 10000,
-    };
+    handle.handoff(vc(1), StreamId::from_u128(1)).await.unwrap();
+    let request = read_request(1, id, handle.snapshot().await.epoch, 1, 10000);
     let caller = client.clone();
     let read = tokio::spawn(async move { caller.call(request, CancellationToken::new()).await });
     handle.receive(b"OLD PUBLIC OUTPUT".to_vec()).await.unwrap();
@@ -299,7 +403,7 @@ async fn app_shutdown_rejects_new_ipc_registration() {
     app.shutdown().await;
     assert_eq!(
         client
-            .call(AgentRequest::Status {}, CancellationToken::new())
+            .call(status_request(1), CancellationToken::new())
             .await
             .unwrap_err()
             .code,
@@ -323,16 +427,12 @@ async fn queued_input_cancellation_never_writes_and_delivery_waits_for_transport
     let path = folder();
     let server = app.start_agent_server(&path).await.unwrap();
     let client = Arc::new(LocalClient::connect(&path).await.unwrap());
+    status_of(&client, 1).await;
     let (id, handle) = session(&app, "cancellation").await;
-    let owner = ConnectionId::from_u128(client.context().connection_id().as_u128());
+    let owner = vc(1);
     handle.handoff(owner, StreamId::from_u128(1)).await.unwrap();
     let epoch = handle.snapshot().await.epoch;
-    let request = |n, text: &str| AgentRequest::SendText {
-        session_id: WireId::from_u128(id.0),
-        control_epoch: epoch,
-        request_id: WireId::from_u128(n),
-        text: text.into(),
-    };
+    let request = |n: u128, text: &str| send_request(1, id, epoch, n, text);
     let caller = client.clone();
     let first = request(1, "FIRST");
     let first = tokio::spawn(async move { caller.call(first, CancellationToken::new()).await });
@@ -402,7 +502,10 @@ async fn user_ownership_actions_validate_epoch_and_intervention_is_only_notifica
     let path = folder();
     let server = app.start_agent_server(&path).await.unwrap();
     let client = LocalClient::connect(&path).await.unwrap();
-    let connection_id = Id(client.context().connection_id().as_u128());
+    // An IPC connection alone is not listed; the agent connection appears with its first call.
+    assert!(app.list_agent_connections().is_empty());
+    status_of(&client, 1).await;
+    let connection_id = Id(1);
     assert_eq!(app.list_agent_connections()[0].id, connection_id);
     let (id, handle) = session(&app, "ownership").await;
     let first = handle.snapshot().await.epoch;
@@ -438,6 +541,7 @@ async fn user_ownership_actions_validate_epoch_and_intervention_is_only_notifica
     client
         .call(
             AgentRequest::RequestUserControl {
+                agent_key: key(1),
                 session_id: WireId::from_u128(id.0),
                 control_epoch: handed.epoch,
                 request_id: WireId::from_u128(7),
@@ -477,13 +581,35 @@ async fn user_ownership_actions_validate_epoch_and_intervention_is_only_notifica
     assert_eq!(reclaimed.assigned_connection, Some(connection_id));
     drop(client);
     server.shutdown().await;
-    assert!(app.list_agent_connections().is_empty());
+    // The agent connection outlives the IPC connection that carried its calls.
+    assert_eq!(app.list_agent_connections().len(), 1);
     assert_eq!(handle.snapshot().await.state, State::UserOwned);
     app.shutdown().await;
 }
 
 #[tokio::test]
-async fn connection_name_is_listed_per_connection_and_forgotten_on_disconnect() {
+async fn first_call_registers_the_agent_connection_and_status_reports_its_id() {
+    let app = AppService::with_connector(
+        Arc::new(ConnectorFixture(Arc::new(Writes::default()))),
+        Arc::new(Sink),
+    );
+    let path = folder();
+    let server = app.start_agent_server(&path).await.unwrap();
+    let client = LocalClient::connect(&path).await.unwrap();
+    assert!(app.list_agent_connections().is_empty());
+    let status = status_of(&client, 7).await;
+    let list = app.list_agent_connections();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, Id(7));
+    assert_eq!(status.connection_id, Some(WireId::from_u128(7)));
+    assert_eq!(status.contract_version, baton_ipc::CONTRACT_VERSION);
+    drop(client);
+    server.shutdown().await;
+    app.shutdown().await;
+}
+
+#[tokio::test]
+async fn connection_names_are_kept_per_agent_key() {
     let app = AppService::with_connector(
         Arc::new(ConnectorFixture(Arc::new(Writes::default()))),
         Arc::new(Sink),
@@ -498,55 +624,91 @@ async fn connection_name_is_listed_per_connection_and_forgotten_on_disconnect() 
     .unwrap();
     let a = LocalClient::connect(&path).await.unwrap();
     let b = LocalClient::connect(&path).await.unwrap();
-    assert!(
-        app.list_agent_connections()
-            .iter()
-            .all(|c| c.name.is_none())
-    );
+    assert!(app.list_agent_connections().is_empty());
     let named = a
         .call(
             AgentRequest::SetConnectionName {
-                name: "  세션 A  ".into(),
+                agent_key: key(1),
+                name: "  서버 점검  ".into(),
             },
             CancellationToken::new(),
         )
         .await
         .unwrap();
     assert_eq!(named, AgentResponse::ConnectionName {});
+    b.call(
+        AgentRequest::SetConnectionName {
+            agent_key: key(2),
+            name: "로그 분석".into(),
+        },
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     let invalid = b
         .call(
-            AgentRequest::SetConnectionName { name: "\n".into() },
+            AgentRequest::SetConnectionName {
+                agent_key: key(3),
+                name: "\n".into(),
+            },
             CancellationToken::new(),
         )
         .await;
     assert!(invalid.is_err());
-    let list = app.list_agent_connections();
-    let name_of = |client: &LocalClient| {
-        list.iter()
-            .find(|c| c.id.0 == client.context().connection_id().as_u128())
-            .unwrap()
-            .name
-            .clone()
+    let names = |app: &Arc<AppService>| {
+        app.list_agent_connections()
+            .into_iter()
+            .map(|c| (c.id.0, c.name))
+            .collect::<Vec<_>>()
     };
-    assert_eq!(name_of(&a).as_deref(), Some("세션 A"));
-    assert_eq!(name_of(&b), None);
+    let expected = vec![
+        (1, Some("서버 점검".to_string())),
+        (2, Some("로그 분석".to_string())),
+    ];
+    assert_eq!(names(&app), expected);
+    // Names belong to the agent key and stay when the IPC connection that set them goes away.
     a.close();
-    tokio::time::timeout(Duration::from_secs(2), async {
-        while app.list_agent_connections().len() != 1 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
-    // forget_connection_name runs after the runtime drops the connection.
-    tokio::time::timeout(Duration::from_secs(2), async {
-        while !app.state.lock().unwrap().connection_names.is_empty() {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(names(&app), expected);
     drop(b);
+    server.shutdown().await;
+    app.shutdown().await;
+}
+
+#[tokio::test]
+async fn shells_stay_assigned_after_physical_disconnect_and_same_key_reattaches() {
+    let writes = Arc::new(Writes::default());
+    let app =
+        AppService::with_connector(Arc::new(ConnectorFixture(writes.clone())), Arc::new(Sink));
+    let path = folder();
+    let server = app.start_agent_server(&path).await.unwrap();
+    let first = LocalClient::connect(&path).await.unwrap();
+    status_of(&first, 1).await;
+    let (id, handle) = session(&app, "survivor").await;
+    handle.handoff(vc(1), StreamId::from_u128(1)).await.unwrap();
+    drop(first);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(handle.snapshot().await.state, State::AgentOwned);
+    let second = LocalClient::connect(&path).await.unwrap();
+    let status = status_of(&second, 1).await;
+    assert_eq!(status.sessions.len(), 1);
+    assert_eq!(status.sessions[0].session_id, WireId::from_u128(id.0));
+    assert_eq!(status.sessions[0].state, baton_ipc::SessionState::AgentOwned);
+    let sent = second
+        .call(
+            send_request(1, id, handle.snapshot().await.epoch, 1, "AFTER"),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        sent,
+        AgentResponse::Input {
+            result: baton_ipc::InputOutcome::Delivered
+        }
+    );
+    assert_eq!(*writes.0.lock().unwrap(), vec![b"AFTER".to_vec()]);
+    drop(second);
     server.shutdown().await;
     app.shutdown().await;
 }

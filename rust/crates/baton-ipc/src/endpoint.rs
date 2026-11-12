@@ -74,7 +74,7 @@ pub struct Discovery {
 }
 impl Discovery {
     pub fn verify(&self, version: u32, app: WireId, secret: &Secret) -> Result<(), WireError> {
-        if version != 2 || self.contract_version != 2 {
+        if version != crate::CONTRACT_VERSION || self.contract_version != crate::CONTRACT_VERSION {
             return Err(WireError::new(ErrorCode::ProtocolMismatch));
         }
         if app != self.app_instance_id || !self.secret.matches(secret) {

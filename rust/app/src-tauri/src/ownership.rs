@@ -36,9 +36,6 @@ impl AppService {
         }
         live
     }
-    pub(crate) fn forget_connection_name(&self, id: Id) {
-        self.state.lock().unwrap().connection_names.remove(&id);
-    }
     pub(crate) fn publish_connections(&self) {
         let active = {
             let state = self.state.lock().unwrap();

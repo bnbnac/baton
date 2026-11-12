@@ -8,11 +8,14 @@ use std::{
 };
 use tokio::io::{AsyncRead, ReadBuf};
 
+fn key() -> &'static str {
+    "3f39e1c4-70c2-475e-b0e7-b5891a42f330"
+}
 fn id() -> &'static str {
     "0123456789abcdef0123456789abcdef"
 }
 fn request() -> Value {
-    json!({"method":"send_text","session_id":id(),"control_epoch":1,"request_id":id(),"text":"hello\n"})
+    json!({"method":"send_text","agent_key":key(),"session_id":id(),"control_epoch":1,"request_id":id(),"text":"hello\n"})
 }
 fn frame(body: Value) -> Vec<u8> {
     let payload = serde_json::to_vec(&body).unwrap();
@@ -97,7 +100,7 @@ fn strict_ids_numbers() {
         req["control_epoch"] = value;
         assert!(serde_json::from_value::<AgentRequest>(req).is_err());
     }
-    for field in ["session_id", "control_epoch", "request_id", "text"] {
+    for field in ["agent_key", "session_id", "control_epoch", "request_id", "text"] {
         let mut req = request();
         req.as_object_mut().unwrap().remove(field);
         assert!(serde_json::from_value::<AgentRequest>(req).is_err());
@@ -109,13 +112,13 @@ fn strict_ids_numbers() {
 #[test]
 fn strict_request_variants() {
     for value in [
-        json!({"method":"status","owner":id()}),
+        json!({"method":"status","agent_key":key(),"owner":id()}),
         json!({"method":"reclaim"}),
-        json!({"method":"send_key","session_id":id(),"control_epoch":1,"request_id":id(),"key":"F1"}),
+        json!({"method":"send_key","agent_key":key(),"session_id":id(),"control_epoch":1,"request_id":id(),"key":"F1"}),
     ] {
         assert!(serde_json::from_value::<AgentRequest>(value).is_err());
     }
-    let mut read = json!({"method":"read_output","session_id":id(),"control_epoch":1,"stream_id":id(),"cursor":0,"limit":2,"wait_ms":0});
+    let mut read = json!({"method":"read_output","agent_key":key(),"session_id":id(),"control_epoch":1,"stream_id":id(),"cursor":0,"limit":2,"wait_ms":0});
     assert!(serde_json::from_value::<AgentRequest>(read.clone()).is_ok());
     read.as_object_mut().unwrap().remove("stream_id");
     assert!(serde_json::from_value::<AgentRequest>(read).is_err());
@@ -133,7 +136,7 @@ async fn request_bounds_on_wire() {
         );
     }
     for reason in ["\n", "\u{7f}", "\u{85}"] {
-        let req = json!({"method":"request_user_control","session_id":id(),"control_epoch":0,"request_id":id(),"reason":reason});
+        let req = json!({"method":"request_user_control","agent_key":key(),"session_id":id(),"control_epoch":0,"request_id":id(),"reason":reason});
         assert!(
             read_frame(&mut frame(json!({"type":"request","id":0,"body":req})).as_slice())
                 .await
@@ -147,7 +150,7 @@ async fn request_bounds_on_wire() {
         (32769, 0, false),
         (2, 10001, false),
     ] {
-        let req = json!({"method":"read_output","session_id":id(),"control_epoch":0,"stream_id":id(),"cursor":0,"limit":limit,"wait_ms":wait});
+        let req = json!({"method":"read_output","agent_key":key(),"session_id":id(),"control_epoch":0,"stream_id":id(),"cursor":0,"limit":limit,"wait_ms":wait});
         assert_eq!(
             read_frame(&mut frame(json!({"type":"request","id":0,"body":req})).as_slice())
                 .await

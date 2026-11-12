@@ -322,7 +322,7 @@ impl EndpointLease {
             false,
         )?;
         let discovery = Discovery {
-            contract_version: 2,
+            contract_version: crate::CONTRACT_VERSION,
             app_instance_id: app,
             pipe_name: format!("\\\\.\\pipe\\baton-rust-v2-{:032x}", app.as_u128()),
             secret: generate().inspect_err(|_error| {
@@ -480,7 +480,7 @@ pub fn load_endpoint(dir: &Path) -> Result<Discovery, WireError> {
     }
     let clear = crypt(&bytes, false)?;
     let value: Discovery = serde_json::from_slice(&clear).map_err(|_| failure())?;
-    if value.contract_version != 2 {
+    if value.contract_version != crate::CONTRACT_VERSION {
         return Err(WireError::new(ErrorCode::ProtocolMismatch));
     }
     if value.pipe_name
@@ -800,7 +800,7 @@ mod tests {
         let dir = test_dir();
         let lease = EndpointLease::publish(&dir, WireId::from_u128(810)).unwrap();
         let replacement = Discovery {
-            contract_version: 2,
+            contract_version: crate::CONTRACT_VERSION,
             app_instance_id: WireId::from_u128(811),
             pipe_name: format!("\\\\.\\pipe\\baton-rust-v2-{:032x}", 811),
             secret: Secret::generate().unwrap(),

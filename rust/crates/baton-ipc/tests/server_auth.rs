@@ -49,7 +49,7 @@ impl AgentBackend for Backend {
                     has_more: false,
                 }));
             }
-            if !matches!(request, AgentRequest::Status {}) {
+            if !matches!(request, AgentRequest::Status { .. }) {
                 self.entered.notify_one();
                 tokio::select! { _ = cancel.cancelled() => {self.cancelled.notify_one();return Err(WireError::new(ErrorCode::Cancelled));}, _ = self.release.notified() => {} }
             }
@@ -64,6 +64,7 @@ fn bulk(n: u64) -> Frame {
     Frame::Request {
         id: id(n),
         body: AgentRequest::SendText {
+            agent_key: key(),
             session_id: WireId::from_u128(1),
             control_epoch: id(1),
             request_id: WireId::from_u128(n.into()),
@@ -86,7 +87,7 @@ async fn stalled_writer_still_processes_cancel_and_expires_without_harming_other
         .await
         .unwrap();
     assert!(
-        good.call(AgentRequest::Status {}, CancellationToken::new())
+        good.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .is_ok()
     );
@@ -98,7 +99,7 @@ async fn stalled_writer_still_processes_cancel_and_expires_without_harming_other
     .await
     .unwrap();
     assert!(
-        good.call(AgentRequest::Status {}, CancellationToken::new())
+        good.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .is_ok()
     );
@@ -164,7 +165,7 @@ async fn raw(folder: &std::path::Path) -> NamedPipeClient {
     write_frame(
         &mut pipe,
         &Frame::Hello {
-            contract_version: 2,
+            contract_version: CONTRACT_VERSION,
             app_instance_id: d.app_instance_id,
             secret: d.secret,
         },
@@ -183,6 +184,7 @@ fn id(n: u64) -> SafeInt {
 fn request(n: u64, read: bool) -> Frame {
     let body = if read {
         AgentRequest::ReadOutput {
+            agent_key: key(),
             session_id: WireId::from_u128(1),
             control_epoch: id(1),
             stream_id: WireId::from_u128(1),
@@ -192,6 +194,7 @@ fn request(n: u64, read: bool) -> Frame {
         }
     } else {
         AgentRequest::SendText {
+            agent_key: key(),
             session_id: WireId::from_u128(1),
             control_epoch: id(1),
             request_id: WireId::from_u128(n.into()),
@@ -214,7 +217,7 @@ async fn authentication_rejects_secret_version_instance_before_registration() {
         let d = endpoint::load_endpoint(&folder).unwrap();
         let mut pipe = ClientOptions::new().open(&d.pipe_name).unwrap();
         let frame = Frame::Hello {
-            contract_version: if variant == 0 { 1 } else { 2 },
+            contract_version: if variant == 0 { 1 } else { CONTRACT_VERSION },
             app_instance_id: if variant == 1 {
                 WireId::from_u128(999)
             } else {
@@ -233,7 +236,7 @@ async fn authentication_rejects_secret_version_instance_before_registration() {
     let client = LocalClient::connect(&folder).await.unwrap();
     assert!(
         client
-            .call(AgentRequest::Status {}, CancellationToken::new())
+            .call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .is_ok()
     );
@@ -310,7 +313,7 @@ async fn partial_frame_survives_dispatch_completion() {
         &mut encoded,
         &Frame::Request {
             id: id(1),
-            body: AgentRequest::Status {},
+            body: AgentRequest::Status { agent_key: key() },
         },
     )
     .await
@@ -336,7 +339,7 @@ async fn thirty_two_authenticated_connections_are_bounded() {
     assert_eq!(backend.connected.load(Ordering::SeqCst), 32);
     assert!(
         clients[0]
-            .call(AgentRequest::Status {}, CancellationToken::new())
+            .call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .is_ok()
     );
@@ -356,14 +359,14 @@ async fn pending_handshakes_are_bounded_and_partial_eof_does_not_harm_other_clie
         pipe.write_all(&[1, 0]).await.unwrap();
         pending.push(pipe);
         // A healthy round trip proves the accept loop has run before next open.
-        good.call(AgentRequest::Status {}, CancellationToken::new())
+        good.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .unwrap();
     }
     assert!(LocalClient::connect(&folder).await.is_err());
     assert_eq!(backend.connected.load(Ordering::SeqCst), 1);
     drop(pending);
-    good.call(AgentRequest::Status {}, CancellationToken::new())
+    good.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
         .await
         .unwrap();
     drop(good);
@@ -378,7 +381,7 @@ async fn duplicate_ids_disconnect_only_the_offending_client() {
     let mut bad = raw(&folder).await;
     let frame = Frame::Request {
         id: id(0),
-        body: AgentRequest::Status {},
+        body: AgentRequest::Status { agent_key: key() },
     };
     write_frame(&mut bad, &frame).await.unwrap();
     response(&mut bad).await;
@@ -390,10 +393,32 @@ async fn duplicate_ids_disconnect_only_the_offending_client() {
             .is_err()
     );
     assert!(
-        good.call(AgentRequest::Status {}, CancellationToken::new())
+        good.call(AgentRequest::Status { agent_key: key() }, CancellationToken::new())
             .await
             .is_ok()
     );
     drop(good);
     server.shutdown().await;
+}
+
+fn key() -> AgentKey {
+    AgentKey::from_u128(1)
+}
+#[tokio::test]
+async fn hello_with_previous_contract_version_is_rejected() {
+    let (folder, _server, backend) = setup().await;
+    let d = endpoint::load_endpoint(&folder).unwrap();
+    let mut pipe = ClientOptions::new().open(&d.pipe_name).unwrap();
+    write_frame(
+        &mut pipe,
+        &Frame::Hello {
+            contract_version: 2,
+            app_instance_id: d.app_instance_id,
+            secret: d.secret,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(response(&mut pipe).await, Frame::Rejected { .. }));
+    assert_eq!(backend.connected.load(Ordering::SeqCst), 0);
 }

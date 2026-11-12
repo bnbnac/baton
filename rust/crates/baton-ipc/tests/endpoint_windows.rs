@@ -53,7 +53,7 @@ async fn authentication_binds_version_instance_and_secret() {
     let discovery = load_endpoint(&path).unwrap();
     assert!(
         discovery
-            .verify(2, discovery.app_instance_id, &discovery.secret)
+            .verify(CONTRACT_VERSION, discovery.app_instance_id, &discovery.secret)
             .is_ok()
     );
     assert_eq!(
@@ -65,7 +65,14 @@ async fn authentication_binds_version_instance_and_secret() {
     );
     assert_eq!(
         discovery
-            .verify(2, WireId::from_u128(0), &discovery.secret)
+            .verify(2, discovery.app_instance_id, &discovery.secret)
+            .unwrap_err()
+            .code,
+        ErrorCode::ProtocolMismatch
+    );
+    assert_eq!(
+        discovery
+            .verify(CONTRACT_VERSION, WireId::from_u128(0), &discovery.secret)
             .unwrap_err()
             .code,
         ErrorCode::AuthenticationFailed
@@ -73,7 +80,7 @@ async fn authentication_binds_version_instance_and_secret() {
     let other = Secret::generate().unwrap();
     assert_eq!(
         discovery
-            .verify(2, discovery.app_instance_id, &other)
+            .verify(CONTRACT_VERSION, discovery.app_instance_id, &other)
             .unwrap_err()
             .code,
         ErrorCode::AuthenticationFailed

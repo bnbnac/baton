@@ -3,7 +3,7 @@ import {Ownership} from '../sessions/ownership.js';
 type Send=(name:string,request:unknown)=>Promise<unknown>;
 function element<K extends keyof HTMLElementTagNameMap>(tag:K,text=''){const el=document.createElement(tag);el.textContent=text;return el;}
 // Same-titled sessions stay distinguishable by the connection ID suffix.
-export function connectionLabel(c:Connection){return c.name?`${c.name} · ${c.id.slice(0,6)}`:`MCP ${c.id.slice(0,12)}`;}
+export function connectionLabel(c:Connection){return c.name?`${c.name} · ${c.id.slice(0,6)}`:`Claude 세션 · ${c.id.slice(0,6)}`;}
 export class OwnershipView {
   private renderedKey:string|undefined;
   constructor(private root:HTMLElement,private model:Ownership,private send:Send,private refresh:()=>void,private error:(error:unknown)=>void){}
@@ -14,14 +14,14 @@ export class OwnershipView {
     if(key===this.renderedKey)return;
     this.renderedKey=key;
     this.root.replaceChildren();if(!session)return;
-    const ids=element('div');ids.className='ownership-ids';ids.append(element('span',`세션 ${session.id.slice(0,12)}`));
+    const ids=element('div');ids.className='ownership-ids';ids.append(element('span',`셸 ${session.id.slice(0,12)}`));
     const copy=(text:string,id:string)=>{const button=element('button',text);button.className='secondary';button.title=id;button.onclick=()=>{void navigator.clipboard.writeText(id).catch(this.error);};return button;};
-    ids.append(copy('세션 ID 복사',session.id));
-    if(session.assigned_connection){const assigned=this.model.connections.find(c=>c.id===session.assigned_connection);ids.append(element('span',`${session.state==='agent_owned'?'제어 연결':'연결 기록'} ${assigned?connectionLabel(assigned):session.assigned_connection.slice(0,12)}`),copy('연결 ID 복사',session.assigned_connection));}
+    ids.append(copy('셸 ID 복사',session.id));
+    if(session.assigned_connection){const assigned=this.model.connections.find(c=>c.id===session.assigned_connection);ids.append(element('span',`${session.state==='agent_owned'?'제어 중인 Claude 세션':'마지막 Claude 세션'} ${assigned?connectionLabel(assigned):session.assigned_connection.slice(0,12)}`),copy('Claude 세션 ID 복사',session.assigned_connection));}
     this.root.append(ids);
     const actions=element('div');actions.className='ownership-actions';
-    const select=element('select');select.setAttribute('aria-label','전달할 MCP 연결');select.disabled=session.state!=='user_owned'||this.model.busy(session.id);
-    const placeholder=element('option',this.model.connections.length?'MCP 연결 선택':'연결된 MCP 없음');placeholder.value='';select.append(placeholder);
+    const select=element('select');select.setAttribute('aria-label','전달할 Claude 세션');select.disabled=session.state!=='user_owned'||this.model.busy(session.id);
+    const placeholder=element('option',this.model.connections.length?'Claude 세션 선택':'Claude 세션 없음');placeholder.value='';select.append(placeholder);
     for(const c of this.model.connections){const option=element('option',connectionLabel(c));option.value=c.id;option.title=c.display_name;select.append(option);}
     select.value=this.model.selectedConnection??'';select.onchange=()=>{this.model.selectConnection(select.value);this.refresh();};actions.append(select);
     const action=(label:string,name:string,request:{id:string}|null)=>{const button=element('button',label);button.disabled=!request;button.onclick=()=>{if(!request)return;this.model.begin(request.id);this.refresh();void this.send(name,request).catch(this.error).finally(()=>{this.model.finish(request.id);this.refresh();});};return button;};

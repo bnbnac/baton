@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { observe, deadline, stop } from '../helpers/process.mjs';
+// Contract v3 requires a session key on every call; harness callers that do not care send this one.
+export const TEST_AGENT_KEY = '3f39e1c4-70c2-475e-b0e7-b5891a42f330';
 export class Adapter {
   constructor(endpoint, options = {}) {
     this.process = observe(spawn(options.executable ?? fileURLToPath(new URL('../../target/debug/baton-adapter.exe', import.meta.url)), [], {
@@ -48,7 +50,7 @@ export class Adapter {
     const result = await this.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'baton-test', version: '0.1' } });
     this.notify('notifications/initialized', {}); return result;
   }
-  tool(name, args = {}, id) { return this.request('tools/call', { name, arguments: args }, id); }
+  tool(name, args = {}, id) { return this.request('tools/call', { name, arguments: { agent_key: TEST_AGENT_KEY, ...args } }, id); }
   async eof() { this.process.child.stdin.end(); const exit = await deadline(this.process.closed, 2000, 'eof_timeout'); if (this.failure) throw this.failure; return exit.code; }
   async cleanup() { await stop(this.process); }
 }
