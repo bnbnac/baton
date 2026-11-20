@@ -33,7 +33,7 @@ function render(){
 function renderAuth(session:Session|undefined){const p=session&&session.state!=='closed'?prompts.get(session.id):undefined;const key=p?`${p.session}/${p.attempt}/${p.challenge}`:session?`${session.id}/${session.state}`:'';if(key===shownAuth)return;shownAuth=key;secrets.clear();auth.replaceChildren();if(!session)return;
   const close=element('button',session.state==='closed'?'목록에서 제거':'연결 종료','secondary');close.onclick=()=>{void command(session.state==='closed'?'remove_closed_session':'close_session',{id:session.id}).catch(showError);};auth.append(close);if(!p)return;
   secrets.show(p);const panel=element('form','','challenge');panel.append(element('h2',p.kind==='host'?'서버 신원 확인':'인증'),element('pre',p.display));const inputs:HTMLInputElement[]=[];let file:HTMLInputElement|undefined;
-  if(p.kind==='key'){file=field(panel,'개인 키 파일','file');inputs.push(field(panel,'키 암호','password'));}else if(p.kind!=='host'){for(const f of p.prompts)inputs.push(field(panel,f.text,f.echo?'text':'password'));}
+  if(p.kind==='key'){file=field(panel,'개인 키 파일','file');inputs.push(field(panel,'키 암호 (암호가 없는 키는 비워 두세요)','password'));}else if(p.kind!=='host'){for(const f of p.prompts)inputs.push(field(panel,f.text,f.echo?'text':'password'));}
   const submit=element('button',p.kind==='host'?'이 연결에서 신뢰':'인증');panel.append(submit);
   panel.onsubmit=async event=>{event.preventDefault();submit.disabled=true;error.textContent='';try {
     let answer:unknown;

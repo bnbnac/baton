@@ -1,7 +1,7 @@
 use crate::*;
 use russh::{
     client::{self, Handle, KeyboardInteractiveAuthResponse as Interactive},
-    keys::{PrivateKeyWithHashAlg, decode_secret_key},
+    keys::{HashAlg, PrivateKeyWithHashAlg, decode_secret_key},
 };
 use std::{
     future::Future,
@@ -193,11 +193,21 @@ pub(crate) async fn authenticate(
             };
             let key =
                 decode_secret_key(&encoded, Some(&passphrase)).map_err(|_| SshError::AuthFailed)?;
+            // 해시를 None으로 넘기면 RSA는 SHA-1(ssh-rsa)로 서명하는데, OpenSSH 8.8+는 이를 거부한다.
+            let hash_alg = if key.algorithm().is_rsa() {
+                match ctx.network(ssh.best_supported_rsa_hash()).await? {
+                    Some(negotiated) => negotiated,
+                    // server-sig-algs 확장을 보내지 않는 서버: sha2 계열을 시도한다.
+                    None => Some(HashAlg::Sha256),
+                }
+            } else {
+                None
+            };
             Some(
                 ctx.auth_network(
                     ssh.authenticate_publickey(
                         &r.username,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                        PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
                     ),
                     client::AuthResult::success,
                 )
