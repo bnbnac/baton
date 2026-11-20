@@ -69,6 +69,7 @@ pub enum SshError {
     Cancelled,
     HostRejected,
     AuthFailed,
+    KeyUnreadable,
     TransportFailed,
     Timeout,
     StaleChallenge,

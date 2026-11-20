@@ -3,10 +3,20 @@ import { createHash } from 'node:crypto';
 const { Server, utils } = ssh2;
 const caseName = process.argv[2];
 const hostKey = utils.generateKeyPairSync('ed25519');
-const rsaCase = caseName === 'rsa-key';
-const userKey = rsaCase ? utils.generateKeyPairSync('rsa', { bits: 2048 })
-  : caseName?.includes('key') ? utils.generateKeyPairSync('ed25519', { cipher: 'aes256-ctr', passphrase: 'fixture-key-pass' }) : null;
-const publicKey = userKey ? utils.parseKey(userKey.private, rsaCase ? undefined : 'fixture-key-pass') : null;
+const keyCases = {
+  'encrypted-key': { type: 'ed25519', passphrase: true },
+  'wrong-key-passphrase': { type: 'ed25519', passphrase: true },
+  'empty-key-passphrase': { type: 'ed25519', passphrase: true },
+  'rsa-key': { type: 'rsa', passphrase: false },
+  'encrypted-rsa-key': { type: 'rsa', passphrase: true },
+};
+const keyCase = keyCases[caseName];
+const keyPassphrase = keyCase?.passphrase ? 'fixture-key-pass' : undefined;
+const generateOptions = { ...(keyCase?.type === 'rsa' && { bits: 2048 }), ...(keyPassphrase && { cipher: keyCase.type === 'rsa' ? 'aes128-cbc' : 'aes256-ctr', passphrase: keyPassphrase }) };
+const userKey = keyCase ? utils.generateKeyPairSync(keyCase.type, generateOptions) : null;
+const publicKey = userKey ? utils.parseKey(userKey.private, keyPassphrase) : null;
+// OpenSSH 8.8+처럼 SHA-1 ssh-rsa 서명을 거부한다(ssh-rsa는 hashAlgo가 비어 있다).
+const rejectsSha1Rsa = keyCase?.type === 'rsa';
 let releaseAuth;
 const parsed = utils.parseKey(hostKey.private);
 const fingerprint = 'SHA256:' + createHash('sha256').update(parsed.getPublicSSH()).digest('base64').replace(/=+$/, '');
@@ -27,7 +37,7 @@ const server = new Server({ hostKeys: [hostKey.private] }, client => {
       }
       else ctx.accept();
     } else if (ctx.method === 'publickey' && publicKey && ctx.key.data.equals(publicKey.getPublicSSH())) {
-      if (rsaCase && !ctx.hashAlgo) return ctx.reject();
+      if (rejectsSha1Rsa && !ctx.hashAlgo) return ctx.reject();
       if (!ctx.signature || publicKey.verify(ctx.blob, ctx.signature, ctx.hashAlgo)) ctx.accept();
       else ctx.reject();
     } else if (ctx.method === 'keyboard-interactive') {
