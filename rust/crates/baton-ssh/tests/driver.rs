@@ -68,6 +68,8 @@ impl AuthUi for Ui {
                     passphrase: Zeroizing::new(
                         if self.case == "wrong-key-passphrase" {
                             "wrong"
+                        } else if self.case == "rsa-key" || self.case == "empty-key-passphrase" {
+                            ""
                         } else {
                             "fixture-key-pass"
                         }

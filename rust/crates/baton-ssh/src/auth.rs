@@ -1,7 +1,7 @@
 use crate::*;
 use russh::{
     client::{self, Handle, KeyboardInteractiveAuthResponse as Interactive},
-    keys::{PrivateKeyWithHashAlg, decode_secret_key},
+    keys::{HashAlg, PrivateKeyWithHashAlg, decode_secret_key},
 };
 use std::{
     future::Future,
@@ -149,6 +149,14 @@ impl Context {
         }
     }
 }
+// RSA에 해시를 None으로 넘기면 SHA-1(ssh-rsa)로 서명하는데 OpenSSH 8.8+는 이를 거부한다.
+// server-sig-algs를 보내지 않는 서버(None)는 sha2를 먼저 시도하고, 거부되면 ssh-rsa로 되돌린다.
+fn rsa_hash_candidates(negotiated: Option<Option<HashAlg>>) -> Vec<Option<HashAlg>> {
+    match negotiated {
+        Some(hash) => vec![hash],
+        None => vec![Some(HashAlg::Sha256), None],
+    }
+}
 pub(crate) async fn authenticate(
     ssh: &mut Handle<crate::host_key::HostVerifier>,
     ctx: &Context,
@@ -191,18 +199,39 @@ pub(crate) async fn authenticate(
             else {
                 return Err(SshError::InvalidInput);
             };
-            let key =
-                decode_secret_key(&encoded, Some(&passphrase)).map_err(|_| SshError::AuthFailed)?;
-            Some(
-                ctx.auth_network(
-                    ssh.authenticate_publickey(
-                        &r.username,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
-                    ),
-                    client::AuthResult::success,
-                )
-                .await?,
-            )
+            let key = Arc::new(
+                decode_secret_key(&encoded, Some(&passphrase))
+                    .map_err(|_| SshError::KeyUnreadable)?,
+            );
+            let candidates = if key.algorithm().is_rsa() {
+                rsa_hash_candidates(ctx.network(ssh.best_supported_rsa_hash()).await?)
+            } else {
+                vec![None]
+            };
+            let mut last = None;
+            for hash_alg in candidates {
+                let result = ctx
+                    .auth_network(
+                        ssh.authenticate_publickey(
+                            &r.username,
+                            PrivateKeyWithHashAlg::new(key.clone(), hash_alg),
+                        ),
+                        client::AuthResult::success,
+                    )
+                    .await?;
+                let retry = matches!(
+                    result,
+                    client::AuthResult::Failure {
+                        partial_success: false,
+                        ..
+                    }
+                );
+                last = Some(result);
+                if !retry {
+                    break;
+                }
+            }
+            last
         }
         AuthMethod::Interactive => None,
     };
@@ -277,6 +306,15 @@ pub(crate) async fn authenticate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rsa_hash_candidates_follow_server_advertisement_and_fall_back_only_when_silent() {
+        assert_eq!(
+            rsa_hash_candidates(Some(Some(HashAlg::Sha512))),
+            vec![Some(HashAlg::Sha512)]
+        );
+        assert_eq!(rsa_hash_candidates(Some(None)), vec![None]);
+        assert_eq!(rsa_hash_candidates(None), vec![Some(HashAlg::Sha256), None]);
+    }
     struct PendingUi;
     impl AuthUi for PendingUi {
         fn ask(&self, _: AuthPrompt) -> IoFuture<'_, Result<AuthAnswer, SshError>> {

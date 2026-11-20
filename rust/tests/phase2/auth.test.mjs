@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {runCase} from './helper.mjs';
-for(const [name,outcome,rounds] of [['password','ok',0],['host-reject','HostRejected',0],['wrong-password','AuthFailed',0],['encrypted-key','ok',0],['wrong-key-passphrase','AuthFailed',0],['interactive-two-rounds','ok',2],['password-then-interactive','ok',2]]) {
+for(const [name,outcome,rounds] of [['password','ok',0],['host-reject','HostRejected',0],['wrong-password','AuthFailed',0],['encrypted-key','ok',0],['rsa-key','ok',0],['encrypted-rsa-key','ok',0],['wrong-key-passphrase','KeyUnreadable',0],['empty-key-passphrase','KeyUnreadable',0],['interactive-two-rounds','ok',2],['password-then-interactive','ok',2]]) {
   test(name,async()=>{const r=await runCase(name);assert.equal(r.outcome,outcome);assert.equal(r.events.filter(e=>e.type==='auth-round').length,rounds);assert.equal(r.events.filter(e=>e.type==='shell').length,outcome==='ok'?1:0);if(name==='host-reject')assert.equal(r.events.filter(e=>e.type==='authentication').length,0);});
 }
 for(const name of ['host-cancel','cancel-before-auth','cancel-between-rounds','cancel-late-success','cancel-before-pty'])test(name,async()=>{
